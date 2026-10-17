@@ -1,0 +1,76 @@
+[project]
+name = "modwen"
+version = "0.2.0"
+description = "Modwen (مُدوَّن): local-first, open-source voice-to-notes. Arabic/English meeting transcription and notes with a local LLM."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11,<3.13"
+keywords = ["speech-to-text", "meeting-notes", "arabic", "whisper", "local-llm", "privacy", "qwen"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Arabic",
+    "Natural Language :: English",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "numpy>=1.26",
+    "soundfile>=0.12",
+    "soxr>=0.3.7",
+    "openai>=1.40",
+    "httpx>=0.27",
+    "cryptography>=42",
+    "keyring>=25",
+    "platformdirs>=4.2",
+    "psutil>=5.9",
+    "sounddevice>=0.4.6",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Speech-to-text. faster-whisper works everywhere (NVIDIA GPU or CPU) and also provides Silero VAD.
+stt = ["faster-whisper>=1.0.3"]
+# Apple Silicon acceleration for Whisper.
+mac = ["mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+# Speaker diarization (large: pulls in PyTorch). Needs a Hugging Face token once to download the model.
+diarization = ["pyannote.audio>=3.3"]
+# Tray icon + native notifications.
+desktop = ["pystray>=0.19", "pillow>=10", "desktop-notifier>=5"]
+# Windows + NVIDIA: CUDA libraries for faster-whisper (the launcher adds this when it finds an NVIDIA GPU).
+cuda = ["nvidia-cublas-cu12; sys_platform == 'win32'", "nvidia-cudnn-cu12>=9,<10; sys_platform == 'win32'"]
+# System-audio capture backends.
+windows = ["pyaudiowpatch>=0.2.12; sys_platform == 'win32'"]
+linux = ["soundcard>=0.4.3; sys_platform == 'linux'"]
+all = ["modwen[stt,mac,desktop,windows,linux]"]
+
+[project.scripts]
+modwen = "modwen.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["modwen"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: downloads a real Whisper model and runs real transcription (deselect with -m 'not slow')",
+]
+addopts = "-m 'not slow'"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"

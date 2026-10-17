@@ -1,0 +1,23 @@
+.venv/
+.cache/
+.data/
+.models/
+.tmp/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+ui/node_modules/
+ui/dist/
+config.yaml
+samples/generated/
+modwen/native/macos/build/
+.claude/settings.local.json
+
+# personal / local-only
+private/
+CLAUDE.local.md
+.claude/settings.local.json
+.DS_Store
+.claude/
+release/

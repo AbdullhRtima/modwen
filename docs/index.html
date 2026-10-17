@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modwen · مُدوَّن · Say it. See it.</title>
+<meta name="description" content="Modwen turns Arabic and English speech into meeting notes, decisions and action items, entirely on your computer. Open source, local-first, private by design.">
+<meta property="og:title" content="Modwen · مُدوَّن · Say it. See it.">
+<meta property="og:description" content="Local-first, open-source voice-to-notes for Arabic and English. Your voice never leaves your machine.">
+<meta property="og:image" content="assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23f5b544'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<style>
+/* This page makes zero third-party requests: no web fonts, no analytics, no CDNs. */
+:root {
+  --bg: #070a18; --bg2: #0d1430; --panel: #121a38; --panel2: #18214a; --line: rgba(255,255,255,.09);
+  --text: #eef1fa; --muted: #9aa6c7; --faint: #6b779c;
+  --blue: #5b8cff; --violet: #8b7bff; --gold: #f5b544; --coral: #ff8a5c; --green: #3fbf6b;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --arabic: "SF Arabic", "Geeza Pro", "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 var(--font); overflow-x: hidden; }
+html[dir="rtl"] body { font-family: var(--arabic), var(--font); }
+.ar { font-family: var(--arabic); }
+a { color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 24px; }
+.sky { position: fixed; inset: 0; z-index: -1; background:
+  radial-gradient(900px 600px at 15% 10%, rgba(91,140,255,.20), transparent 60%),
+  radial-gradient(800px 600px at 90% 30%, rgba(245,181,68,.10), transparent 60%),
+  radial-gradient(1000px 700px at 50% 110%, rgba(139,123,255,.14), transparent 60%), var(--bg); }
+.sky::after { content: ""; position: absolute; inset: 0; opacity: .5;
+  background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px); background-size: 28px 28px; }
+
+/* nav */
+nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: rgba(7,10,24,.6); border-bottom: 1px solid var(--line); }
+nav .wrap { display: flex; align-items: center; gap: 22px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; text-decoration: none; letter-spacing: -.3px; }
+.brand .mark { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg, #1b2a66, #0d1430); display: grid; place-items: center; border: 1px solid var(--line); }
+.brand .ar { color: var(--gold); font-weight: 700; }
+nav .links { display: flex; gap: 20px; margin-inline-start: auto; font-size: 14.5px; color: var(--muted); }
+nav .links a { text-decoration: none; } nav .links a:hover { color: var(--text); }
+.lang { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; font-size: 13px; }
+.lang button { background: none; border: 0; color: var(--muted); padding: 6px 12px; cursor: pointer; font: inherit; }
+.lang button.on { background: rgba(245,181,68,.16); color: var(--gold); font-weight: 700; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 12px; font-weight: 650; font-size: 15.5px; text-decoration: none; border: 1px solid var(--line); background: rgba(255,255,255,.04); cursor: pointer; color: var(--text); transition: transform .15s, background .15s; }
+.btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.08); }
+.btn.gold { background: linear-gradient(135deg, var(--gold), var(--coral)); color: #1b1203; border: 0; box-shadow: 0 10px 30px rgba(245,181,68,.25); }
+.btn.small { padding: 8px 14px; font-size: 14px; border-radius: 10px; }
+
+/* hero */
+.hero { padding: 72px 0 40px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+.eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; color: var(--gold); border: 1px solid rgba(245,181,68,.35); background: rgba(245,181,68,.08); padding: 6px 12px; border-radius: 999px; font-weight: 600; }
+h1 { font-size: clamp(46px, 7vw, 86px); line-height: .98; margin: 18px 0 10px; letter-spacing: -2.5px; font-weight: 850; }
+html[dir="rtl"] h1 { letter-spacing: 0; line-height: 1.15; }
+h1 .grad { background: linear-gradient(100deg, var(--blue), var(--violet) 45%, var(--gold) 80%, var(--coral)); -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 200% 100%; animation: shimmer 8s ease-in-out infinite; }
+@keyframes shimmer { 50% { background-position: 100% 0; } }
+.sub-ar { font-family: var(--arabic); color: var(--muted); font-size: 26px; margin: 0 0 18px; }
+html[dir="rtl"] .sub-ar { font-family: var(--font); font-size: 22px; }
+.lead { color: var(--muted); font-size: 19px; max-width: 560px; margin: 0 0 28px; }
+.ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+.trust { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 22px; color: var(--faint); font-size: 14px; }
+.trust span::before { content: "✓ "; color: var(--green); font-weight: 800; }
+
+/* demo window */
+.demo { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); overflow: hidden; position: relative; }
+.demo .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.demo .bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.rec { margin-inline-start: auto; display: inline-flex; gap: 6px; align-items: center; color: #ff6b6b; font-weight: 700; font-family: var(--mono); font-size: 12.5px; }
+.rec::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ff6b6b; animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+.wave { display: flex; align-items: center; gap: 3px; height: 54px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+.wave b { flex: 1; max-width: 6px; border-radius: 3px; background: linear-gradient(var(--blue), var(--violet)); height: 20%; transition: height .12s; }
+.wave.idle b { height: 10% !important; opacity: .5; }
+.split { display: grid; grid-template-columns: 1fr 1fr; min-height: 330px; }
+.lines { padding: 14px 16px; border-inline-end: 1px solid var(--line); font-size: 14.5px; }
+.line { display: grid; grid-template-columns: 58px 1fr; gap: 2px 10px; padding: 6px 8px; border-radius: 10px; margin: 0 -8px 2px; opacity: 0; transform: translateY(6px); transition: all .35s; }
+.line.show { opacity: 1; transform: none; }
+.line.hl { background: rgba(91,140,255,.14); }
+.line .who { font-weight: 700; font-size: 12.5px; }
+.line .t { grid-column: 2; unicode-bidi: plaintext; }
+.line .ts { font-family: var(--mono); font-size: 11px; color: var(--faint); direction: ltr; }
+.caret::after { content: "▍"; color: var(--gold); animation: blink 1s infinite; }
+.notes { padding: 14px 16px; font-size: 14px; }
+.notes h5 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 1.6px; color: var(--faint); text-transform: uppercase; }
+.notes h5:first-child { margin-top: 0; }
+.item { padding: 7px 10px; border-radius: 10px; background: rgba(255,255,255,.04); margin-bottom: 6px; opacity: 0; transform: scale(.97); transition: all .4s; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.item.show { opacity: 1; transform: none; }
+.chip { font-family: var(--mono); font-size: 11px; color: #a9c1ff; background: rgba(91,140,255,.18); padding: 2px 7px; border-radius: 6px; cursor: pointer; white-space: nowrap; direction: ltr; }
+.due { font-size: 12.5px; color: var(--gold); white-space: nowrap; }
+.due s { color: var(--faint); text-decoration: none; }
+.owner { font-weight: 700; color: #b9a6ff; }
+.demo .foot { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--green); }
+.demo .foot button { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; }
+
+/* marquee */
+.marquee { overflow: hidden; border-block: 1px solid var(--line); margin: 40px 0; padding: 16px 0; mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
+.marquee .track { display: flex; gap: 48px; width: max-content; animation: slide 40s linear infinite; font-size: 22px; color: var(--faint); white-space: nowrap; }
+.marquee .track span:nth-child(3n) { color: var(--gold); } .marquee .track span:nth-child(3n+1) { color: #a9c1ff; }
+@keyframes slide { to { transform: translateX(-50%); } }
+html[dir="rtl"] .marquee .track { animation-name: slide-rtl; } @keyframes slide-rtl { to { transform: translateX(50%); } }
+
+/* sections */
+section { padding: 70px 0; }
+.kicker { color: var(--gold); font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase; }
+html[dir="rtl"] .kicker { letter-spacing: 0; }
+h2 { font-size: clamp(32px, 4.5vw, 52px); line-height: 1.08; margin: 10px 0 16px; letter-spacing: -1.2px; }
+html[dir="rtl"] h2 { letter-spacing: 0; line-height: 1.3; }
+.sect-lead { color: var(--muted); font-size: 19px; max-width: 700px; }
+
+/* privacy diagram */
+.privacy { display: grid; grid-template-columns: 1fr 1.1fr; gap: 44px; align-items: center; }
+.machine { position: relative; border: 2px dashed rgba(63,191,107,.5); border-radius: 26px; padding: 26px 22px 22px; background: rgba(63,191,107,.04); }
+.machine > .label { position: absolute; top: -14px; inset-inline-start: 22px; background: var(--bg); color: var(--green); font-weight: 700; font-size: 14px; padding: 0 10px; }
+.pipe { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: stretch; }
+.node { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 10px; text-align: center; font-size: 13.5px; position: relative; }
+.node .ico { font-size: 26px; display: block; margin-bottom: 4px; }
+.node small { color: var(--faint); display: block; font-size: 11.5px; }
+.node:not(:last-child)::after { content: ""; position: absolute; top: 50%; inset-inline-end: -10px; width: 10px; height: 2px; background: linear-gradient(90deg, var(--blue), var(--gold)); }
+.packet { position: absolute; top: calc(50% + 6px); width: 8px; height: 8px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 12px var(--gold); animation: travel 3.2s linear infinite; inset-inline-start: 8%; }
+@keyframes travel { from { inset-inline-start: 8%; } to { inset-inline-start: 90%; } }
+.cloud { display: flex; align-items: center; gap: 14px; margin-top: 26px; justify-content: center; color: var(--faint); }
+.cloud .x { position: relative; font-size: 34px; filter: grayscale(1); opacity: .7; }
+.cloud .x::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: 3px; background: #ff6b6b; transform: rotate(-20deg); border-radius: 2px; }
+.facts { display: grid; gap: 12px; margin-top: 22px; }
+.fact { display: flex; gap: 12px; align-items: flex-start; }
+.fact b { color: var(--text); }
+.fact .dot { flex: none; width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(63,191,107,.15); color: var(--green); font-weight: 800; font-size: 14px; }
+
+/* features */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
+.card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015)); border: 1px solid var(--line); border-radius: 20px; padding: 22px; transition: transform .2s, border-color .2s; }
+.card:hover { transform: translateY(-3px); border-color: rgba(245,181,68,.35); }
+.card h3 { margin: 12px 0 6px; font-size: 19px; }
+.card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+.visual { height: 92px; border-radius: 14px; background: rgba(0,0,0,.25); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; font-size: 14px; overflow: hidden; }
+.pill { padding: 4px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--line); background: rgba(255,255,255,.05); white-space: nowrap; }
+.pill.g { color: var(--gold); border-color: rgba(245,181,68,.35); } .pill.b { color: #a9c1ff; border-color: rgba(91,140,255,.35); }
+
+/* voice -> slide */
+.vision { display: grid; grid-template-columns: 1fr 1.2fr; gap: 40px; align-items: center; }
+.command { display: inline-flex; gap: 10px; align-items: center; padding: 14px 18px; border-radius: 18px; background: var(--panel2); border: 1px solid var(--line); font-size: 18px; margin: 6px 0; }
+.command .mic { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, var(--gold), var(--coral)); color: #1b1203; }
+.slide { aspect-ratio: 16/9; border-radius: 20px; background: linear-gradient(160deg, #141c3d, #0b1129); border: 1px solid rgba(245,181,68,.35); box-shadow: 0 30px 70px rgba(0,0,0,.5); padding: 24px 26px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.slide h4 { margin: 0; font-size: 22px; } .slide .meta { color: var(--faint); font-size: 13px; }
+.chart { flex: none; height: 64%; display: flex; align-items: flex-end; gap: 10px; margin-top: 16px; border-bottom: 1px solid var(--line); padding-bottom: 2px; direction: ltr; }
+.chart div { flex: 1; border-radius: 6px 6px 2px 2px; background: linear-gradient(var(--gold), var(--coral)); height: 0; transition: height .9s cubic-bezier(.2,.8,.2,1); }
+.slide .badge { position: absolute; top: 18px; inset-inline-end: 18px; font-size: 12px; color: var(--gold); border: 1px solid rgba(245,181,68,.4); border-radius: 999px; padding: 3px 10px; }
+
+/* steps + install */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 30px; counter-reset: s; }
+.step { border: 1px solid var(--line); border-radius: 20px; padding: 22px; background: rgba(255,255,255,.025); position: relative; }
+.step::before { counter-increment: s; content: counter(s); position: absolute; top: -16px; inset-inline-start: 20px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--gold), var(--coral)); color: #1b1203; }
+.step h3 { margin: 6px 0 6px; } .step p { margin: 0; color: var(--muted); font-size: 15.5px; }
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 28px; }
+.tabs button { background: none; border: 0; color: var(--muted); padding: 10px 18px; cursor: pointer; font: inherit; font-size: 15px; }
+.tabs button.on { background: rgba(91,140,255,.16); color: #cfdcff; font-weight: 700; }
+pre { background: #050816; border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; overflow-x: auto; font: 14px/1.7 var(--mono); color: #cfd6ee; direction: ltr; text-align: left; }
+pre .c { color: var(--faint); } pre .k { color: var(--gold); }
+
+/* open source */
+.oss { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; align-items: center; background: linear-gradient(135deg, rgba(91,140,255,.12), rgba(245,181,68,.08)); border: 1px solid var(--line); border-radius: 28px; padding: 40px; }
+.oss ul { margin: 0; padding-inline-start: 20px; color: var(--muted); } .oss li { margin-bottom: 6px; }
+
+/* faq */
+details { border-bottom: 1px solid var(--line); padding: 16px 0; }
+summary { cursor: pointer; font-weight: 650; font-size: 18px; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+summary::after { content: "+"; color: var(--gold); font-size: 22px; line-height: 1; }
+details[open] summary::after { content: "–"; }
+details p { color: var(--muted); margin: 10px 0 0; }
+
+footer { border-top: 1px solid var(--line); padding: 40px 0 60px; color: var(--faint); font-size: 14px; }
+footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; }
+.big-ar { font-family: var(--arabic); font-size: 64px; line-height: 1; background: linear-gradient(120deg, var(--gold), var(--coral)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s, transform .7s; }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (max-width: 960px) {
+  .hero, .privacy, .vision, .oss { grid-template-columns: 1fr; }
+  .grid, .steps { grid-template-columns: 1fr 1fr; }
+  nav .links { display: none; }
+}
+@media (max-width: 640px) {
+  .grid, .steps, .split { grid-template-columns: 1fr; }
+  .lines { border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .pipe { grid-template-columns: 1fr 1fr; }
+  .node:nth-child(2)::after { display: none; }
+  .oss { padding: 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="sky" aria-hidden="true"></div>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Modwen home">
+      <span class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20"><g fill="#f5b544"><rect x="2" y="7" width="2.6" height="6" rx="1.3"/><rect x="6.4" y="4" width="2.6" height="12" rx="1.3"/><rect x="10.8" y="1.5" width="2.6" height="17" rx="1.3"/><rect x="15.2" y="5.5" width="2.6" height="9" rx="1.3"/></g></svg></span>
+      Modwen <span class="ar">مُدوَّن</span>
+    </a>
+    <div class="links">
+      <a href="#demo" data-i18n="nav.demo">Demo</a>
+      <a href="#privacy" data-i18n="nav.privacy">Privacy</a>
+      <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="#next" data-i18n="nav.next">What's next</a>
+      <a href="#start" data-i18n="nav.start">Get started</a>
+    </div>
+    <div class="lang" role="group" aria-label="Language">
+      <button data-lang="en" class="on">EN</button><button data-lang="ar" class="ar">عربي</button>
+    </div>
+    <a class="btn small" data-repo href="#" target="_blank" rel="noopener">★ GitHub</a>
+  </div>
+</nav>
+
+<main id="top">
+  <div class="wrap">
+    <!-- HERO -->
+    <div class="hero">
+      <div>
+        <span class="eyebrow" data-i18n="hero.eyebrow">🔒 Open source · runs 100% on your computer</span>
+        <h1><span data-i18n="hero.h1a">Say it.</span><br><span class="grad" data-i18n="hero.h1b">See it.</span></h1>
+        <p class="sub-ar" data-i18n="hero.sub">تكلّم… والباقي مُدوَّن</p>
+        <p class="lead" data-i18n="hero.lead">Modwen listens to your meetings in Arabic, English, or both in the same sentence, and turns them into notes, decisions and action items with real deadlines. No cloud. No account. Your voice never leaves your machine.</p>
+        <div class="ctas">
+          <a class="btn gold" data-repo="/releases/latest" href="#start" data-i18n="hero.download">⇩ Download for macOS &amp; Windows</a>
+          <a class="btn" href="#demo" data-i18n="hero.watch">▶ Watch it work</a>
+        </div>
+        <div class="trust"><span data-i18n="hero.t1">Gulf · Levantine · Egyptian · MSA</span><span data-i18n="hero.t2">Works with Meet, Teams &amp; in-person</span><span data-i18n="hero.t3">Apache-2.0</span></div>
+      </div>
+
+      <!-- LIVE DEMO -->
+      <div class="demo" id="demo" aria-label="Animated demo of Modwen turning a bilingual meeting into notes">
+        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>
+          <span style="margin-inline-start:8px" data-i18n="demo.title">Sprint sync · Google Meet</span>
+          <span class="rec" id="clock">REC 00:00</span></div>
+        <div class="wave idle" id="wave" aria-hidden="true"></div>
+        <div class="split">
+          <div class="lines" id="lines"></div>
+          <div class="notes">
+            <h5 data-i18n="demo.decisions">Decisions</h5>
+            <div class="item" id="n-dec"><span data-i18n="demo.dec1">✓ Ship the MVP on Thursday</span><span class="chip" data-seg="2">↗ 00:12</span></div>
+            <h5 data-i18n="demo.actions">Action items</h5>
+            <div class="item" id="n-a1"><span><span class="owner">Mohammad</span> · <span data-i18n="demo.a1">deliver the MVP</span></span><span class="due" id="due1"><s>بكرة</s></span></div>
+            <div class="item" id="n-a2"><span><span class="owner" style="color:#7fd6c4">Lina</span> · <span data-i18n="demo.a2">finish QA</span></span><span class="due" id="due2"><s>Wednesday</s></span></div>
+            <h5 data-i18n="demo.questions">Open questions</h5>
+            <div class="item" id="n-q"><span data-i18n="demo.q1">Who updates the client?</span><span class="chip" data-seg="5">↗ 00:31</span></div>
+          </div>
+        </div>
+        <div class="foot"><span data-i18n="demo.local">🔒 Processed locally: Whisper + Qwen on this laptop</span><button id="replay" data-i18n="demo.replay">↻ Replay</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="marquee" aria-hidden="true"><div class="track" id="marquee"></div></div>
+
+  <!-- PRIVACY -->
+  <section id="privacy">
+    <div class="wrap privacy reveal">
+      <div>
+        <div class="kicker" data-i18n="priv.kicker">Private by design</div>
+        <h2 data-i18n="priv.h2">Everything happens inside your machine.</h2>
+        <p class="sect-lead" data-i18n="priv.lead">Recording, transcription, speaker detection and the AI that writes your notes all run on your own computer. Modwen refuses to talk to any server that isn't localhost. That rule is in the code, not in a policy.</p>
+        <div class="facts">
+          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f1"><b>No cloud, no account, no telemetry.</b> Nothing to sign up for, nothing phoning home.</span></div>
+          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f2"><b>Encrypted recordings.</b> A separate AES-256 key for every meeting; delete the meeting and the key is gone.</span></div>
+          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f3"><b>Consent built in.</b> A ready-made notice in Arabic and English, every time you press Start.</span></div>
+          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f4"><b>Even this page</b> loads no fonts, trackers or scripts from anywhere else.</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="machine">
+          <span class="label" data-i18n="priv.machine">💻 Your computer</span>
+          <div class="pipe">
+            <div class="node"><span class="ico">🎙</span><span data-i18n="priv.n1">Your meeting</span><small>mic + system audio</small></div>
+            <div class="node"><span class="ico">〰️</span>Whisper<small data-i18n="priv.n2">speech → text</small></div>
+            <div class="node"><span class="ico">🧠</span>Qwen<small data-i18n="priv.n3">local AI model</small></div>
+            <div class="node"><span class="ico">📝</span><span data-i18n="priv.n4">Your notes</span><small data-i18n="priv.n4s">encrypted on disk</small></div>
+          </div>
+          <span class="packet" aria-hidden="true"></span>
+        </div>
+        <div class="cloud"><span class="x" aria-hidden="true">☁️</span><span data-i18n="priv.cloud">The cloud never gets a single word.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="wrap">
+      <div class="reveal">
+        <div class="kicker" data-i18n="feat.kicker">Built for how we actually talk</div>
+        <h2 data-i18n="feat.h2">Arabic, English, and everything in between.</h2>
+        <p class="sect-lead" data-i18n="feat.lead">Most meeting tools break when a sentence starts in Arabic and ends in English. Modwen was designed for exactly that.</p>
+      </div>
+      <div class="grid">
+        <div class="card reveal"><div class="visual ar" style="direction:rtl">«خلاص اتفقنا، بكرة تسليم الـ <span style="color:#a9c1ff;font-family:var(--font)">MVP</span>»</div>
+          <h3 data-i18n="feat.c1h">Code-switching, natively</h3><p data-i18n="feat.c1p">Whisper large-v3 with a per-sentence language rule keeps English terms in English and Arabic in Arabic: Gulf, Levantine, Egyptian and MSA.</p></div>
+        <div class="card reveal"><div class="visual"><span class="pill g ar">بكرة</span>→<span class="pill">Oct 18</span><span class="pill g">Wednesday</span>→<span class="pill">Oct 21</span></div>
+          <h3 data-i18n="feat.c2h">Deadlines it really understands</h3><p data-i18n="feat.c2p">"بكرة", "الخميس الجاي", "by end of day": resolved to real dates in your timezone. Invented deadlines are caught and dropped.</p></div>
+        <div class="card reveal"><div class="visual"><span>Ship on Thursday</span><span class="chip">↗ 01:15</span></div>
+          <h3 data-i18n="feat.c3h">Notes that cite their source</h3><p data-i18n="feat.c3p">Every decision and action item links to the exact moment it was said. Click it, and the transcript jumps there and plays the audio.</p></div>
+        <div class="card reveal"><div class="visual"><span class="pill b">llama.cpp</span><span class="pill b">Ollama</span><span class="pill b">LM Studio</span><span class="pill b">vLLM</span></div>
+          <h3 data-i18n="feat.c4h">Your AI, your choice</h3><p data-i18n="feat.c4p">Let Modwen download and run Qwen for you with one click, or point it at any local OpenAI-compatible server you already use.</p></div>
+        <div class="card reveal"><div class="visual"><span class="pill">Google Meet</span><span class="pill">Teams</span><span class="pill" data-i18n="feat.inperson">In-person</span></div>
+          <h3 data-i18n="feat.c5h">Any meeting, one click</h3><p data-i18n="feat.c5p">It captures your mic and the meeting audio on macOS and Windows, with live captions while you talk, and is ready for 2-hour meetings.</p></div>
+        <div class="card reveal"><div class="visual"><span style="font-size:26px">🔔</span><span><b data-i18n="feat.ready">Notes ready</b><br><span style="color:var(--muted);font-size:13px">3 decisions · 5 action items</span></span></div>
+          <h3 data-i18n="feat.c6h">Stop. Get notified. Done.</h3><p data-i18n="feat.c6p">Press Stop and keep working. A notification tells you when the summary, decisions, owners and open questions are ready.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- VISION -->
+  <section id="next">
+    <div class="wrap vision reveal">
+      <div>
+        <div class="kicker" data-i18n="next.kicker">Coming next</div>
+        <h2 data-i18n="next.h2">Voice in. Anything out.</h2>
+        <p class="sect-lead" data-i18n="next.lead">Meetings are just the start. Next, Modwen turns what you say into what you need, live: slides, charts, documents.</p>
+        <div class="command"><span class="mic">🎙</span><span id="cmd">“Show me the gold price this year”</span></div><br>
+        <div class="command ar" style="direction:rtl"><span class="mic">🎙</span><span>«اعرض لي سعر الذهب لهذه السنة»</span></div>
+      </div>
+      <div class="slide" id="slide">
+        <span class="badge" data-i18n="next.badge">generated live</span>
+        <h4 data-i18n="next.slideh">Gold, this year</h4>
+        <div class="meta" data-i18n="next.slidem">monthly average · illustrative data</div>
+        <div class="chart" id="chart"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- START -->
+  <section id="start">
+    <div class="wrap">
+      <div class="reveal">
+        <div class="kicker" data-i18n="start.kicker">Get started</div>
+        <h2 data-i18n="start.h2">Up and running in three steps.</h2>
+      </div>
+      <div class="steps">
+        <div class="step reveal"><h3 data-i18n="start.s1h">Download</h3><p data-i18n="start.s1p">Grab the latest release zip (about 0.5 MB) and unzip it anywhere.</p></div>
+        <div class="step reveal"><h3 data-i18n="start.s2h">Double-click</h3><p data-i18n="start.s2p">Modwen.command on macOS, Modwen.bat on Windows. The setup wizard picks models for your hardware and downloads them once.</p></div>
+        <div class="step reveal"><h3 data-i18n="start.s3h">Talk</h3><p data-i18n="start.s3p">Press Start in your next meeting. Press Stop. Read your notes.</p></div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button class="on" data-os="mac">macOS</button><button data-os="win">Windows</button><button data-os="dev" data-i18n="start.dev">From source</button>
+      </div>
+      <pre id="os-mac"><span class="c"># 1. download modwen-&lt;version&gt;.zip from Releases, unzip</span>
+<span class="c"># 2. first time only: right-click → Open</span>
+<span class="k">open</span> Modwen.command
+<span class="c"># the setup wizard opens in your browser: choose "Download Qwen for me"</span>
+<span class="c"># or connect your own local server, e.g. http://localhost:11434/v1 (Ollama)</span></pre>
+      <pre id="os-win" hidden><span class="c">:: 1. download modwen-&lt;version&gt;.zip from Releases, unzip</span>
+<span class="c">:: 2. double-click (SmartScreen: More info → Run anyway)</span>
+<span class="k">Modwen.bat</span>
+<span class="c">:: NVIDIA GPU? CUDA acceleration is set up automatically.</span></pre>
+      <pre id="os-dev" hidden><span class="k">git clone</span> <span data-repo-text>https://github.com/&lt;you&gt;/modwen</span> && cd modwen
+<span class="k">uv sync</span> --extra stt --extra desktop --extra mac   <span class="c"># Windows: --extra windows</span>
+(cd ui && npm install && npm run build)
+<span class="k">uv run modwen serve</span></pre>
+    </div>
+  </section>
+
+  <!-- OPEN SOURCE -->
+  <section>
+    <div class="wrap">
+      <div class="oss reveal">
+        <div>
+          <div class="kicker" data-i18n="oss.kicker">Open source · Apache-2.0</div>
+          <h2 data-i18n="oss.h2">Help Modwen understand every Arabic voice.</h2>
+          <ul>
+            <li data-i18n="oss.l1">Record a short dialect sample (with consent): Gulf, Levantine, Egyptian, Maghrebi.</li>
+            <li data-i18n="oss.l2">Test it on Windows and Linux, and tell us what breaks.</li>
+            <li data-i18n="oss.l3">Build the voice → slides layer with us.</li>
+          </ul>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start">
+          <a class="btn gold" data-repo href="#" target="_blank" rel="noopener" data-i18n="oss.star">★ Star on GitHub</a>
+          <a class="btn" data-repo="/blob/main/CONTRIBUTING.md" href="#" target="_blank" rel="noopener" data-i18n="oss.contrib">Read the contributing guide →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq">
+    <div class="wrap" style="max-width:860px">
+      <h2 class="reveal" data-i18n="faq.h2">Questions</h2>
+      <details class="reveal"><summary data-i18n="faq.q1">Does anything really stay offline?</summary><p data-i18n="faq.a1">Yes. After the one-time model downloads, Modwen works with your internet turned off. AI endpoints must be localhost; anything else is refused in code.</p></details>
+      <details class="reveal"><summary data-i18n="faq.q2">What computer do I need?</summary><p data-i18n="faq.a2">16 GB of RAM minimum. Best: an Apple Silicon Mac with 32 GB, or a Windows PC with an NVIDIA GPU (12 GB+). Modwen detects your hardware and picks models that fit.</p></details>
+      <details class="reveal"><summary data-i18n="faq.q3">How good is the Arabic?</summary><p data-i18n="faq.a3">Transcription uses Whisper large-v3, which handles MSA well and Gulf, Levantine and Egyptian dialects increasingly well, including English words inside Arabic sentences. Summaries are best with Qwen3-8B or larger.</p></details>
+      <details class="reveal"><summary data-i18n="faq.q4">Can I use my own model?</summary><p data-i18n="faq.a4">Yes: any OpenAI-compatible server on your machine (llama.cpp, Ollama, LM Studio, vLLM). Switching is one setting.</p></details>
+      <details class="reveal"><summary data-i18n="faq.q5">Is it free?</summary><p data-i18n="faq.a5">Free and open source under Apache-2.0. No accounts, no subscriptions, no usage limits.</p></details>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div><span class="big-ar">مُدوَّن</span><div style="margin-top:8px" data-i18n="foot.tag">Say it. See it. Local-first voice-to-notes.</div></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <a data-repo href="#" target="_blank" rel="noopener">GitHub</a>
+      <a data-repo="/blob/main/docs/install.md" href="#" target="_blank" rel="noopener" data-i18n="foot.install">Install guide</a>
+      <a data-repo="/blob/main/LICENSE" href="#" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ---------- Set your repository URL here once it exists ----------
+const REPO = "https://github.com/AbdullhRtima/modwen";
+document.querySelectorAll("[data-repo]").forEach((a) => (a.href = REPO + (a.getAttribute("data-repo") || "")));
+document.querySelectorAll("[data-repo-text]").forEach((s) => (s.textContent = REPO));
+
+// ---------- i18n ----------
+const AR = {
+  "nav.demo": "عرض حي", "nav.privacy": "الخصوصية", "nav.features": "المزايا", "nav.next": "القادم", "nav.start": "ابدأ",
+  "hero.eyebrow": "🔒 مفتوح المصدر · يعمل بالكامل على جهازك",
+  "hero.h1a": "تكلّم.", "hero.h1b": "والباقي مُدوَّن.", "hero.sub": "<span dir=\"ltr\">Say it. See it.</span>",
+  "hero.lead": "يستمع مُدوَّن لاجتماعاتك بالعربية أو الإنجليزية أو بالاثنتين في نفس الجملة، ويحوّلها إلى ملاحظات وقرارات ومهام بمواعيد حقيقية. بلا سحابة، بلا حساب. صوتك لا يغادر جهازك أبداً.",
+  "hero.download": "⇩ حمّل لماك وويندوز", "hero.watch": "▶ شاهده يعمل",
+  "hero.t1": "خليجي · شامي · مصري · فصحى", "hero.t2": "يعمل مع Meet وTeams والاجتماعات الحضورية", "hero.t3": "Apache-2.0",
+  "demo.title": "اجتماع الفريق · Google Meet", "demo.decisions": "القرارات", "demo.dec1": "✓ إطلاق الـ MVP يوم الخميس",
+  "demo.actions": "المهام", "demo.a1": "تسليم الـ MVP", "demo.a2": "إنهاء اختبارات الجودة", "demo.questions": "أسئلة مفتوحة",
+  "demo.q1": "من سيبلّغ العميل؟", "demo.local": "🔒 تمت المعالجة محلياً: Whisper وQwen على هذا الجهاز", "demo.replay": "↻ إعادة",
+  "priv.kicker": "الخصوصية في التصميم", "priv.h2": "كل شيء يحدث داخل جهازك.",
+  "priv.lead": "التسجيل والتفريغ وتمييز المتحدثين والذكاء الاصطناعي الذي يكتب ملاحظاتك، كلها تعمل على جهازك. مُدوَّن يرفض الاتصال بأي خادم غير localhost، وهذه قاعدة في الكود وليست وعداً في سياسة.",
+  "priv.f1": "<b>بلا سحابة، بلا حساب، بلا تتبّع.</b> لا تسجيل، ولا شيء يتصل بالخارج.",
+  "priv.f2": "<b>تسجيلات مشفّرة.</b> مفتاح AES-256 مستقل لكل اجتماع، احذف الاجتماع ويختفي المفتاح.",
+  "priv.f3": "<b>الموافقة مدمجة.</b> تنبيه جاهز بالعربية والإنجليزية في كل مرة تضغط فيها ابدأ.",
+  "priv.f4": "<b>حتى هذه الصفحة</b> لا تحمّل خطوطاً أو أدوات تتبّع أو سكربتات من أي مكان آخر.",
+  "priv.machine": "💻 جهازك", "priv.n1": "اجتماعك", "priv.n2": "كلام ← نص", "priv.n3": "نموذج ذكاء محلي", "priv.n4": "ملاحظاتك", "priv.n4s": "مشفّرة على القرص",
+  "priv.cloud": "السحابة لا تحصل على كلمة واحدة.",
+  "feat.kicker": "مصمَّم لطريقة كلامنا الحقيقية", "feat.h2": "عربي، إنجليزي، وكل ما بينهما.",
+  "feat.lead": "معظم أدوات الاجتماعات تتعطل عندما تبدأ الجملة بالعربية وتنتهي بالإنجليزية. مُدوَّن صُمّم لهذا بالضبط.",
+  "feat.c1h": "التبديل بين اللغتين بشكل طبيعي", "feat.c1p": "Whisper large-v3 مع قاعدة لغة لكل جملة تُبقي المصطلحات الإنجليزية بالإنجليزية والعربية بالعربية: خليجي، شامي، مصري، وفصحى.",
+  "feat.c2h": "يفهم المواعيد فعلاً", "feat.c2p": "«بكرة»، «الخميس الجاي»، «by end of day»: تتحول إلى تواريخ حقيقية بتوقيتك. والمواعيد المخترعة تُكتشف وتُحذف.",
+  "feat.c3h": "ملاحظات تذكر مصدرها", "feat.c3p": "كل قرار ومهمة مرتبطة باللحظة التي قيلت فيها. اضغط فينتقل النص إليها ويشغّل الصوت.",
+  "feat.c4h": "نموذجك، اختيارك", "feat.c4p": "دع مُدوَّن يحمّل Qwen ويشغّله بضغطة واحدة، أو اربطه بأي خادم محلي متوافق مع OpenAI تستخدمه.",
+  "feat.inperson": "حضوري", "feat.c5h": "أي اجتماع، بضغطة واحدة", "feat.c5p": "يلتقط صوتك وصوت الاجتماع على ماك وويندوز، مع نص مباشر أثناء الحديث، وجاهز لاجتماعات الساعتين.",
+  "feat.ready": "الملاحظات جاهزة", "feat.c6h": "أوقف. استلم إشعاراً. انتهى.", "feat.c6p": "اضغط إيقاف وتابع عملك. إشعار يخبرك عندما يجهز الملخص والقرارات والمسؤولون والأسئلة المفتوحة.",
+  "next.kicker": "القادم", "next.h2": "صوت يدخل. أي شيء يخرج.",
+  "next.lead": "الاجتماعات مجرد البداية. بعدها يحوّل مُدوَّن ما تقوله إلى ما تحتاجه، مباشرة: شرائح، رسوم بيانية، مستندات.",
+  "next.badge": "يُولَّد مباشرة", "next.slideh": "الذهب هذه السنة", "next.slidem": "متوسط شهري · بيانات توضيحية",
+  "start.kicker": "ابدأ", "start.h2": "جاهز في ثلاث خطوات.", "start.s1h": "حمّل", "start.s1p": "نزّل آخر إصدار (حوالي 0.5 ميغابايت) وفك الضغط في أي مكان.",
+  "start.s2h": "اضغط مرتين", "start.s2p": "Modwen.command على ماك، وModwen.bat على ويندوز. معالج الإعداد يختار النماذج المناسبة لجهازك ويحمّلها مرة واحدة.",
+  "start.s3h": "تكلّم", "start.s3p": "اضغط ابدأ في اجتماعك القادم. اضغط إيقاف. اقرأ ملاحظاتك.", "start.dev": "من المصدر",
+  "oss.kicker": "مفتوح المصدر · Apache-2.0", "oss.h2": "ساعد مُدوَّن على فهم كل صوت عربي.",
+  "oss.l1": "سجّل عينة قصيرة بلهجتك (بموافقة): خليجي، شامي، مصري، مغاربي.", "oss.l2": "جرّبه على ويندوز ولينكس وأخبرنا بما يتعطل.", "oss.l3": "ابنِ معنا طبقة الصوت ← الشرائح.",
+  "oss.star": "★ ادعمه على GitHub", "oss.contrib": "اقرأ دليل المساهمة ←",
+  "faq.h2": "أسئلة", "faq.q1": "هل يبقى كل شيء فعلاً بدون إنترنت؟", "faq.a1": "نعم. بعد تحميل النماذج مرة واحدة يعمل مُدوَّن والإنترنت مقطوع. خوادم الذكاء يجب أن تكون localhost وأي شيء آخر يُرفض في الكود.",
+  "faq.q2": "ما الجهاز الذي أحتاجه؟", "faq.a2": "16 غيغابايت ذاكرة كحد أدنى. الأفضل: ماك بمعالج Apple وذاكرة 32 غيغابايت، أو حاسوب ويندوز ببطاقة NVIDIA ‏(12 غيغابايت أو أكثر). مُدوَّن يكتشف جهازك ويختار النماذج المناسبة.",
+  "faq.q3": "ما مدى جودة العربية؟", "faq.a3": "التفريغ يستخدم Whisper large-v3 الذي يتعامل جيداً مع الفصحى، وبشكل متزايد مع اللهجات الخليجية والشامية والمصرية، بما فيها الكلمات الإنجليزية داخل الجمل العربية. الملخصات أفضل مع Qwen3-8B أو أكبر.",
+  "faq.q4": "هل أستطيع استخدام نموذجي الخاص؟", "faq.a4": "نعم، أي خادم متوافق مع OpenAI على جهازك (llama.cpp، Ollama، LM Studio، vLLM). التبديل إعداد واحد.",
+  "faq.q5": "هل هو مجاني؟", "faq.a5": "مجاني ومفتوح المصدر برخصة Apache-2.0. بلا حسابات، بلا اشتراكات، بلا حدود استخدام.",
+  "foot.tag": "تكلّم… والباقي مُدوَّن. تدوين صوتي محلي أولاً.", "foot.install": "دليل التثبيت",
+};
+const EN = {};
+document.querySelectorAll("[data-i18n]").forEach((el) => (EN[el.dataset.i18n] = el.innerHTML));
+let lang = "en";
+function setLang(l) {
+  lang = l;
+  const dict = l === "ar" ? AR : EN;
+  document.documentElement.lang = l;
+  document.documentElement.dir = l === "ar" ? "rtl" : "ltr";
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const v = dict[el.dataset.i18n];
+    if (v !== undefined) el.innerHTML = v;
+  });
+  document.querySelectorAll(".lang button").forEach((b) => b.classList.toggle("on", b.dataset.lang === l));
+  try { localStorage.setItem("modwen-lang", l); } catch (e) { /* storage unavailable */ }
+  runDemo();
+}
+document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+// ---------- marquee ----------
+const words = ["بكرة عنا تسليم", "Thursday", "roadmap", "الخميس الجاي", "action items", "خلاص اتفقنا", "MVP", "شو الأخبار؟",
+  "by end of day", "إن شاء الله", "QA", "Gulf · Levantine · Egyptian · MSA", "يعطيكم العافية", "decisions", "stand-up"];
+const track = document.getElementById("marquee");
+track.innerHTML = [...words, ...words].map((w) => `<span${/[؀-ۿ]/.test(w) ? ' class="ar"' : ""}>${w}</span>`).join("");
+
+// ---------- live demo ----------
+const SCRIPT = [
+  { who: "You", c: "#5b8cff", ts: "00:03", t: "Okay team, quick stand-up. شو الأخبار؟" },
+  { who: "Lina", c: "#7fd6c4", ts: "00:07", t: "الـ checklist جاهزة، فاضل بس الـ QA." },
+  { who: "You", c: "#5b8cff", ts: "00:12", t: "خلاص اتفقنا، we ship the MVP on Thursday." },
+  { who: "Mohammad", c: "#b9a6ff", ts: "00:18", t: "تمام، أنا بسلّم الـ MVP بكرة إن شاء الله." },
+  { who: "Lina", c: "#7fd6c4", ts: "00:24", t: "And I'll finish QA before Wednesday." },
+  { who: "You", c: "#5b8cff", ts: "00:31", t: "Who updates the client? مين بيكلمهم؟" },
+];
+const wave = document.getElementById("wave");
+wave.innerHTML = Array.from({ length: 48 }, () => "<b></b>").join("");
+const bars = [...wave.children];
+let timers = [], waveTimer = null, clockTimer = null;
+function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+function reset() {
+  timers.forEach(clearTimeout); timers = [];
+  clearInterval(waveTimer); clearInterval(clockTimer);
+  document.getElementById("lines").innerHTML = "";
+  document.querySelectorAll(".notes .item").forEach((i) => i.classList.remove("show"));
+  document.getElementById("due1").innerHTML = "<s>بكرة</s>";
+  document.getElementById("due2").innerHTML = "<s>Wednesday</s>";
+  wave.classList.add("idle");
+}
+function typeLine(i, done) {
+  const s = SCRIPT[i];
+  const el = document.createElement("div");
+  el.className = "line"; el.dataset.seg = i;
+  el.innerHTML = `<span class="ts">${s.ts}</span><span class="who" style="color:${s.c}">${s.who}</span><span class="t caret" dir="auto"></span>`;
+  document.getElementById("lines").appendChild(el);
+  later(() => el.classList.add("show"), 30);
+  const t = el.querySelector(".t");
+  let k = 0;
+  const step = () => {
+    t.textContent = s.t.slice(0, ++k);
+    if (k < s.t.length) later(step, 26); else { t.classList.remove("caret"); done && done(); }
+  };
+  later(step, 250);
+}
+function show(id, ms) { later(() => document.getElementById(id).classList.add("show"), ms); }
+function runDemo() {
+  reset();
+  wave.classList.remove("idle");
+  waveTimer = setInterval(() => bars.forEach((b, i) => (b.style.height = (12 + Math.abs(Math.sin(Date.now() / 300 + i * .55)) * 70 * Math.random() + 8) + "%")), 120);
+  let sec = 0; const clock = document.getElementById("clock");
+  clockTimer = setInterval(() => { sec++; clock.textContent = "REC 00:" + String(sec % 60).padStart(2, "0"); }, 900);
+  let t = 300;
+  SCRIPT.forEach((s, i) => { later(() => typeLine(i), t); t += s.t.length * 26 + 900; });
+  show("n-dec", 3900);
+  show("n-a1", 6200);
+  later(() => (document.getElementById("due1").innerHTML = "<s>بكرة</s> → Oct 18"), 7200);
+  show("n-a2", 8400);
+  later(() => (document.getElementById("due2").innerHTML = "<s>Wed</s> → Oct 21"), 9200);
+  show("n-q", 10600);
+  later(() => { clearInterval(waveTimer); wave.classList.add("idle"); clearInterval(clockTimer); }, t + 400);
+  later(runDemo, t + 6000);
+}
+document.getElementById("replay").addEventListener("click", runDemo);
+document.querySelectorAll(".chip[data-seg]").forEach((c) => c.addEventListener("click", () => {
+  document.querySelectorAll(".line").forEach((l) => l.classList.toggle("hl", l.dataset.seg === c.dataset.seg));
+}));
+
+// ---------- OS tabs ----------
+document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  ["mac", "win", "dev"].forEach((o) => (document.getElementById("os-" + o).hidden = o !== b.dataset.os));
+}));
+if (/Win/.test(navigator.platform)) document.querySelector('.tabs button[data-os="win"]').click();
+
+// ---------- chart + reveal on scroll ----------
+const chart = document.getElementById("chart");
+const values = [58, 61, 60, 66, 70, 68, 74, 79, 77, 84, 90, 96];
+chart.innerHTML = values.map(() => "<div></div>").join("");
+let chartDone = false;
+function growChart() {
+  if (chartDone) return;
+  chartDone = true;
+  [...chart.children].forEach((d, i) => setTimeout(() => (d.style.height = values[i] + "%"), 120 * i));
+}
+const io = new IntersectionObserver((entries) => entries.forEach((e) => {
+  if (!e.isIntersecting) return;
+  e.target.classList.add("in");
+  if (e.target.contains(chart)) growChart();
+  io.unobserve(e.target);
+}), { threshold: .15 });
+document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+// Fallback for browsers/contexts without scrolling (print, previews): show everything after a moment.
+setTimeout(() => { document.querySelectorAll(".reveal").forEach((el) => el.classList.add("in")); growChart(); }, 4000);
+
+// ---------- start ----------
+let saved = new URLSearchParams(location.search).get("lang");  // share links like ?lang=ar
+if (!saved) { try { saved = localStorage.getItem("modwen-lang"); } catch (e) { /* ignore */ } }
+setLang(saved === "ar" || saved === "en" ? saved : ((navigator.language || "").startsWith("ar") ? "ar" : "en"));
+</script>
+</body>
+</html>

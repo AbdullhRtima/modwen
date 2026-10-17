@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="Modwen (مُدوَّن): say it, see it. Arabic and English speech becomes meeting notes and slides, locally.">
+  <defs>
+    <radialGradient id="bg" cx="30%" cy="35%" r="85%">
+      <stop offset="0" stop-color="#16224a"/>
+      <stop offset="0.55" stop-color="#0d1430"/>
+      <stop offset="1" stop-color="#070a18"/>
+    </radialGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5b8cff"/>
+      <stop offset="0.6" stop-color="#8b7bff"/>
+      <stop offset="1" stop-color="#f5b544"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5b544"/>
+      <stop offset="1" stop-color="#ff8a5c"/>
+    </linearGradient>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2446"/>
+      <stop offset="1" stop-color="#131a35"/>
+    </linearGradient>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#ffffff" opacity="0.06"/>
+    </pattern>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <path id="flow" d="M 540 452 C 600 452, 600 300, 662 300"/>
+  </defs>
+
+  <!-- background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#dots)"/>
+  <circle cx="300" cy="460" r="170" fill="#5b8cff" opacity="0.18" filter="url(#glow)"/>
+  <circle cx="960" cy="250" r="190" fill="#f5b544" opacity="0.10" filter="url(#glow)"/>
+
+  <!-- wordmark -->
+  <g font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="72" y="136" font-size="78" font-weight="800" fill="#ffffff" letter-spacing="-2">Modwen</text>
+    <text x="408" y="136" font-size="62" font-weight="700" fill="url(#ink)" font-family="'Geeza Pro', 'Noto Naskh Arabic', 'Segoe UI', Tahoma, sans-serif">مُدوَّن</text>
+    <text x="74" y="192" font-size="34" font-weight="650" fill="#e8ebf5">Say it. See it.</text>
+    <text x="74" y="234" font-size="25" fill="#9aa6c7" direction="rtl" unicode-bidi="embed" text-anchor="end" dx="0" font-family="'Geeza Pro', 'Noto Naskh Arabic', 'Segoe UI', Tahoma, sans-serif">تكلّم… والباقي مُدوَّن</text>
+
+    <!-- chips -->
+    <g font-size="15" font-weight="600">
+      <rect x="74" y="262" width="122" height="32" rx="16" fill="#5b8cff" fill-opacity="0.16" stroke="#5b8cff" stroke-opacity="0.5"/>
+      <text x="135" y="283" text-anchor="middle" fill="#a9c1ff">🔒 Local-first</text>
+      <rect x="206" y="262" width="150" height="32" rx="16" fill="#f5b544" fill-opacity="0.14" stroke="#f5b544" stroke-opacity="0.5"/>
+      <text x="281" y="283" text-anchor="middle" fill="#ffd796">Arabic + English</text>
+      <rect x="366" y="262" width="126" height="32" rx="16" fill="#3fbf6b" fill-opacity="0.14" stroke="#3fbf6b" stroke-opacity="0.5"/>
+      <text x="429" y="283" text-anchor="middle" fill="#9be3b4">Open source</text>
+    </g>
+  </g>
+
+  <!-- speech bubbles -->
+  <g font-size="17">
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="0 0; 0 -5; 0 0" dur="5s" repeatCount="indefinite"/>
+      <rect x="96" y="338" width="268" height="40" rx="20" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.14"/>
+      <text x="230" y="364" text-anchor="middle" direction="rtl" unicode-bidi="embed" fill="#f1f3fa" font-family="'Geeza Pro', 'Noto Naskh Arabic', 'Segoe UI', Tahoma, sans-serif">🎙 بكرة عنا تسليم الـ MVP</text>
+    </g>
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="0 0; 0 5; 0 0" dur="6s" repeatCount="indefinite"/>
+      <rect x="176" y="530" width="300" height="40" rx="20" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.14"/>
+      <text x="326" y="556" text-anchor="middle" fill="#f1f3fa" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">“We agreed to ship Thursday”</text>
+    </g>
+  </g>
+
+  <!-- waveform (34 bars, centre y=452) -->
+  <g fill="url(#wave)">
+    <rect x="76" y="440" width="8" height="24" rx="4"><animate attributeName="height" values="24;60;18;24" dur="1.6s" begin="0s" repeatCount="indefinite"/><animate attributeName="y" values="440;422;443;440" dur="1.6s" begin="0s" repeatCount="indefinite"/></rect>
+    <rect x="90" y="430" width="8" height="44" rx="4"><animate attributeName="height" values="44;20;70;44" dur="1.4s" begin="-0.2s" repeatCount="indefinite"/><animate attributeName="y" values="430;442;417;430" dur="1.4s" begin="-0.2s" repeatCount="indefinite"/></rect>
+    <rect x="104" y="420" width="8" height="64" rx="4"><animate attributeName="height" values="64;30;90;64" dur="1.7s" begin="-0.5s" repeatCount="indefinite"/><animate attributeName="y" values="420;437;407;420" dur="1.7s" begin="-0.5s" repeatCount="indefinite"/></rect>
+    <rect x="118" y="436" width="8" height="32" rx="4"><animate attributeName="height" values="32;76;26;32" dur="1.3s" begin="-0.1s" repeatCount="indefinite"/><animate attributeName="y" values="436;414;439;436" dur="1.3s" begin="-0.1s" repeatCount="indefinite"/></rect>
+    <rect x="132" y="412" width="8" height="80" rx="4"><animate attributeName="height" values="80;36;104;80" dur="1.8s" begin="-0.7s" repeatCount="indefinite"/><animate attributeName="y" values="412;434;400;412" dur="1.8s" begin="-0.7s" repeatCount="indefinite"/></rect>
+    <rect x="146" y="428" width="8" height="48" rx="4"><animate attributeName="height" values="48;92;30;48" dur="1.5s" begin="-0.3s" repeatCount="indefinite"/><animate attributeName="y" values="428;406;437;428" dur="1.5s" begin="-0.3s" repeatCount="indefinite"/></rect>
+    <rect x="160" y="404" width="8" height="96" rx="4"><animate attributeName="height" values="96;44;120;96" dur="1.9s" begin="-0.9s" repeatCount="indefinite"/><animate attributeName="y" values="404;430;392;404" dur="1.9s" begin="-0.9s" repeatCount="indefinite"/></rect>
+    <rect x="174" y="424" width="8" height="56" rx="4"><animate attributeName="height" values="56;110;40;56" dur="1.45s" begin="-0.4s" repeatCount="indefinite"/><animate attributeName="y" values="424;397;432;424" dur="1.45s" begin="-0.4s" repeatCount="indefinite"/></rect>
+    <rect x="188" y="398" width="8" height="108" rx="4"><animate attributeName="height" values="108;60;128;108" dur="1.75s" begin="-0.6s" repeatCount="indefinite"/><animate attributeName="y" values="398;422;388;398" dur="1.75s" begin="-0.6s" repeatCount="indefinite"/></rect>
+    <rect x="202" y="416" width="8" height="72" rx="4"><animate attributeName="height" values="72;34;100;72" dur="1.35s" begin="-0.15s" repeatCount="indefinite"/><animate attributeName="y" values="416;435;402;416" dur="1.35s" begin="-0.15s" repeatCount="indefinite"/></rect>
+    <rect x="216" y="394" width="8" height="116" rx="4"><animate attributeName="height" values="116;70;132;116" dur="1.65s" begin="-0.8s" repeatCount="indefinite"/><animate attributeName="y" values="394;417;386;394" dur="1.65s" begin="-0.8s" repeatCount="indefinite"/></rect>
+    <rect x="230" y="410" width="8" height="84" rx="4"><animate attributeName="height" values="84;124;50;84" dur="1.55s" begin="-0.35s" repeatCount="indefinite"/><animate attributeName="y" values="410;390;427;410" dur="1.55s" begin="-0.35s" repeatCount="indefinite"/></rect>
+    <rect x="244" y="400" width="8" height="104" rx="4"><animate attributeName="height" values="104;56;126;104" dur="1.85s" begin="-1.0s" repeatCount="indefinite"/><animate attributeName="y" values="400;424;389;400" dur="1.85s" begin="-1.0s" repeatCount="indefinite"/></rect>
+    <rect x="258" y="414" width="8" height="76" rx="4"><animate attributeName="height" values="76;40;110;76" dur="1.4s" begin="-0.25s" repeatCount="indefinite"/><animate attributeName="y" values="414;432;397;414" dur="1.4s" begin="-0.25s" repeatCount="indefinite"/></rect>
+    <rect x="272" y="396" width="8" height="112" rx="4"><animate attributeName="height" values="112;64;130;112" dur="1.7s" begin="-0.55s" repeatCount="indefinite"/><animate attributeName="y" values="396;420;387;396" dur="1.7s" begin="-0.55s" repeatCount="indefinite"/></rect>
+    <rect x="286" y="418" width="8" height="68" rx="4"><animate attributeName="height" values="68;104;36;68" dur="1.5s" begin="-0.45s" repeatCount="indefinite"/><animate attributeName="y" values="418;400;434;418" dur="1.5s" begin="-0.45s" repeatCount="indefinite"/></rect>
+    <rect x="300" y="404" width="8" height="96" rx="4"><animate attributeName="height" values="96;48;118;96" dur="1.8s" begin="-0.75s" repeatCount="indefinite"/><animate attributeName="y" values="404;428;393;404" dur="1.8s" begin="-0.75s" repeatCount="indefinite"/></rect>
+    <rect x="314" y="424" width="8" height="56" rx="4"><animate attributeName="height" values="56;96;30;56" dur="1.3s" begin="-0.05s" repeatCount="indefinite"/><animate attributeName="y" values="424;404;437;424" dur="1.3s" begin="-0.05s" repeatCount="indefinite"/></rect>
+    <rect x="328" y="410" width="8" height="84" rx="4"><animate attributeName="height" values="84;40;104;84" dur="1.6s" begin="-0.65s" repeatCount="indefinite"/><animate attributeName="y" values="410;432;400;410" dur="1.6s" begin="-0.65s" repeatCount="indefinite"/></rect>
+    <rect x="342" y="428" width="8" height="48" rx="4"><animate attributeName="height" values="48;86;28;48" dur="1.45s" begin="-0.3s" repeatCount="indefinite"/><animate attributeName="y" values="428;409;438;428" dur="1.45s" begin="-0.3s" repeatCount="indefinite"/></rect>
+    <rect x="356" y="416" width="8" height="72" rx="4"><animate attributeName="height" values="72;36;96;72" dur="1.75s" begin="-0.85s" repeatCount="indefinite"/><animate attributeName="y" values="416;434;404;416" dur="1.75s" begin="-0.85s" repeatCount="indefinite"/></rect>
+    <rect x="370" y="432" width="8" height="40" rx="4"><animate attributeName="height" values="40;76;24;40" dur="1.35s" begin="-0.2s" repeatCount="indefinite"/><animate attributeName="y" values="432;414;440;432" dur="1.35s" begin="-0.2s" repeatCount="indefinite"/></rect>
+    <rect x="384" y="422" width="8" height="60" rx="4"><animate attributeName="height" values="60;28;84;60" dur="1.65s" begin="-0.5s" repeatCount="indefinite"/><animate attributeName="y" values="422;438;410;422" dur="1.65s" begin="-0.5s" repeatCount="indefinite"/></rect>
+    <rect x="398" y="436" width="8" height="32" rx="4"><animate attributeName="height" values="32;64;20;32" dur="1.5s" begin="-0.4s" repeatCount="indefinite"/><animate attributeName="y" values="436;420;442;436" dur="1.5s" begin="-0.4s" repeatCount="indefinite"/></rect>
+    <rect x="412" y="428" width="8" height="48" rx="4"><animate attributeName="height" values="48;24;66;48" dur="1.7s" begin="-0.7s" repeatCount="indefinite"/><animate attributeName="y" values="428;440;419;428" dur="1.7s" begin="-0.7s" repeatCount="indefinite"/></rect>
+    <rect x="426" y="440" width="8" height="24" rx="4"><animate attributeName="height" values="24;48;16;24" dur="1.4s" begin="-0.1s" repeatCount="indefinite"/><animate attributeName="y" values="440;428;444;440" dur="1.4s" begin="-0.1s" repeatCount="indefinite"/></rect>
+    <rect x="440" y="434" width="8" height="36" rx="4"><animate attributeName="height" values="36;18;52;36" dur="1.6s" begin="-0.6s" repeatCount="indefinite"/><animate attributeName="y" values="434;443;426;434" dur="1.6s" begin="-0.6s" repeatCount="indefinite"/></rect>
+    <rect x="454" y="442" width="8" height="20" rx="4"><animate attributeName="height" values="20;36;14;20" dur="1.3s" begin="-0.3s" repeatCount="indefinite"/><animate attributeName="y" values="442;434;445;442" dur="1.3s" begin="-0.3s" repeatCount="indefinite"/></rect>
+    <rect x="468" y="438" width="8" height="28" rx="4"><animate attributeName="height" values="28;14;40;28" dur="1.55s" begin="-0.45s" repeatCount="indefinite"/><animate attributeName="y" values="438;445;432;438" dur="1.55s" begin="-0.45s" repeatCount="indefinite"/></rect>
+    <rect x="482" y="444" width="8" height="16" rx="4"><animate attributeName="height" values="16;28;12;16" dur="1.45s" begin="-0.15s" repeatCount="indefinite"/><animate attributeName="y" values="444;438;446;444" dur="1.45s" begin="-0.15s" repeatCount="indefinite"/></rect>
+    <rect x="496" y="446" width="8" height="12" rx="4"><animate attributeName="height" values="12;20;10;12" dur="1.35s" begin="-0.25s" repeatCount="indefinite"/><animate attributeName="y" values="446;442;447;446" dur="1.35s" begin="-0.25s" repeatCount="indefinite"/></rect>
+    <rect x="510" y="447" width="8" height="10" rx="4"/>
+    <rect x="524" y="448" width="8" height="8" rx="4"/>
+  </g>
+
+  <!-- words flowing from voice into the notes -->
+  <use href="#flow" fill="none" stroke="#8b7bff" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="4 8"/>
+  <g font-size="12" font-weight="700" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <circle r="5" fill="#f5b544"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#flow"/></animateMotion></circle>
+    <circle r="4" fill="#5b8cff"><animateMotion dur="2.4s" begin="0.8s" repeatCount="indefinite"><mpath href="#flow"/></animateMotion></circle>
+    <circle r="3.5" fill="#ffffff"><animateMotion dur="2.4s" begin="1.6s" repeatCount="indefinite"><mpath href="#flow"/></animateMotion></circle>
+  </g>
+
+  <!-- notes card -->
+  <g filter="url(#shadow)" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <rect x="662" y="78" width="548" height="440" rx="22" fill="url(#card)" stroke="#ffffff" stroke-opacity="0.10"/>
+    <circle cx="694" cy="108" r="6" fill="#ff5f57"/><circle cx="714" cy="108" r="6" fill="#febc2e"/><circle cx="734" cy="108" r="6" fill="#28c840"/>
+    <text x="936" y="113" text-anchor="middle" font-size="14" fill="#8a93b3">Meeting notes · Sprint sync</text>
+    <line x1="662" y1="132" x2="1210" y2="132" stroke="#ffffff" stroke-opacity="0.08"/>
+
+    <text x="694" y="166" font-size="12" font-weight="700" fill="#7f8bb0" letter-spacing="1.5">SUMMARY</text>
+    <rect x="694" y="178" width="470" height="9" rx="4.5" fill="#ffffff" fill-opacity="0.13"/>
+    <rect x="694" y="194" width="400" height="9" rx="4.5" fill="#ffffff" fill-opacity="0.10"/>
+
+    <g>
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.12;0.2;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/>
+      <text x="694" y="236" font-size="12" font-weight="700" fill="#7f8bb0" letter-spacing="1.5">DECISIONS</text>
+      <text x="694" y="262" font-size="17" fill="#e8ebf5"><tspan fill="#3fbf6b" font-weight="700">✓</tspan>  Ship the MVP on Thursday</text>
+      <rect x="944" y="248" width="66" height="20" rx="6" fill="#5b8cff" fill-opacity="0.2"/>
+      <text x="977" y="262" text-anchor="middle" font-size="11" fill="#a9c1ff" font-family="ui-monospace, Menlo, Consolas, monospace">↗ 01:15</text>
+    </g>
+
+    <g>
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.3;0.38;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/>
+      <text x="694" y="304" font-size="12" font-weight="700" fill="#7f8bb0" letter-spacing="1.5">ACTION ITEMS</text>
+      <rect x="694" y="316" width="484" height="38" rx="10" fill="#ffffff" fill-opacity="0.05"/>
+      <text x="710" y="341" font-size="15" font-weight="700" fill="#b9a6ff">Mohammad</text>
+      <text x="812" y="341" font-size="15" fill="#e8ebf5">Deliver the MVP</text>
+      <text x="1162" y="341" text-anchor="end" font-size="14" fill="#ffd796">بكرة → Oct 18</text>
+    </g>
+    <g>
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.45;0.53;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/>
+      <rect x="694" y="362" width="484" height="38" rx="10" fill="#ffffff" fill-opacity="0.05"/>
+      <text x="710" y="387" font-size="15" font-weight="700" fill="#7fd6c4">Lina</text>
+      <text x="812" y="387" font-size="15" fill="#e8ebf5">Finish QA testing</text>
+      <text x="1162" y="387" text-anchor="end" font-size="14" fill="#ffd796">Wednesday → Oct 21</text>
+    </g>
+    <g>
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.6;0.68;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/>
+      <text x="694" y="436" font-size="12" font-weight="700" fill="#7f8bb0" letter-spacing="1.5">OPEN QUESTION</text>
+      <text x="694" y="462" font-size="16" fill="#e8ebf5">Who updates the client?</text>
+    </g>
+    <text x="694" y="500" font-size="13" fill="#3fbf6b" font-weight="600">🔒 Generated locally</text>
+  </g>
+
+  <!-- coming next: voice -> slide -->
+  <g filter="url(#shadow)" font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <rect x="938" y="440" width="300" height="168" rx="18" fill="#0f1530" stroke="#f5b544" stroke-opacity="0.45"/>
+    <text x="958" y="470" font-size="13" fill="#ffd796" font-weight="600">“Show me gold this year” → slide</text>
+    <line x1="958" y1="584" x2="1218" y2="584" stroke="#ffffff" stroke-opacity="0.15"/>
+    <g fill="url(#ink)">
+      <rect x="966" y="560" width="22" height="24" rx="4"><animate attributeName="height" values="0;24;24;0" keyTimes="0;0.15;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;560;560;584" keyTimes="0;0.15;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+      <rect x="998" y="550" width="22" height="34" rx="4"><animate attributeName="height" values="0;0;34;34;0" keyTimes="0;0.1;0.25;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;584;550;550;584" keyTimes="0;0.1;0.25;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+      <rect x="1030" y="556" width="22" height="28" rx="4"><animate attributeName="height" values="0;0;28;28;0" keyTimes="0;0.2;0.35;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;584;556;556;584" keyTimes="0;0.2;0.35;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+      <rect x="1062" y="536" width="22" height="48" rx="4"><animate attributeName="height" values="0;0;48;48;0" keyTimes="0;0.3;0.45;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;584;536;536;584" keyTimes="0;0.3;0.45;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+      <rect x="1094" y="524" width="22" height="60" rx="4"><animate attributeName="height" values="0;0;60;60;0" keyTimes="0;0.4;0.55;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;584;524;524;584" keyTimes="0;0.4;0.55;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+      <rect x="1126" y="508" width="22" height="76" rx="4"><animate attributeName="height" values="0;0;76;76;0" keyTimes="0;0.5;0.65;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;584;508;508;584" keyTimes="0;0.5;0.65;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+      <rect x="1158" y="492" width="22" height="92" rx="4"><animate attributeName="height" values="0;0;92;92;0" keyTimes="0;0.6;0.75;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/><animate attributeName="y" values="584;584;492;492;584" keyTimes="0;0.6;0.75;0.92;1" dur="9s" begin="-6.6s" repeatCount="indefinite"/></rect>
+    </g>
+    <text x="1218" y="600" text-anchor="end" font-size="11" fill="#7f8bb0">coming next</text>
+  </g>
+</svg>

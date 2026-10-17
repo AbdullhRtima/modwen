@@ -1,0 +1,62 @@
+# Modwen configuration. Copy to config.yaml (next to where you run `modwen`) or create the
+# OS-default file with `uv run modwen init-config`. Every key is optional; defaults are shown.
+
+app:
+  ui_host: 127.0.0.1          # loopback only (enforced)
+  ui_port: 8765
+  open_browser: true
+
+capture:
+  sources: [mic, system]      # in-person meetings use the mic only
+  mic_device: null            # null = system default; or part of the device name, e.g. "MacBook Pro Microphone"
+  system_backend: auto        # auto | coreaudio_tap (macOS 14.2+) | wasapi (Windows) | pulse (Linux) | device | none
+  system_device: null         # with system_backend: device, e.g. "BlackHole 2ch"
+  chunk_seconds: 30
+  max_hours: 4                # safety stop
+  warn_hours: 3
+  min_free_gb: 2
+
+stt:
+  meeting_language: auto      # auto | en | ar  (the Start dialog can override per meeting)
+  final: {model: auto, backend: auto}   # auto = chosen by hardware tier (see `uv run modwen doctor`)
+  live:  {model: auto, backend: auto, beam_size: 1}   # provider: none disables live captions
+  arabic_threshold: 0.2
+  glossary: []                # names and product terms, e.g. ["Modwen", "Ahmed", "Sara", "أحمد"]
+  vad: auto                   # auto | silero | energy
+
+diarization:
+  provider: auto              # auto | pyannote | none   (pyannote needs: uv sync --extra diarization)
+  hf_token: "keychain:huggingface"   # only used once to download the pyannote model
+
+llm:
+  active: local_qwen          # switch providers by changing this name only
+  fallback: [ollama_qwen]
+  profiles:
+    local_qwen:               # llama.cpp llama-server (see docs/local-llm-setup.md)
+      base_url: http://localhost:8080/v1
+      api_key: sk-local
+      model: qwen3-8b         # must match llama-server --alias
+      context_window: 16384   # must match llama-server -c
+      structured_output: json_schema
+      temperature: 0.3
+      extra_body: {chat_template_kwargs: {enable_thinking: false}}
+    ollama_qwen:              # Ollama
+      base_url: http://localhost:11434/v1
+      api_key: ollama
+      model: qwen3:8b         # exact Ollama tag
+      context_window: 16384   # must match OLLAMA_CONTEXT_LENGTH
+      no_think_suffix: true
+
+notes:
+  summary_language: en        # en | ar | both
+  timezone: system            # deadlines resolve in your OS timezone; or e.g. Asia/Riyadh
+  chunk_minutes: 15           # long meetings are summarized in parts, then merged
+
+notify:
+  desktop: true               # "Notes ready" notification when the AI model finishes
+  sound: true
+
+privacy:
+  allow_cloud: false          # fixed: Modwen refuses non-localhost endpoints
+  offline_models: true
+  keystore: auto              # auto | keyring | file

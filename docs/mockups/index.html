@@ -1,0 +1,1052 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modwen UI Mockups</title>
+<style>
+/* ---------- Design tokens (light) ---------- */
+:root{
+  --bg:#f4f5f7; --surface:#ffffff; --surface-2:#f8f9fb; --surface-3:#eef0f4;
+  --border:#e2e5ea; --border-strong:#cfd4dc;
+  --text:#1b1f27; --text-2:#5b6472; --text-3:#8a93a1;
+  --accent:#2563eb; --accent-soft:#e8efff; --accent-text:#1d4ed8;
+  --rec:#dc2626; --rec-soft:#fde8e8;
+  --warn:#b45309; --warn-soft:#fdf2e1;
+  --ok:#15803d; --ok-soft:#e5f5ea;
+  --hatch:rgba(180,83,9,.10);
+  --sp1:#2563eb; --sp2:#7c3aed; --sp3:#0d9488; --sp4:#c2410c; --sp5:#be185d;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 8px 24px rgba(16,24,40,.08);
+  --radius:10px;
+  --font:"Inter","Segoe UI",-apple-system,BlinkMacSystemFont,"SF Pro Text","IBM Plex Sans Arabic","Geeza Pro","Noto Sans Arabic",Tahoma,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --surface:#171a21; --surface-2:#1c2028; --surface-3:#232833;
+    --border:#2a303c; --border-strong:#38404e;
+    --text:#e8ebf0; --text-2:#a3abb8; --text-3:#717a88;
+    --accent:#5b8cff; --accent-soft:#1c2a4a; --accent-text:#8fb0ff;
+    --rec:#f05252; --rec-soft:#3a1d20; --warn:#f0a43a; --warn-soft:#3a2c17;
+    --ok:#3fbf6b; --ok-soft:#173022; --hatch:rgba(240,164,58,.10);
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --surface:#171a21; --surface-2:#1c2028; --surface-3:#232833;
+  --border:#2a303c; --border-strong:#38404e;
+  --text:#e8ebf0; --text-2:#a3abb8; --text-3:#717a88;
+  --accent:#5b8cff; --accent-soft:#1c2a4a; --accent-text:#8fb0ff;
+  --rec:#f05252; --rec-soft:#3a1d20; --warn:#f0a43a; --warn-soft:#3a2c17;
+  --ok:#3fbf6b; --ok-soft:#173022; --hatch:rgba(240,164,58,.10);
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+
+/* ---------- Page shell ---------- */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 var(--font);padding-inline:16px}
+button{font:inherit;color:inherit}
+.page{max-width:1240px;margin:0 auto;padding-block:20px 60px}
+.topbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:17px}
+.brand small{font-weight:400;color:var(--text-2);font-size:13px}
+.logo{width:26px;height:26px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:#fff;font-size:15px}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.chip-btn{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px}
+.chip-btn[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+.nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:18px;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px}
+.nav .grp{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding-inline-end:10px;margin-inline-end:6px;border-inline-end:1px solid var(--border)}
+.nav .grp:last-child{border:0}
+.nav .grp-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-inline-end:4px}
+.nav button{border:0;background:transparent;padding:6px 10px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--text-2)}
+.nav button:hover{background:var(--surface-3)}
+.nav button[aria-current="true"]{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
+.screen{display:none}
+.screen.active{display:block}
+.screen-head{margin-bottom:14px}
+.screen-head h2{margin:0 0 4px;font-size:20px}
+.screen-head p{margin:0;color:var(--text-2);max-width:820px}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;vertical-align:middle;margin-inline-start:8px}
+.tag.mvp{background:var(--ok-soft);color:var(--ok)}
+.tag.p3{background:var(--warn-soft);color:var(--warn)}
+.notes-list{margin:14px 0 0;padding-inline-start:18px;color:var(--text-2);max-width:900px}
+.notes-list li{margin-bottom:4px}
+.stage{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.stage-label{font-size:12px;color:var(--text-3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+
+/* ---------- Generic UI pieces ---------- */
+.win{background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;width:100%}
+.win-bar{height:36px;display:flex;align-items:center;gap:8px;padding-inline:12px;background:var(--surface-2);border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-2)}
+.dots{display:flex;gap:6px;margin-inline-end:8px}
+.dots i{width:11px;height:11px;border-radius:50%;background:#ff5f57;display:block}
+.dots i:nth-child(2){background:#febc2e}.dots i:nth-child(3){background:#28c840}
+.win-bar .url{flex:1;text-align:center;font-family:var(--mono);font-size:11.5px;color:var(--text-3)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border-strong);background:var(--surface);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px;white-space:nowrap}
+.btn:hover{background:var(--surface-3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.danger{background:var(--rec);border-color:var(--rec);color:#fff}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.sm{padding:3px 9px;font-size:12px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--surface-3);color:var(--text-2);white-space:nowrap}
+.badge.rec{background:var(--rec-soft);color:var(--rec)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.acc{background:var(--accent-soft);color:var(--accent-text)}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block}
+.dot.pulse{animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.muted{color:var(--text-2)}.faint{color:var(--text-3)}
+.field{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center;margin-bottom:12px}
+.field label{color:var(--text-2);font-size:13px}
+.input,.select{border:1px solid var(--border-strong);background:var(--surface);border-radius:8px;padding:6px 10px;font-size:13px;width:100%;color:var(--text)}
+.select{display:flex;justify-content:space-between;align-items:center}
+.select::after{content:"▾";color:var(--text-3);margin-inline-start:8px}
+.check{display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:6px}
+.box{width:16px;height:16px;border:1.5px solid var(--border-strong);border-radius:4px;display:inline-grid;place-items:center;font-size:11px;flex:none}
+.box.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.radio{width:16px;height:16px;border:1.5px solid var(--border-strong);border-radius:50%;display:inline-block;flex:none;position:relative}
+.radio.on{border-color:var(--accent)}
+.radio.on::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--accent)}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:4px 11px;font-size:12.5px;cursor:pointer;border-inline-end:1px solid var(--border)}
+.seg button:last-child{border-inline-end:0}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px}
+.progress{height:6px;background:var(--surface-3);border-radius:999px;overflow:hidden}
+.progress > i{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .6s}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:5px;padding:0 5px;color:var(--text-2)}
+.sp{font-weight:600}
+.sp-you{color:var(--sp1)}.sp-ahmed{color:var(--sp2)}.sp-sara{color:var(--sp3)}.sp-omar{color:var(--sp4)}.sp-unk{color:var(--sp5)}
+.ts{font-family:var(--mono);font-size:11.5px;color:var(--text-3);direction:ltr;unicode-bidi:isolate}
+.lock{display:inline-flex;gap:6px;align-items:center;font-size:12.5px;color:var(--ok);font-weight:600}
+
+/* ---------- Tray menu ---------- */
+.menubar{width:340px;max-width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px 10px 0 0;padding:4px 10px;display:flex;justify-content:flex-end;gap:14px;font-size:12px;color:var(--text-2)}
+.tray-icon{display:inline-flex;align-items:center;gap:4px;font-weight:600;color:var(--text)}
+.tray-icon .bird{width:16px;height:16px;border-radius:5px;display:grid;place-items:center;font-size:10px;color:#fff;background:var(--text-3)}
+.tray-icon.rec .bird{background:var(--rec)}
+.menu{width:340px;max-width:100%;background:var(--surface);border:1px solid var(--border);border-top:0;border-radius:0 0 10px 10px;box-shadow:var(--shadow);padding:6px;font-size:13px}
+.menu .mi{display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-radius:6px;gap:10px}
+.menu .mi:hover{background:var(--accent);color:#fff}
+.menu .mi:hover .faint,.menu .mi:hover .kbd{color:#fff;border-color:#fff}
+.menu hr{border:0;border-top:1px solid var(--border);margin:5px 4px}
+.menu .head{padding:6px 10px;font-weight:650;display:flex;gap:8px;align-items:center}
+
+/* ---------- Dialog ---------- */
+.dialog{max-width:560px}
+.dialog .win-body{padding:18px 20px}
+.consent{border:1px solid var(--border);background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-top:6px}
+.consent p{margin:0 0 10px;font-size:13px}
+.notice{font-size:12.5px;background:var(--surface);border:1px dashed var(--border-strong);border-radius:8px;padding:8px 10px;margin-bottom:8px;color:var(--text-2)}
+.warnline{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--warn);background:var(--warn-soft);padding:6px 10px;border-radius:8px;margin-bottom:12px}
+.dialog-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+
+/* ---------- Recording pill ---------- */
+.pill{width:420px;max-width:100%;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:10px 14px;display:grid;gap:8px}
+.pill.warn{border-color:var(--warn);box-shadow:0 0 0 3px var(--warn-soft),var(--shadow)}
+.pill-row{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.timer{font-family:var(--mono);font-weight:600;font-size:15px}
+.meter{display:inline-flex;align-items:flex-end;gap:2px;height:16px}
+.meter i{width:3px;background:var(--accent);border-radius:2px;animation:lvl 1s infinite ease-in-out}
+.meter.others i{background:var(--sp3)}
+.meter.dead i{background:var(--text-3);animation:none;height:3px!important}
+.meter i:nth-child(1){animation-delay:-.2s}.meter i:nth-child(2){animation-delay:-.5s}.meter i:nth-child(3){animation-delay:-.1s}.meter i:nth-child(4){animation-delay:-.7s}.meter i:nth-child(5){animation-delay:-.35s}
+@keyframes lvl{0%,100%{height:4px}50%{height:15px}}
+.meter-lbl{font-size:11.5px;color:var(--text-2);display:inline-flex;gap:6px;align-items:center}
+.iconbtn{width:30px;height:30px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);display:inline-grid;place-items:center;cursor:pointer;font-size:12px}
+.iconbtn.stop{background:var(--rec);border-color:var(--rec);color:#fff;width:auto;padding-inline:10px;gap:6px;display:inline-flex;align-items:center}
+
+/* ---------- App layout ---------- */
+.app{display:grid;grid-template-columns:190px 1fr;min-height:560px}
+.side{border-inline-end:1px solid var(--border);background:var(--surface-2);padding:12px 10px;display:flex;flex-direction:column;gap:4px}
+.side .start{margin-bottom:10px;justify-content:center}
+.side a{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;color:var(--text-2);text-decoration:none;font-size:13.5px;cursor:pointer}
+.side a.on{background:var(--surface);color:var(--text);font-weight:600;box-shadow:inset 0 0 0 1px var(--border)}
+.side .spacer{flex:1}
+.side .status{font-size:11.5px;color:var(--text-3);padding:8px 10px;border-top:1px solid var(--border)}
+.main{padding:18px 20px;min-width:0}
+.main-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.main-head h3{margin:0;font-size:17px}
+.search{border:1px solid var(--border-strong);border-radius:8px;padding:6px 10px;min-width:220px;color:var(--text-3);font-size:13px;background:var(--surface)}
+.section-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:18px 0 8px;font-weight:600}
+.mrow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--surface)}
+.mrow.hl{border-color:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.mrow .t{font-weight:600}
+.mrow .meta{font-size:12.5px;color:var(--text-2);display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:3px}
+
+/* ---------- Live transcript ---------- */
+.live{max-height:420px;overflow:auto;padding:6px 4px}
+.tline{display:grid;grid-template-columns:70px 70px 1fr;gap:10px;padding:7px 8px;border-radius:8px;align-items:baseline}
+.tline .txt{unicode-bidi:plaintext}
+.tline.draft .txt{color:var(--text-3);font-style:italic}
+.typing::after{content:"▍";animation:pulse 1s infinite;margin-inline-start:2px;color:var(--accent)}
+.live-foot{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid var(--border);padding-top:12px;margin-top:8px;flex-wrap:wrap}
+.banner{display:flex;gap:8px;align-items:center;padding:8px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px}
+.banner.warn{background:var(--warn-soft);color:var(--warn)}
+.banner.info{background:var(--accent-soft);color:var(--accent-text)}
+
+/* ---------- Processing ---------- */
+.steps{display:grid;gap:14px;max-width:560px}
+.step{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center}
+.step .ic{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;border:1.5px solid var(--border-strong);color:var(--text-3)}
+.step.done .ic{background:var(--ok);border-color:var(--ok);color:#fff}
+.step.run .ic{border-color:var(--accent);border-top-color:transparent;animation:spin 1s linear infinite}
+.step.fail .ic{background:var(--rec);border-color:var(--rec);color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+.step .sub{font-size:12px;color:var(--text-2)}
+
+/* ---------- Notifications ---------- */
+.toast-mac{width:360px;max-width:100%;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:12px 14px;display:grid;grid-template-columns:36px 1fr;gap:10px}
+.toast-win{width:380px;max-width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:14px 16px}
+.appicon{width:36px;height:36px;border-radius:9px;background:var(--accent);display:grid;place-items:center;color:#fff;font-size:18px}
+.toast-title{font-weight:650;font-size:13.5px}
+.toast-body{font-size:13px;color:var(--text-2)}
+.toast-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.toast-win .src{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2);margin-bottom:8px}
+.toast-win .src .appicon{width:18px;height:18px;border-radius:4px;font-size:10px}
+
+/* ---------- Review ---------- */
+.review-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:12px}
+.review-head h3{margin:0;font-size:17px}
+.review-head .meta{font-size:12.5px;color:var(--text-2);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.review{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:14px;position:relative}
+.pane{border:1px solid var(--border);border-radius:10px;background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.pane-h{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;color:var(--text-2);gap:8px;flex-wrap:wrap}
+.pane-b{padding:12px 14px;overflow:auto;max-height:560px}
+.notes h4{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin:16px 0 6px}
+.notes h4:first-child{margin-top:0}
+.notes p{margin:0 0 6px}
+.item{padding:6px 8px;border-radius:8px;margin:0 -8px 2px}
+.item:hover{background:var(--surface-2)}
+.item.lit{background:var(--accent-soft)}
+.orig{display:block;font-size:12.5px;color:var(--text-3);unicode-bidi:plaintext;margin-top:2px}
+.ev{font-family:var(--mono);font-size:11px;color:var(--accent-text);background:var(--accent-soft);border:0;border-radius:6px;padding:1px 6px;cursor:pointer;margin-inline-start:6px;direction:ltr}
+.ev:hover{outline:1px solid var(--accent)}
+.atable{width:100%;border-collapse:collapse;font-size:13px}
+.atable th{text-align:start;font-size:11.5px;color:var(--text-3);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--border)}
+.atable td{padding:6px;border-bottom:1px solid var(--border);vertical-align:top}
+.owner{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border-strong);border-radius:6px;padding:1px 7px;font-size:12.5px;white-space:nowrap}
+.owner.missing{border-color:var(--warn);color:var(--warn)}
+.said{display:block;font-size:11.5px;color:var(--text-3)}
+.tr-line{display:grid;grid-template-columns:62px 1fr;gap:4px 10px;padding:7px 8px;border-radius:8px;margin:0 -8px;cursor:pointer}
+.tr-line:hover{background:var(--surface-2)}
+.tr-line .who{display:flex;gap:6px;align-items:center;font-size:12.5px;flex-wrap:wrap}
+.tr-line .txt{grid-column:2;unicode-bidi:plaintext}
+.tr-line.lit{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+[dir="rtl"] .tr-line.lit{box-shadow:inset -3px 0 0 var(--accent)}
+.tr-line.overlap{background:repeating-linear-gradient(135deg,var(--hatch) 0 6px,transparent 6px 12px)}
+.conf{font-size:11px;color:var(--text-3)}
+.player{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border)}
+.scrub{flex:1;height:4px;background:var(--surface-3);border-radius:999px;position:relative}
+.scrub i{position:absolute;inset-block:0;inset-inline-start:0;width:17%;background:var(--accent);border-radius:999px}
+.scrub b{position:absolute;top:50%;inset-inline-start:17%;width:12px;height:12px;border-radius:50%;background:var(--accent);transform:translate(-50%,-50%)}
+.warnbar{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;padding:8px 12px;border-radius:8px;background:var(--warn-soft);color:var(--warn);font-size:12.5px;flex-wrap:wrap}
+.dropdown{position:relative;display:inline-block}
+.dropdown .menu-pop{position:absolute;inset-inline-end:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:5px;min-width:230px;z-index:5;display:none}
+.dropdown.open .menu-pop{display:block}
+.menu-pop div{padding:6px 10px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;gap:12px;cursor:pointer}
+.menu-pop div:hover{background:var(--surface-3)}
+.drawer{position:absolute;inset-block:0;inset-inline-end:0;width:min(360px,100%);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:14px;transform:translateX(110%);transition:transform .25s;z-index:6;overflow:auto}
+[dir="rtl"] .drawer{transform:translateX(-110%)}
+.drawer.open{transform:none!important}
+.drawer h4{margin:0 0 12px;display:flex;justify-content:space-between;align-items:center}
+.spk{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.spk .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.spk .sub{font-size:12px;color:var(--text-2)}
+.copied{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.copied.show{opacity:1}
+
+/* ---------- Settings ---------- */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px;overflow-x:auto}
+.tabs span{padding:8px 12px;font-size:13px;color:var(--text-2);border-bottom:2px solid transparent;white-space:nowrap}
+.tabs span.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
+.ptable{width:100%;border-collapse:collapse;font-size:13px}
+.ptable td,.ptable th{padding:9px 8px;border-bottom:1px solid var(--border);text-align:start}
+.ptable th{font-size:11.5px;color:var(--text-3);font-weight:600}
+.ptable code{font-family:var(--mono);font-size:12px;color:var(--text-2)}
+.testout{font-size:12.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px}
+.testout .rtl{unicode-bidi:plaintext;display:block;margin-top:4px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+
+/* ---------- Onboarding ---------- */
+.wizard{max-width:720px}
+.wsteps{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.wsteps span{flex:1;min-width:110px;font-size:12px;color:var(--text-3);border-top:3px solid var(--surface-3);padding-top:6px}
+.wsteps span.done{border-color:var(--ok);color:var(--text-2)}
+.wsteps span.on{border-color:var(--accent);color:var(--text);font-weight:600}
+.tier{display:flex;gap:14px;align-items:center;padding:14px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;margin-bottom:14px}
+.tier .big{font-size:30px;font-weight:700;color:var(--accent-text);width:54px;text-align:center}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:13px}
+.kv dt{color:var(--text-2)}.kv dd{margin:0}
+.codeblock{font-family:var(--mono);font-size:12px;background:var(--surface-3);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre;color:var(--text)}
+
+/* ---------- Send (Phase 3) ---------- */
+.rcpt{display:flex;flex-wrap:wrap;gap:6px;border:1px solid var(--border-strong);border-radius:8px;padding:5px 6px;background:var(--surface)}
+.rcpt span{font-size:12.5px;background:var(--surface-3);border-radius:6px;padding:2px 8px}
+.rcpt span.ext{background:var(--warn-soft);color:var(--warn)}
+.email-prev{border:1px solid var(--border);border-radius:10px;padding:16px;background:var(--surface-2);font-size:13px}
+.email-prev .ar{direction:rtl;text-align:right;border-top:1px dashed var(--border-strong);margin-top:12px;padding-top:12px}
+
+/* ---------- Responsive ---------- */
+@media (max-width:900px){
+  .review{grid-template-columns:1fr}
+  .app{grid-template-columns:1fr}
+  .side{flex-direction:row;flex-wrap:wrap;border-inline-end:0;border-bottom:1px solid var(--border)}
+  .side .spacer,.side .status{display:none}
+  .side .start{margin-bottom:0}
+}
+@media (max-width:560px){
+  .field{grid-template-columns:1fr}
+  .tline{grid-template-columns:60px 1fr}
+  .tline .who{grid-column:1}
+  .tline .txt{grid-column:1 / -1}
+  .kv{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="topbar">
+    <div class="brand"><span class="logo">م</span> Modwen UI mockups <small>v0.1 · 2026-10-16 · matches <code>docs/ui-design.md</code></small></div>
+    <div class="controls">
+      <button class="chip-btn" id="themeBtn" aria-pressed="false">Dark theme</button>
+      <button class="chip-btn" id="rtlBtn" aria-pressed="false">Preview RTL layout (Arabic UI)</button>
+    </div>
+  </div>
+
+  <nav class="nav" aria-label="Screens">
+    <div class="grp"><span class="grp-label">Recording</span>
+      <button data-go="tray">Tray menu</button>
+      <button data-go="start">Start dialog</button>
+      <button data-go="pill">Recording pill</button>
+      <button data-go="live">Live transcript</button>
+    </div>
+    <div class="grp"><span class="grp-label">After the meeting</span>
+      <button data-go="processing">Processing</button>
+      <button data-go="notify">Notes ready</button>
+      <button data-go="home">Meetings home</button>
+      <button data-go="review">Meeting review</button>
+    </div>
+    <div class="grp"><span class="grp-label">Setup</span>
+      <button data-go="settings">Settings · AI model</button>
+      <button data-go="people">People &amp; voices</button>
+      <button data-go="onboarding">Onboarding</button>
+    </div>
+    <div class="grp"><span class="grp-label">Later</span>
+      <button data-go="send">Send email <span class="tag p3" style="margin:0">P3</span></button>
+    </div>
+  </nav>
+
+  <!-- ================= TRAY ================= -->
+  <section class="screen" id="tray">
+    <div class="screen-head">
+      <h2>Tray / menu-bar menu <span class="tag mvp">MVP</span></h2>
+      <p>The tray menu is the one-click entry point. It shows Modwen's state at a glance, and you can start or stop without opening a window.</p>
+    </div>
+    <div class="stage">
+      <div>
+        <div class="stage-label">Idle · notes waiting</div>
+        <div class="menubar"><span>Wi-Fi</span><span class="tray-icon"><span class="bird">م</span><span class="dot" style="color:var(--ok)"></span></span><span>Thu 16 Oct 14:02</span></div>
+        <div class="menu">
+          <div class="head"><span class="dot" style="color:var(--text-3)"></span> Modwen · idle</div>
+          <hr>
+          <div class="mi"><span>▶&nbsp; Start meeting</span><span class="kbd">⌘⇧B</span></div>
+          <div class="mi"><span>&nbsp;&nbsp;&nbsp; Start in-person meeting</span></div>
+          <hr>
+          <div class="mi"><span><span class="dot" style="color:var(--ok)"></span>&nbsp; Notes ready: Sprint review</span><span class="faint">→</span></div>
+          <hr>
+          <div class="mi"><span>Open Modwen</span></div>
+          <div class="mi"><span>AI model: local_qwen</span><span class="badge ok"><span class="dot"></span>online</span></div>
+          <div class="mi"><span>Settings…</span><span class="faint">⌘,</span></div>
+          <div class="mi"><span>Quit</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="stage-label">Recording</div>
+        <div class="menubar"><span>Wi-Fi</span><span class="tray-icon rec"><span class="bird">م</span><span class="timer" style="font-size:11.5px;color:var(--rec)" data-timer="1421">00:23:41</span></span><span>Thu 16 Oct 10:23</span></div>
+        <div class="menu">
+          <div class="head"><span class="dot pulse" style="color:var(--rec)"></span> Recording · Sprint review</div>
+          <hr>
+          <div class="mi"><span>■&nbsp; Stop meeting <span class="faint timer" data-timer="1421">(00:23:41)</span></span><span class="kbd">⌘⇧B</span></div>
+          <div class="mi"><span>❚❚ Pause</span></div>
+          <div class="mi"><span>★&nbsp; Mark moment</span><span class="kbd">⌘⇧M</span></div>
+          <hr>
+          <div class="mi"><span>Show live transcript</span></div>
+          <div class="mi"><span class="lock">🔒 Local only</span></div>
+        </div>
+      </div>
+    </div>
+    <ul class="notes-list">
+      <li>Icon colours: grey = idle, <b style="color:var(--rec)">red</b> = recording, <b style="color:var(--warn)">amber</b> = processing, <b style="color:var(--ok)">green dot</b> = notes ready and not yet opened.</li>
+      <li>MVP uses <code>pystray</code>; v1 moves to the Tauri tray with the same menu.</li>
+    </ul>
+  </section>
+
+  <!-- ================= START ================= -->
+  <section class="screen" id="start">
+    <div class="screen-head">
+      <h2>Start dialog + consent <span class="tag mvp">MVP</span></h2>
+      <p>This dialog appears on every Start. Pressing Enter accepts the defaults. Start stays disabled until you confirm that participants were told.</p>
+    </div>
+    <div class="win dialog">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">Start meeting</span></div>
+      <div class="win-body">
+        <div class="field"><label>Title</label><div class="input">Sprint review</div></div>
+        <div class="field"><label>Type</label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <span class="check" style="margin:0"><span class="radio on"></span>Online (Meet, Teams)</span>
+            <span class="check" style="margin:0"><span class="radio"></span>In-person</span>
+          </div>
+        </div>
+        <div class="field"><label>Audio</label>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <span class="check" style="margin:0"><span class="box on">✓</span>My mic: MacBook Pro Microphone</span>
+            <span class="check" style="margin:0"><span class="box on">✓</span>System audio</span>
+          </div>
+        </div>
+        <div class="field"><label>Language</label>
+          <div class="seg" role="group" aria-label="Meeting language">
+            <button aria-pressed="true">Auto (Arabic + English)</button><button aria-pressed="false">English only</button><button aria-pressed="false">Arabic only</button>
+          </div>
+        </div>
+        <div class="field"><label>Processing</label><span class="lock">🔒 Local only: nothing leaves this computer</span></div>
+        <div class="warnline" id="btWarn" hidden>⚠ Bluetooth mic lowers accuracy. Use the built-in or a wired mic.</div>
+        <div class="consent">
+          <p><b>Let participants know they're being recorded.</b></p>
+          <div class="notice">Heads-up: I'm using Modwen to record and transcribe this meeting for notes. The audio stays on my machine. Tell me if you'd prefer I stop.</div>
+          <div class="notice" dir="rtl" style="text-align:right">تنبيه: أستخدم أداة Modwen لتسجيل هذا الاجتماع وتفريغه لكتابة المحضر. التسجيل يبقى على جهازي فقط. أخبروني إذا كنتم تفضلون إيقافه.</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <button class="btn sm" data-copy="Consent notice (EN) copied">Copy notice EN</button>
+            <button class="btn sm" data-copy="Consent notice (AR) copied">Copy notice AR</button>
+          </div>
+          <label class="check" style="cursor:pointer;margin:0"><span class="box" id="consentBox"></span>I have informed participants</label>
+        </div>
+        <div class="dialog-foot">
+          <button class="btn ghost sm" id="btToggle">Demo: show Bluetooth warning</button>
+          <div style="display:flex;gap:8px"><button class="btn">Cancel</button><button class="btn danger" id="startBtn" disabled>● Start</button></div>
+        </div>
+      </div>
+    </div>
+    <ul class="notes-list">
+      <li>Tick the consent box to enable Start. In this mockup, clicking the box toggles it.</li>
+      <li>Language: <b>Auto</b> for mixed meetings. Use <b>English only</b> or <b>Arabic only</b> when you know the meeting is in one language; it's slightly more accurate and faster.</li>
+      <li>There is no cloud option. The local-only status is a label, not a toggle.</li>
+    </ul>
+  </section>
+
+  <!-- ================= PILL ================= -->
+  <section class="screen" id="pill">
+    <div class="screen-head">
+      <h2>Recording pill <span class="tag mvp">MVP</span></h2>
+      <p>A small floating window that stays on top. With two level meters you can see at a glance that both your mic and the meeting audio are being captured.</p>
+    </div>
+    <div class="stage">
+      <div>
+        <div class="stage-label">Normal</div>
+        <div class="pill">
+          <div class="pill-row">
+            <span style="display:flex;gap:8px;align-items:center"><span class="badge rec"><span class="dot pulse"></span>REC</span><span class="timer" data-timer="1421">00:23:41</span></span>
+            <span class="meter-lbl">You <span class="meter"><i></i><i></i><i></i><i></i><i></i></span></span>
+            <span class="meter-lbl">Others <span class="meter others"><i></i><i></i><i></i><i></i><i></i></span></span>
+          </div>
+          <div class="pill-row">
+            <span class="lock">🔒 Local only</span>
+            <span style="display:flex;gap:6px">
+              <button class="iconbtn" title="Mark moment">★</button>
+              <button class="iconbtn" title="Pause">❚❚</button>
+              <button class="iconbtn stop">■ Stop</button>
+              <button class="iconbtn" title="Expand to live transcript" data-go="live">⤢</button>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="stage-label">Warning: no system audio for 60 s</div>
+        <div class="pill warn">
+          <div class="pill-row">
+            <span style="display:flex;gap:8px;align-items:center"><span class="badge rec"><span class="dot pulse"></span>REC</span><span class="timer" data-timer="185">00:03:05</span></span>
+            <span class="meter-lbl">You <span class="meter"><i></i><i></i><i></i><i></i><i></i></span></span>
+            <span class="meter-lbl">Others <span class="meter dead"><i></i><i></i><i></i><i></i><i></i></span></span>
+          </div>
+          <div class="pill-row">
+            <span class="badge warn">⚠ No system audio for 60 s. Is the meeting muted?</span>
+            <span style="display:flex;gap:6px"><button class="iconbtn stop">■ Stop</button></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <ul class="notes-list">
+      <li>It can be dragged and remembers its position. ⤢ opens the live transcript.</li>
+      <li>★ Mark moment (<span class="kbd">⌘⇧M</span>) adds a bookmark that the notes treat as important.</li>
+    </ul>
+  </section>
+
+  <!-- ================= LIVE ================= -->
+  <section class="screen" id="live">
+    <div class="screen-head">
+      <h2>Live transcript <span class="tag mvp">MVP · kept simple</span></h2>
+      <p>One scrolling list with "You / Others" labels only. Real names appear after processing. Live text is never sent to the AI model.</p>
+    </div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/live</span></div>
+      <div class="main">
+        <div class="main-head">
+          <h3>Sprint review <span class="badge rec" style="margin-inline-start:6px"><span class="dot pulse"></span><span class="timer" data-timer="1421">00:23:41</span></span> <span class="lock" style="margin-inline-start:6px">🔒 Local only</span></h3>
+          <div style="display:flex;gap:6px"><button class="btn">❚❚ Pause</button><button class="btn danger">■ Stop</button></div>
+        </div>
+        <div class="banner info" id="liveBanner">ℹ Live text is a quick draft. The accurate transcript, with names, is made after you stop.</div>
+        <div class="live" id="liveList">
+          <div class="tline"><span class="ts">00:20:41</span><span class="sp sp-you">You</span><span class="txt">OK, let's go through the release checklist.</span></div>
+          <div class="tline"><span class="ts">00:20:52</span><span class="sp sp-sara">Others</span><span class="txt">الـ checklist جاهزة، فاضل بس الـ sign-off من الـ security team.</span></div>
+          <div class="tline"><span class="ts">00:21:10</span><span class="sp sp-you">You</span><span class="txt">So the release is Thursday, right?</span></div>
+          <div class="tline"><span class="ts">00:21:14</span><span class="sp sp-sara">Others</span><span class="txt">أيوه، بس محتاجين الـ QA يخلص قبلها.</span></div>
+          <div class="tline"><span class="ts">00:21:20</span><span class="sp sp-sara">Others</span><span class="txt">I'll take the regression tests.</span></div>
+          <div class="tline draft"><span class="ts">00:21:31</span><span class="sp sp-you">You</span><span class="txt typing">Great, and who's updating the client on</span></div>
+        </div>
+        <div class="live-foot">
+          <button class="btn">★ Mark moment <span class="kbd">⌘⇧M</span></button>
+          <span class="faint" style="font-size:12.5px">Auto-scroll pauses when you scroll up · <a href="#" style="color:var(--accent-text)">Jump to latest</a></span>
+          <button class="btn ghost sm" id="liveLagBtn">Demo: machine falls behind</button>
+        </div>
+      </div>
+    </div>
+    <ul class="notes-list">
+      <li>Grey italic = text still being transcribed. For 2+ hour meetings, about 500 lines stay on screen and older lines load as you scroll up.</li>
+      <li>If the machine falls behind, a banner appears: "Live transcript paused, recording continues". Recording is never affected.</li>
+    </ul>
+  </section>
+
+  <!-- ================= PROCESSING ================= -->
+  <section class="screen" id="processing">
+    <div class="screen-head">
+      <h2>Processing <span class="tag mvp">MVP</span></h2>
+      <p>This screen appears after Stop. You can close it; a notification arrives when the AI model finishes. Long meetings show progress through each part of the notes.</p>
+    </div>
+    <div class="win" style="max-width:720px">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/meetings/sprint-review</span></div>
+      <div class="main">
+        <div class="main-head"><h3>Sprint review · processing</h3><span class="badge warn"><span class="dot pulse"></span>Processing</span></div>
+        <div class="steps">
+          <div class="step done"><span class="ic">✓</span><div>Audio saved<div class="sub">2h 05m · 2 channels · 46 MB, encrypted</div></div><span></span></div>
+          <div class="step run" id="stTrans"><span class="ic"></span><div>Transcribing (Whisper large-v3, Tier C)<div class="progress" style="margin-top:6px"><i id="pTrans" style="width:68%"></i></div></div><span class="faint" id="pTransTxt">68%</span></div>
+          <div class="step" id="stSpk"><span class="ic">2</span><div>Identifying speakers<div class="sub">pyannote · 4 voices expected</div></div><span></span></div>
+          <div class="step" id="stNotes"><span class="ic">3</span><div>Writing notes (local_qwen · qwen3-30b-a3b)<div class="sub" id="notesSub">part 0 of 9</div></div><span></span></div>
+        </div>
+        <p class="muted" style="margin-top:18px">About <b id="eta">14 min</b> left. You can close this window; you'll get a notification.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" id="simBtn">▶ Simulate to the end</button>
+          <button class="btn ghost" id="failBtn">Demo: show failure</button>
+        </div>
+        <div class="banner warn" id="failBanner" hidden style="margin-top:14px">✕ Writing notes failed at part 4 of 9 (AI model offline). The transcript is saved. &nbsp;<button class="btn sm">Retry from part 4</button>&nbsp;<button class="btn sm">Switch profile ▾</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= NOTIFY ================= -->
+  <section class="screen" id="notify">
+    <div class="screen-head">
+      <h2>"Notes ready" notification <span class="tag mvp">MVP</span></h2>
+      <p>A native OS notification fires as soon as the AI model finishes. This is the only alert. Email comes in Phase 3.</p>
+    </div>
+    <div class="stage">
+      <div>
+        <div class="stage-label">macOS · Notification Center</div>
+        <div class="toast-mac">
+          <span class="appicon">م</span>
+          <div>
+            <div style="display:flex;justify-content:space-between;gap:8px"><span class="toast-title">Notes ready: Sprint review</span><span class="faint" style="font-size:12px">now</span></div>
+            <div class="toast-body">2h 05m · 3 decisions · 5 action items</div>
+            <div class="toast-actions"><button class="btn sm" data-go="review">Open</button><button class="btn sm" data-copy="Notes copied as Markdown">Copy notes</button></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="stage-label">Windows · toast</div>
+        <div class="toast-win">
+          <div class="src"><span class="appicon">م</span>Modwen</div>
+          <div class="toast-title">Notes ready: Sprint review</div>
+          <div class="toast-body">2h 05m · 3 decisions · 5 action items</div>
+          <div class="toast-actions"><button class="btn sm primary" data-go="review">Open</button><button class="btn sm" data-copy="Notes copied as Markdown">Copy notes</button></div>
+        </div>
+      </div>
+      <div>
+        <div class="stage-label">Failure</div>
+        <div class="toast-win">
+          <div class="src"><span class="appicon" style="background:var(--rec)">م</span>Modwen</div>
+          <div class="toast-title">Notes failed: Sprint review</div>
+          <div class="toast-body">The transcript is saved. The AI model at localhost:8080 isn't responding.</div>
+          <div class="toast-actions"><button class="btn sm primary">Retry</button><button class="btn sm" data-go="settings">Settings</button></div>
+        </div>
+      </div>
+    </div>
+    <ul class="notes-list">
+      <li><b>Open</b> goes to Meeting review. <b>Copy notes</b> puts the notes on the clipboard as Markdown, ready to paste into Gmail, Teams chat or Docs.</li>
+      <li>The tray icon keeps a green dot until the notes are opened.</li>
+    </ul>
+  </section>
+
+  <!-- ================= HOME ================= -->
+  <section class="screen" id="home">
+    <div class="screen-head">
+      <h2>Meetings home <span class="tag mvp">MVP</span></h2>
+      <p>Meetings that need action come first. The status chips match the meeting states: Recording, Processing, Notes ready, Failed, Discarded.</p>
+    </div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/</span></div>
+      <div class="app">
+        <aside class="side">
+          <button class="btn danger start" data-go="start">● Start meeting</button>
+          <a class="on">▤ Meetings</a>
+          <a data-go="people">☺ People &amp; voices</a>
+          <a data-go="settings">⚙ Settings</a>
+          <span class="spacer"></span>
+          <div class="status">🔒 Local only<br>Tier C · local_qwen <span style="color:var(--ok)">●</span></div>
+        </aside>
+        <div class="main">
+          <div class="main-head"><h3>Meetings</h3><div class="search">⌕ Search meetings…</div></div>
+          <div class="section-title">Needs attention (2)</div>
+          <div class="mrow hl">
+            <div><div class="t">Sprint review</div><div class="meta">Today 10:00 · 2h 05m · <span class="badge acc">AR + EN</span> · 4 people · 5 action items</div></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge ok"><span class="dot"></span>Notes ready</span><button class="btn primary sm" data-go="review">Review →</button></div>
+          </div>
+          <div class="mrow">
+            <div><div class="t">Vendor sync (Teams)</div><div class="meta">Today 13:00 · 48 min · <span class="badge acc">EN</span></div></div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge warn"><span class="dot pulse"></span>Processing 40%</span></div>
+          </div>
+          <div class="section-title">Recent</div>
+          <div class="mrow">
+            <div><div class="t">Client call: Acme</div><div class="meta">Yesterday · 1h 12m · <span class="badge acc">AR</span> · 3 people</div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge">Opened</span><button class="btn sm">Open</button></div>
+          </div>
+          <div class="mrow">
+            <div><div class="t">Architecture review</div><div class="meta">Mon · 2h 40m · <span class="badge acc">AR + EN</span> · 6 people</div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge rec">Failed: retry</span><button class="btn sm">Retry</button></div>
+          </div>
+          <div class="mrow">
+            <div><div class="t">1:1 with Sara</div><div class="meta">Mon · 25 min · <span class="badge acc">EN</span></div></div>
+            <div style="display:flex;gap:8px;align-items:center"><span class="badge">Discarded</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REVIEW ================= -->
+  <section class="screen" id="review">
+    <div class="screen-head">
+      <h2>Meeting review (main screen) <span class="tag mvp">MVP</span></h2>
+      <p>Notes on the left, transcript on the right, linked both ways. Try these: click a <span class="ev" style="cursor:default">↗ 00:21:10</span> chip, switch the summary language, open <b>Speakers</b>, or use <b>Copy ▾</b>.</p>
+    </div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/meetings/sprint-review</span></div>
+      <div class="main">
+        <div class="review-head">
+          <div>
+            <h3>Sprint review</h3>
+            <div class="meta">Today 10:00 · 2h 05m · Google Meet · <span class="badge acc">AR + EN</span> <span class="lock">🔒 Local only</span></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <span class="muted" style="font-size:12.5px">Summary</span>
+            <div class="seg" id="langSeg" role="group" aria-label="Summary language">
+              <button aria-pressed="true" data-lang="en">EN</button><button aria-pressed="false" data-lang="ar">AR</button><button aria-pressed="false" data-lang="both">Both</button>
+            </div>
+            <button class="btn" id="spkBtn">☺ Speakers</button>
+            <div class="dropdown" id="regenDd"><button class="btn">↻ Regenerate ▾</button>
+              <div class="menu-pop"><div>Whole notes</div><div>Summary only</div><div>Use another AI profile ›</div><div class="faint">Keeps your manual edits</div></div>
+            </div>
+            <div class="dropdown" id="copyDd"><button class="btn primary">Copy ▾</button>
+              <div class="menu-pop">
+                <div data-copy="Notes copied as Markdown">Copy as Markdown <span class="kbd">⌘⇧C</span></div>
+                <div data-copy="Action items copied">Copy action items only</div>
+                <div data-copy="Saved sprint-review-2026-10-16.md">Export .md file</div>
+                <div class="faint">Send email: Phase 3</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="review">
+          <!-- Notes pane -->
+          <div class="pane">
+            <div class="pane-h"><span>Notes · editable · v1 · qwen3-30b-a3b</span><span class="faint">Click any text to edit</span></div>
+            <div class="pane-b notes">
+              <h4>Summary</h4>
+              <div id="sumEn">
+                <p contenteditable="true">The team confirmed the v2.3 release for <b>Thursday 23 Oct</b>, pending QA and the security sign-off. Ahmed owns QA, and someone still unnamed volunteered for regression tests. Who updates the client remains open.</p>
+              </div>
+              <div id="sumAr" dir="rtl" hidden>
+                <p contenteditable="true">أكّد الفريق إطلاق الإصدار v2.3 يوم <b>الخميس 23 أكتوبر</b>، بشرط انتهاء اختبارات الجودة وموافقة فريق الأمن. أحمد مسؤول عن اختبارات الجودة، وتطوّع أحد الحضور لاختبارات الانحدار. لا يزال تحديد من سيبلّغ العميل مفتوحاً.</p>
+              </div>
+
+              <h4>Decisions</h4>
+              <div class="item" data-ev="s0142">Release v2.3 on Thu 23 Oct <button class="ev" data-target="s0142">↗ 00:21:10</button><span class="orig">"So the release is Thursday, right?" · "أيوه، بس محتاجين الـ QA يخلص قبلها"</span></div>
+              <div class="item" data-ev="s0139">Security team sign-off is required before release <button class="ev" data-target="s0139">↗ 00:20:52</button><span class="orig">"فاضل بس الـ sign-off من الـ security team"</span></div>
+
+              <h4>Action items</h4>
+              <table class="atable">
+                <thead><tr><th>Owner</th><th>Task</th><th>Due</th><th></th></tr></thead>
+                <tbody>
+                  <tr class="item" data-ev="s0143"><td><span class="owner"><span class="dot" style="color:var(--sp2)"></span>Ahmed ▾</span></td><td contenteditable="true">Finish QA before the release<span class="orig">"محتاجين الـ QA يخلص قبلها"</span></td><td>22 Oct ▾<span class="said">said: "قبلها"</span></td><td><button class="ev" data-target="s0143">↗</button></td></tr>
+                  <tr class="item" data-ev="s0144"><td><span class="owner missing">? ▾ ⚠</span></td><td contenteditable="true">Run the regression tests<span class="orig">"I'll take the regression tests."</span></td><td class="faint">none</td><td><button class="ev" data-target="s0144">↗</button></td></tr>
+                  <tr class="item" data-ev="s0139"><td><span class="owner"><span class="dot" style="color:var(--sp3)"></span>Sara ▾</span></td><td contenteditable="true">Get the security sign-off</td><td>21 Oct ▾<span class="said">said: "next Tuesday"</span></td><td><button class="ev" data-target="s0139">↗</button></td></tr>
+                </tbody>
+              </table>
+              <button class="btn ghost sm" style="margin-top:6px">+ Add action item</button>
+
+              <h4>Open questions</h4>
+              <div class="item" data-ev="s0145">Who updates the client about the release date? <button class="ev" data-target="s0145">↗ 00:21:31</button></div>
+            </div>
+          </div>
+
+          <!-- Transcript pane -->
+          <div class="pane">
+            <div class="pane-h"><span>Transcript · final pass · 1,284 lines</span><span class="search" style="min-width:140px;padding:3px 8px">⌕ Search</span></div>
+            <div class="player"><button class="iconbtn" id="playBtn">▶</button><span class="ts">00:21:10</span><div class="scrub"><i></i><b></b></div><span class="ts">2:05:12</span></div>
+            <div class="pane-b" id="trPane">
+              <div class="tr-line" data-seg="s0138"><span class="ts">00:20:41</span><span class="who"><span class="sp sp-you">You</span><span class="conf">mic</span></span><span class="txt">OK, let's go through the release checklist.</span></div>
+              <div class="tr-line" data-seg="s0139"><span class="ts">00:20:52</span><span class="who"><span class="sp sp-sara">Sara</span><span class="conf">voiceprint 0.91</span></span><span class="txt">الـ checklist جاهزة، فاضل بس الـ sign-off من الـ security team. هبعتلهم next Tuesday.</span></div>
+              <div class="tr-line" data-seg="s0142"><span class="ts">00:21:10</span><span class="who"><span class="sp sp-you">You</span><span class="conf">mic</span></span><span class="txt">So the release is Thursday, right?</span></div>
+              <div class="tr-line" data-seg="s0143"><span class="ts">00:21:14</span><span class="who"><span class="sp sp-ahmed">Ahmed</span><span class="conf">voiceprint 0.86</span></span><span class="txt">أيوه، بس محتاجين الـ QA يخلص قبلها. أنا هخلّصه.</span></div>
+              <div class="tr-line" data-seg="s0144"><span class="ts">00:21:20</span><span class="who"><span class="sp sp-unk">Speaker 3</span><span class="badge warn">unnamed</span></span><span class="txt">I'll take the regression tests.</span></div>
+              <div class="tr-line overlap" data-seg="s0144b"><span class="ts">00:21:24</span><span class="who"><span class="sp sp-omar">Omar</span><span class="badge warn">overlap · low confidence</span></span><span class="txt">طيب و الـ staging environment…</span></div>
+              <div class="tr-line" data-seg="s0145"><span class="ts">00:21:31</span><span class="who"><span class="sp sp-you">You</span><span class="conf">mic</span></span><span class="txt">Great, and who's updating the client on the new date?</span></div>
+              <div class="tr-line" data-seg="s0146"><span class="ts">00:21:38</span><span class="who"><span class="sp sp-ahmed">Ahmed</span><span class="conf">voiceprint 0.86</span></span><span class="txt">مش متأكد، ممكن نسأل الـ account manager.</span></div>
+              <div class="tr-line" data-seg="s0147"><span class="ts">00:21:45</span><span class="who"><span class="sp sp-sara">Sara</span><span class="conf">voiceprint 0.91</span></span><span class="txt">Let's park that and move to the roadmap.</span></div>
+            </div>
+          </div>
+
+          <!-- Speaker drawer -->
+          <div class="drawer" id="drawer" aria-label="Speakers">
+            <h4>Speakers <button class="btn ghost sm" id="drawerClose">✕</button></h4>
+            <div class="spk"><div class="top"><span class="sp sp-you">You</span><span class="badge ok">✓ mic channel</span></div></div>
+            <div class="spk"><div class="top"><span class="sp sp-ahmed">Ahmed</span><span style="display:flex;gap:6px;align-items:center"><span class="badge ok">✓ voiceprint 0.86</span><button class="iconbtn" title="Play sample">▶</button></span></div></div>
+            <div class="spk"><div class="top"><span class="sp sp-sara">Sara</span><span style="display:flex;gap:6px;align-items:center"><span class="badge ok">✓ voiceprint 0.91</span><button class="iconbtn">▶</button></span></div></div>
+            <div class="spk" style="border-color:var(--warn)">
+              <div class="top"><span class="sp sp-unk">Speaker 3</span><button class="iconbtn">▶</button></div>
+              <div class="sub" style="margin:4px 0 8px">12 lines · 6 min</div>
+              <div class="select" style="margin-bottom:8px">Choose a name…</div>
+              <span class="check"><span class="box"></span>Remember this voice (needs their consent)</span>
+            </div>
+            <div class="spk">
+              <div class="top"><span class="sp sp-omar">Omar</span><button class="iconbtn">▶</button></div>
+              <div class="sub" style="margin:4px 0 8px">2 lines · 20 s · <span class="faint">named manually</span></div>
+              <div class="select">Merge into…</div>
+            </div>
+            <button class="btn primary" style="width:100%;justify-content:center">Apply</button>
+            <p class="faint" style="font-size:12px;margin-top:8px">Applying updates the transcript and the names in the notes without calling the AI model again.</p>
+          </div>
+        </div>
+
+        <div class="warnbar"><span>⚠ 1 unnamed speaker · 1 action item without an owner · 1 low-confidence line</span><button class="btn sm" id="spkBtn2">Name speakers</button></div>
+      </div>
+    </div>
+    <ul class="notes-list">
+      <li><b>Evidence links:</b> every note item cites the transcript lines it came from. Clicking one highlights the lines and plays the audio from there; clicking a transcript line highlights the notes that cite it.</li>
+      <li>Grey quotes under each item are the <b>original words</b>, in the language they were spoken.</li>
+      <li>The summary defaults to <b>EN</b>. AR or Both is generated once and cached. Relative deadlines keep the spoken phrase ("said: next Tuesday") and resolve in your OS timezone, using Gregorian dates.</li>
+      <li>A hatched background marks overlapping or low-confidence speech. Warnings never block anything.</li>
+    </ul>
+  </section>
+
+  <!-- ================= SETTINGS ================= -->
+  <section class="screen" id="settings">
+    <div class="screen-head">
+      <h2>Settings · AI model <span class="tag mvp">MVP</span></h2>
+      <p>The visual front end for the <code>llm</code> section of <code>config.yaml</code>. Only local endpoints can be added; Modwen is local-only.</p>
+    </div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/settings/ai-model</span></div>
+      <div class="app">
+        <aside class="side">
+          <button class="btn danger start" data-go="start">● Start meeting</button>
+          <a data-go="home">▤ Meetings</a>
+          <a data-go="people">☺ People &amp; voices</a>
+          <a class="on">⚙ Settings</a>
+          <span class="spacer"></span>
+          <div class="status">🔒 Local only<br>Tier C · local_qwen <span style="color:var(--ok)">●</span></div>
+        </aside>
+        <div class="main">
+          <div class="tabs"><span>General</span><span>Audio</span><span>Transcription</span><span class="on">AI model</span><span>Notifications</span><span>Privacy</span><span>About</span></div>
+          <div class="field" style="grid-template-columns:130px minmax(0,320px) auto"><label>Active profile</label><div class="select">local_qwen</div><span class="badge ok"><span class="dot"></span>online · qwen3-30b-a3b · 32k context</span></div>
+          <div class="section-title">Profiles</div>
+          <div style="overflow-x:auto">
+          <table class="ptable">
+            <thead><tr><th>Name</th><th>Endpoint</th><th>Model</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><b>local_qwen</b> <span class="badge acc">active</span></td><td><code>http://localhost:8080/v1</code></td><td>qwen3-30b-a3b</td><td><span class="badge ok"><span class="dot"></span>online</span></td><td style="white-space:nowrap"><button class="btn sm">Edit</button> <button class="btn sm" id="testBtn">Test</button></td></tr>
+              <tr><td><b>ollama_qwen</b> <span class="badge">fallback</span></td><td><code>http://localhost:11434/v1</code></td><td>qwen3:14b</td><td><span class="badge"><span class="dot"></span>not running</span></td><td style="white-space:nowrap"><button class="btn sm">Edit</button> <button class="btn sm">Test</button></td></tr>
+            </tbody>
+          </table>
+          </div>
+          <button class="btn ghost sm" style="margin-top:8px">+ Add local profile <span class="faint">(localhost / 127.0.0.1 only)</span></button>
+          <div class="testout" id="testOut" hidden>
+            <b style="color:var(--ok)">✓ Test passed</b> · 1.8 s to first token · 24 tokens/s
+            <span class="rtl">EN: The release is set for Thursday; Ahmed will finish QA first.</span>
+            <span class="rtl" dir="rtl">AR: تم تحديد موعد الإطلاق يوم الخميس، وسيُنهي أحمد اختبارات الجودة قبله.</span>
+          </div>
+          <div class="grid2" style="margin-top:18px">
+            <div class="card"><b>Generation</b>
+              <div class="field" style="margin-top:10px"><label>Temperature</label><div class="input">0.3</div></div>
+              <div class="field"><label>Structured output</label><div class="select">json_schema</div></div>
+              <div class="field" style="margin:0"><label>Thinking</label><div class="select">Off (enable_thinking: false)</div></div>
+            </div>
+            <div class="card"><b>Notes</b>
+              <div class="field" style="margin-top:10px"><label>Summary language</label><div class="select">English (default)</div></div>
+              <div class="field"><label>Long meetings</label><div class="select">Split every 15 min</div></div>
+              <div class="field" style="margin:0"><label>Timezone</label><div class="select">System (Asia/Riyadh)</div></div>
+            </div>
+          </div>
+          <p class="faint" style="font-size:12px;margin-top:12px">Every change is written back to <code>config.yaml</code>. A URL that isn't localhost is rejected with "Modwen is local-only".</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PEOPLE ================= -->
+  <section class="screen" id="people">
+    <div class="screen-head">
+      <h2>People &amp; voices <span class="tag mvp">MVP list · enrollment P3</span></h2>
+      <p>The people Modwen can name, in English and Arabic. A voiceprint needs that person's consent and can be deleted in one click.</p>
+    </div>
+    <div class="win">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/people</span></div>
+      <div class="app">
+        <aside class="side">
+          <button class="btn danger start" data-go="start">● Start meeting</button>
+          <a data-go="home">▤ Meetings</a>
+          <a class="on">☺ People &amp; voices</a>
+          <a data-go="settings">⚙ Settings</a>
+          <span class="spacer"></span>
+          <div class="status">🔒 Local only</div>
+        </aside>
+        <div class="main">
+          <div class="main-head"><h3>People</h3><button class="btn primary">+ Add person</button></div>
+          <div style="overflow-x:auto">
+          <table class="ptable">
+            <thead><tr><th>Name</th><th>Arabic name</th><th>Email</th><th>Voiceprint</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><span class="sp sp-you">You</span></td><td dir="rtl">أنا</td><td class="muted">you@company.com</td><td><span class="badge acc">mic channel</span></td><td></td></tr>
+              <tr><td><span class="sp sp-ahmed">Ahmed Hassan</span></td><td dir="rtl">أحمد حسن</td><td class="muted">ahmed@company.com</td><td><span class="badge ok">Enrolled 2 Oct · consent ✓</span></td><td style="white-space:nowrap"><button class="btn sm">Re-record</button> <button class="btn sm">Delete voiceprint</button></td></tr>
+              <tr><td><span class="sp sp-sara">Sara Haddad</span></td><td dir="rtl">سارة حداد</td><td class="muted">sara@company.com</td><td><span class="badge ok">Enrolled 9 Oct · consent ✓</span></td><td style="white-space:nowrap"><button class="btn sm">Re-record</button> <button class="btn sm">Delete voiceprint</button></td></tr>
+              <tr><td><span class="sp sp-omar">Omar Khalid</span></td><td dir="rtl">عمر خالد</td><td class="faint">none</td><td><span class="badge">None</span></td><td><button class="btn sm primary" id="enrollBtn">Enroll voice</button></td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="card" id="enrollCard" hidden style="margin-top:16px;max-width:520px">
+            <b>Enroll Omar's voice</b> <span class="faint">· about 30 seconds</span>
+            <p class="muted" style="margin:8px 0">Ask Omar to read this aloud:</p>
+            <div class="notice">"Today we reviewed the release plan and agreed on the next steps."</div>
+            <div class="notice" dir="rtl" style="text-align:right">"اليوم راجعنا خطة الإطلاق واتفقنا على الخطوات الجاية."</div>
+            <span class="check"><span class="box"></span>Omar agreed to store a voiceprint on this computer</span>
+            <div style="display:flex;gap:8px;margin-top:10px"><button class="btn danger" disabled>● Record</button><button class="btn" id="enrollCancel">Cancel</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= ONBOARDING ================= -->
+  <section class="screen" id="onboarding">
+    <div class="screen-head">
+      <h2>First-run onboarding <span class="tag mvp">MVP</span></h2>
+      <p>Four steps. Step 2 detects the hardware, picks the models and says how long a 2-hour meeting will take, because there's no cloud fallback.</p>
+    </div>
+    <div class="win wizard">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">Welcome to Modwen</span></div>
+      <div class="main">
+        <div class="wsteps"><span class="done">1 · Permissions ✓</span><span class="on">2 · Hardware check</span><span>3 · AI model + downloads</span><span>4 · Test notification</span></div>
+        <div class="tier">
+          <div class="big">C</div>
+          <div><b>Tier C: Apple M2 Pro, 32 GB unified memory</b><div class="muted" style="font-size:13px">A good fit. A 2-hour meeting should be ready about <b>25–40 min</b> after Stop.</div></div>
+        </div>
+        <dl class="kv">
+          <dt>Live transcript</dt><dd>Whisper large-v3-turbo (mlx)</dd>
+          <dt>Final transcript</dt><dd>Whisper large-v3 (mlx)</dd>
+          <dt>Speakers</dt><dd>pyannote community-1</dd>
+          <dt>AI model (Qwen3)</dt><dd>30B-A3B-Instruct-2507 · Q4_K_M · 32k context</dd>
+          <dt>Disk needed</dt><dd>≈ 24 GB for models (71 GB free ✓)</dd>
+        </dl>
+        <div class="section-title">Start the AI model with this command</div>
+        <div class="codeblock">llama-server -hf unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M --alias qwen3-30b-a3b \
+  --host 127.0.0.1 --port 8080 -c 32768 -ngl 99 --jinja</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" data-copy="Command copied">Copy command</button><button class="btn sm">Change models…</button></div>
+        <div class="banner warn" style="margin-top:14px">Example of a below-minimum machine: "Tier F: 16 GB RAM, no supported GPU. 2-hour meetings will take 1–2 hours to process, and the Arabic summary will be weak."</div>
+        <div class="dialog-foot"><button class="btn">Back</button><button class="btn primary">Continue</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SEND (P3) ================= -->
+  <section class="screen" id="send">
+    <div class="screen-head">
+      <h2>Send / approval <span class="tag p3">Phase 3, not in the MVP</span></h2>
+      <p>Kept so email can be added later without changing the screens. This screen is the only way an email ever leaves the machine.</p>
+    </div>
+    <div class="win" style="max-width:820px">
+      <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">127.0.0.1:8765/meetings/sprint-review/send</span></div>
+      <div class="main">
+        <div class="field"><label>From</label><span>you@company.com <span class="faint">(Gmail API)</span></span></div>
+        <div class="field"><label>To</label><div class="rcpt"><span>ahmed@company.com ×</span><span>sara@company.com ×</span><span class="ext">⚠ client@acme.com ×, external: tick to include ☐</span><span class="faint">+ add</span></div></div>
+        <div class="field"><label>Subject</label><div class="input">Meeting notes: Sprint review, 16 Oct 2026</div></div>
+        <div class="field"><label>Language</label><div class="seg"><button aria-pressed="true">EN</button><button aria-pressed="false">AR</button><button aria-pressed="false">Both</button></div></div>
+        <div class="field"><label>Attach</label><span class="check" style="margin:0"><span class="box"></span>Transcript (off by default)</span></div>
+        <div class="email-prev">
+          <b>Meeting notes: Sprint review</b><br><span class="faint">16 Oct 2026 · 2h 05m</span>
+          <p>The team confirmed the v2.3 release for Thursday 23 Oct, pending QA and the security sign-off…</p>
+          <b>Action items</b><br>Ahmed: Finish QA before the release (22 Oct)<br>Sara: Get the security sign-off (21 Oct)
+          <div class="ar"><b>ملخص الاجتماع</b><p>أكّد الفريق إطلاق الإصدار v2.3 يوم الخميس 23 أكتوبر…</p></div>
+        </div>
+        <div class="warnline" style="margin-top:12px">⚠ 1 action item has no owner.</div>
+        <div class="dialog-foot"><button class="btn">Back to edit</button><button class="btn primary">Approve &amp; Send</button></div>
+      </div>
+    </div>
+  </section>
+
+</div>
+<div class="copied" id="copied">Copied</div>
+
+<script>
+(function(){
+  // ----- navigation -----
+  const screens=[...document.querySelectorAll('.screen')];
+  const navBtns=[...document.querySelectorAll('.nav [data-go]')];
+  function show(id){
+    if(!document.getElementById(id)) id='review';
+    screens.forEach(s=>s.classList.toggle('active',s.id===id));
+    navBtns.forEach(b=>b.setAttribute('aria-current',b.dataset.go===id?'true':'false'));
+    if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
+    window.scrollTo({top:0});
+  }
+  document.addEventListener('click',e=>{
+    const go=e.target.closest('[data-go]');
+    if(go){e.preventDefault();show(go.dataset.go);}
+  });
+  show((location.hash||'#review').slice(1));
+
+  // ----- theme + RTL -----
+  const root=document.documentElement;
+  const themeBtn=document.getElementById('themeBtn');
+  const sysDark=window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let dark=sysDark;
+  function applyTheme(){root.dataset.theme=dark?'dark':'light';themeBtn.setAttribute('aria-pressed',dark);themeBtn.textContent=dark?'Light theme':'Dark theme';}
+  themeBtn.onclick=()=>{dark=!dark;applyTheme();};
+  applyTheme();
+  const rtlBtn=document.getElementById('rtlBtn');
+  rtlBtn.onclick=()=>{
+    const on=rtlBtn.getAttribute('aria-pressed')!=='true';
+    rtlBtn.setAttribute('aria-pressed',on);
+    document.querySelectorAll('.win').forEach(w=>w.setAttribute('dir',on?'rtl':'ltr'));
+  };
+
+  // ----- toast for copy actions -----
+  const toast=document.getElementById('copied');let tt;
+  document.addEventListener('click',e=>{
+    const c=e.target.closest('[data-copy]');
+    if(!c) return;
+    toast.textContent='✓ '+c.dataset.copy;toast.classList.add('show');
+    clearTimeout(tt);tt=setTimeout(()=>toast.classList.remove('show'),1600);
+    document.querySelectorAll('.dropdown.open').forEach(d=>d.classList.remove('open'));
+  });
+
+  // ----- live timers -----
+  const fmt=s=>[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(n=>String(n).padStart(2,'0')).join(':');
+  const timers=[...document.querySelectorAll('[data-timer]')];
+  setInterval(()=>timers.forEach(t=>{const v=+t.dataset.timer+1;t.dataset.timer=v;const txt=fmt(v);t.textContent=t.textContent.startsWith('(')?'('+txt+')':txt;}),1000);
+
+  // ----- start dialog -----
+  const box=document.getElementById('consentBox'),startBtn=document.getElementById('startBtn');
+  box.parentElement.onclick=()=>{const on=!box.classList.contains('on');box.classList.toggle('on',on);box.textContent=on?'✓':'';startBtn.disabled=!on;};
+  document.getElementById('btToggle').onclick=()=>{const w=document.getElementById('btWarn');w.hidden=!w.hidden;};
+  document.querySelectorAll('.seg').forEach(seg=>seg.addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b) return;
+    seg.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  }));
+
+  // ----- live transcript lag demo -----
+  document.getElementById('liveLagBtn').onclick=()=>{
+    const b=document.getElementById('liveBanner');
+    const lag=b.classList.contains('info');
+    b.className='banner '+(lag?'warn':'info');
+    b.textContent=lag?'⚠ Live transcript paused because this computer is busy. Recording continues normally.':'ℹ Live text is a quick draft. The accurate transcript, with names, is made after you stop.';
+  };
+
+  // ----- processing simulation -----
+  const sim=document.getElementById('simBtn');
+  sim.onclick=()=>{
+    sim.disabled=true;let p=68;
+    const stT=document.getElementById('stTrans'),stS=document.getElementById('stSpk'),stN=document.getElementById('stNotes');
+    const iv=setInterval(()=>{
+      p+=4;
+      if(p<=100){document.getElementById('pTrans').style.width=p+'%';document.getElementById('pTransTxt').textContent=p+'%';}
+      if(p===100){stT.className='step done';stT.querySelector('.ic').textContent='✓';stS.className='step run';stS.querySelector('.ic').textContent='';}
+      if(p===112){stS.className='step done';stS.querySelector('.ic').textContent='✓';stN.className='step run';stN.querySelector('.ic').textContent='';}
+      if(p>112){const part=Math.min(9,Math.floor((p-112)/4));document.getElementById('notesSub').textContent='part '+part+' of 9';document.getElementById('eta').textContent=Math.max(1,9-part)+' min';
+        if(part===9){clearInterval(iv);stN.className='step done';stN.querySelector('.ic').textContent='✓';document.getElementById('eta').textContent='0 min';setTimeout(()=>show('notify'),700);}}
+    },120);
+  };
+  document.getElementById('failBtn').onclick=()=>{
+    const f=document.getElementById('failBanner');f.hidden=!f.hidden;
+    const stN=document.getElementById('stNotes');stN.className=f.hidden?'step':'step fail';stN.querySelector('.ic').textContent=f.hidden?'3':'✕';
+  };
+
+  // ----- review: evidence links -----
+  const trPane=document.getElementById('trPane');
+  function clearLit(){document.querySelectorAll('.lit').forEach(x=>x.classList.remove('lit'));}
+  document.addEventListener('click',e=>{
+    const ev=e.target.closest('.ev[data-target]');
+    if(ev){
+      clearLit();
+      const line=trPane.querySelector('[data-seg="'+ev.dataset.target+'"]');
+      if(line){line.classList.add('lit');trPane.scrollTo({top:line.offsetTop-trPane.offsetTop-40,behavior:'smooth'});}
+      ev.closest('.item')?.classList.add('lit');
+      return;
+    }
+    const tl=e.target.closest('.tr-line');
+    if(tl){
+      clearLit();tl.classList.add('lit');
+      document.querySelectorAll('.item[data-ev="'+tl.dataset.seg+'"]').forEach(i=>i.classList.add('lit'));
+    }
+  });
+
+  // ----- review: summary language -----
+  document.getElementById('langSeg').addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b) return;
+    const l=b.dataset.lang;
+    document.getElementById('sumEn').hidden=(l==='ar');
+    document.getElementById('sumAr').hidden=(l==='en');
+  });
+
+  // ----- dropdowns -----
+  document.querySelectorAll('.dropdown > .btn').forEach(btn=>btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const d=btn.parentElement,open=!d.classList.contains('open');
+    document.querySelectorAll('.dropdown.open').forEach(x=>x.classList.remove('open'));
+    d.classList.toggle('open',open);
+  }));
+  document.addEventListener('click',e=>{if(!e.target.closest('.dropdown')) document.querySelectorAll('.dropdown.open').forEach(x=>x.classList.remove('open'));});
+
+  // ----- speaker drawer -----
+  const drawer=document.getElementById('drawer');
+  ['spkBtn','spkBtn2'].forEach(id=>document.getElementById(id).onclick=()=>drawer.classList.add('open'));
+  document.getElementById('drawerClose').onclick=()=>drawer.classList.remove('open');
+
+  // ----- play button -----
+  const play=document.getElementById('playBtn');
+  play.onclick=()=>{play.textContent=play.textContent==='▶'?'❚❚':'▶';};
+
+  // ----- settings test -----
+  document.getElementById('testBtn').onclick=()=>{const t=document.getElementById('testOut');t.hidden=false;};
+
+  // ----- enrollment -----
+  document.getElementById('enrollBtn').onclick=()=>{document.getElementById('enrollCard').hidden=false;};
+  document.getElementById('enrollCancel').onclick=()=>{document.getElementById('enrollCard').hidden=true;};
+})();
+</script>
+</body>
+</html>
