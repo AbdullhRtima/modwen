@@ -271,3 +271,39 @@ def test_setup_settings_people_and_audio(cfg, fake_llm):
     assert part.status_code == 206 and len(part.content) == 100
 
     assert c.post("/api/setup/complete").status_code == 200 and s.cfg.app.setup_complete
+
+
+def test_lan_access_is_opt_in_and_still_token_protected(cfg, fake_llm, monkeypatch):
+    from modwen import network
+    from modwen.api import create_app
+
+    monkeypatch.setattr(network, "local_ipv4", lambda: ["192.168.100.30"])
+    s = _services(cfg, fake_llm)
+    lan_host = {"host": "192.168.100.30:8765"}
+
+    # Off (default): requests addressed to the LAN IP are refused
+    off = TestClient(create_app(s, token="t"))
+    assert off.get("/api/health", headers={**lan_host, "x-modwen-token": "t"}).status_code == 403
+
+    # On: the LAN IP is accepted, but only with the token, and cross-site origins stay blocked
+    on = TestClient(create_app(s, token="t", lan=True))
+    assert on.get("/api/health", headers=lan_host).status_code == 401
+    assert on.get("/api/health", headers={**lan_host, "x-modwen-token": "t"}).status_code == 200
+    assert on.get("/api/health", headers={**lan_host, "x-modwen-token": "t",
+                                          "origin": "http://192.168.100.30:8765"}).status_code == 200
+    assert on.get("/api/health", headers={**lan_host, "x-modwen-token": "t",
+                                          "origin": "http://evil.example"}).status_code == 403
+    assert on.get("/api/health", headers={"host": "10.9.9.9:8765", "x-modwen-token": "t"}).status_code == 403
+    net = on.get("/api/network", headers={**lan_host, "x-modwen-token": "t"}).json()
+    assert net["lan_active"] and net["urls"][0].startswith("http://192.168.100.30:8765/?token=t")
+
+
+def test_host_parsing():
+    from modwen.network import host_of, origin_allowed
+
+    assert host_of("192.168.100.30:8765") == "192.168.100.30"
+    assert host_of("[::1]:8765") == "[::1]"
+    assert host_of("localhost") == "localhost"
+    assert origin_allowed("http://localhost:5173", {"localhost"})
+    assert not origin_allowed("http://localhost.evil.com", {"localhost"})
+    assert not origin_allowed("file://x", {"localhost"})
