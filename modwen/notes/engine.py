@@ -16,7 +16,7 @@ from typing import Callable
 
 from modwen.notes import prompts
 from modwen.notes.dates import find_deadline, grounded, meeting_date, resolve
-from modwen.notes.llm_client import LLMClient, LLMError
+from modwen.notes.llm_client import LLMClient, LLMError, LLMTruncated
 from modwen.notes.schema import ExtractResult, LLMAction, SummaryResult
 from modwen.stt.language import arabic_share, has_cjk
 
@@ -110,7 +110,19 @@ class NotesEngine:
                 return "evidence_segment_ids must be ids from the transcript lines (like s0012)."
             return None
 
-        return self.llm.complete_json(self._messages(user), ExtractResult, validate=validate)
+        try:
+            return self.llm.complete_json(self._messages(user), ExtractResult, validate=validate)
+        except LLMTruncated:
+            # Too many items for max_output_tokens: extract each half of the window separately.
+            if len(segments) < 2:
+                raise
+            mid = len(segments) // 2
+            log.info("Extract reply truncated for %d segments; splitting the window in half", len(segments))
+            a = self._extract(title, base_date, segments[:mid], bookmarks, part, valid_ids)
+            b = self._extract(title, base_date, segments[mid:], bookmarks, part, valid_ids)
+            return ExtractResult(key_points=a.key_points + b.key_points, decisions=a.decisions + b.decisions,
+                                 action_items=a.action_items + b.action_items,
+                                 open_questions=a.open_questions + b.open_questions)
 
     def _reduce(self, title: str, parts: list[ExtractResult]) -> ExtractResult:
         """Merge window results. Too many items for one call -> merge halves first (hierarchical)."""

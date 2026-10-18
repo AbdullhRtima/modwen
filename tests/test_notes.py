@@ -71,6 +71,28 @@ def test_bogus_evidence_is_rejected_then_low_confidence(cfg, fake_llm):
         eng.generate(title="t", started_at=None, segments=_segments(2))
 
 
+def test_truncated_extract_splits_window(cfg, fake_llm):
+    # A dense window whose items overflow max_output_tokens: split in half, don't retry the same prompt.
+    fake_llm.truncate_extract_over = 3
+    eng = _engine(cfg, fake_llm)
+    res = eng.generate(title="t", started_at=None, segments=_segments(8))
+    sizes = [len(fake_llm._ids(r["messages"][-1]["content"])) for r in fake_llm.requests
+             if "#s0" in r["messages"][-1]["content"]]
+    assert sizes == [8, 4, 2, 2, 4, 2, 2]  # each cut-off window is tried once, then halved
+    assert res.data["parts"] == 1
+    assert len(res.data["decisions"]) == 4  # one per successful half, all kept
+
+
+def test_truncated_single_segment_raises(cfg, fake_llm):
+    from modwen.notes.llm_client import LLMTruncated
+
+    fake_llm.truncate_extract_over = 0
+    eng = _engine(cfg, fake_llm)
+    with pytest.raises(LLMTruncated):
+        eng.generate(title="t", started_at=None, segments=_segments(1))
+    assert len(fake_llm.requests) == 1  # no pointless retries
+
+
 def test_map_reduce_for_long_meetings(cfg, fake_llm):
     # 2 hours of dense speech, small context window -> several windows + a reduce call
     segs = _segments(720, step_ms=10_000, text="نراجع الـ release plan ونقرر مين يعمل الـ QA قبل يوم الخميس " * 2)

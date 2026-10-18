@@ -61,6 +61,7 @@ class FakeLLM:
         self.requests: list[dict] = []
         self.extract_replies: list[str] = []  # optional scripted replies for extract calls
         self.summary_replies: dict[str, list[str]] = {"en": [], "ar": []}
+        self.truncate_extract_over: int | None = None  # extract prompts with more segments hit max_tokens
 
     def _ids(self, text: str) -> list[str]:
         return re.findall(r"#(s\d{4})", text)
@@ -71,6 +72,7 @@ class FakeLLM:
         body = json.loads(request.content)
         self.requests.append(body)
         user = body["messages"][-1]["content"]
+        finish_reason = "stop"
         if "Merge them into one list" in user:
             content = json.dumps({"key_points": [{"text": "Merged point", "original_text": "",
                                                   "evidence_segment_ids": ["s0001"]}],
@@ -81,6 +83,8 @@ class FakeLLM:
         elif "Write the summary" in user:
             content = self.summary_replies["en"].pop(0) if self.summary_replies["en"] else json.dumps(
                 {"summary": "The team agreed to release on Thursday. Ahmed will finish QA before the release."})
+        elif self.truncate_extract_over is not None and len(self._ids(user)) > self.truncate_extract_over:
+            content, finish_reason = '{"key_points": [{"text": "cut off', "length"
         else:
             if self.extract_replies:
                 content = self.extract_replies.pop(0)
@@ -101,7 +105,8 @@ class FakeLLM:
                 })
         return httpx.Response(200, json={
             "id": "x", "object": "chat.completion", "created": 0, "model": body.get("model", "qwen3-8b"),
-            "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": content}}],
+            "choices": [{"index": 0, "finish_reason": finish_reason,
+                         "message": {"role": "assistant", "content": content}}],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
         })
 

@@ -30,6 +30,10 @@ class LLMError(RuntimeError):
     pass
 
 
+class LLMTruncated(LLMError):
+    """The reply hit max_tokens. Retrying the same prompt won't help; ask for less instead."""
+
+
 def strip_think(text: str) -> str:
     text = THINK_RE.sub("", text)
     # An unterminated <think> (truncated output): drop everything before the first JSON brace.
@@ -103,12 +107,19 @@ class LLMClient:
             raise LLMError(str(exc)) from exc
         except Exception as exc:
             raise LLMError(f"LLM request to {self.profile.base_url} failed: {exc}") from exc
-        content = resp.choices[0].message.content or ""
+        choice = resp.choices[0]
+        content = choice.message.content or ""
+        if choice.finish_reason == "length":
+            raise LLMTruncated(f"LLM reply was cut off at max_tokens={kwargs['max_tokens']} "
+                               f"({len(content)} chars); the input needs to be smaller")
         return strip_think(content) if self.profile.strip_think else content
 
     def complete_json(self, messages: list[dict], model: type[T], *, retries: int = 2,
                       max_tokens: int | None = None, validate=None) -> T:
-        """Ask for JSON matching ``model``; on invalid output feed the error back and retry."""
+        """Ask for JSON matching ``model``; on invalid output feed the error back and retry.
+
+        A truncated reply (``LLMTruncated``) is raised at once: the same prompt would be cut off again.
+        """
         msgs = list(messages)
         last_err = ""
         for attempt in range(retries + 1):
