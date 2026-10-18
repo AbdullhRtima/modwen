@@ -35,6 +35,7 @@ def cmd_serve(args) -> int:
     cfg = load_config(args.config)
     if args.port:
         cfg.app.ui_port = args.port
+    lan = bool(getattr(args, "lan", False) or cfg.app.lan_access)
     # POSIX: block quit signals in every thread and handle them in a dedicated thread, so they work even while
     # the tray's native event loop owns the main thread (macOS). Must happen before any thread starts.
     import signal
@@ -68,14 +69,33 @@ def cmd_serve(args) -> int:
         for name in ("SIGINT", "SIGBREAK"):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), _shutdown)
-    token = os.environ.get("MODWEN_TOKEN") or secrets.token_urlsafe(24)
-    app = create_app(services, token=token)
+    token = os.environ.get("MODWEN_TOKEN")
+    if not token and lan:
+        # LAN mode: keep the same token across restarts so links bookmarked on other devices keep working.
+        from modwen.crypto import SecretStore
+
+        store = SecretStore(cfg)
+        token = None if getattr(args, "new_token", False) else store.get("ui-token")
+        if not token:
+            token = secrets.token_urlsafe(24)
+            store.set("ui-token", token)
+    token = token or secrets.token_urlsafe(24)
+    app = create_app(services, token=token, lan=lan)
     url = f"http://{cfg.app.ui_host}:{cfg.app.ui_port}"
     open_url = f"{url}/?token={token}"
-    print(f"Modwen {__version__} — local only. Tier {services.plan.tier}: {services.plan.label}")
+    print(f"Modwen {__version__} · Tier {services.plan.tier}: {services.plan.label}")
     print(f"Open: {open_url}")
+    bind = "0.0.0.0" if lan else cfg.app.ui_host
+    if lan:
+        from modwen.network import lan_urls
 
-    server = uvicorn.Server(uvicorn.Config(app, host=cfg.app.ui_host, port=cfg.app.ui_port, log_level="warning"))
+        print("\nLAN access is ON. Open one of these on another device on the same network:")
+        for u in lan_urls(cfg.app.ui_port, token):
+            print(f"  {u}")
+        print("Anyone with this link can use Modwen. The connection is plain HTTP: use trusted networks only.\n"
+              "New link: `modwen serve --lan --new-token`. Turn it off: drop --lan / set app.lan_access: false.\n")
+
+    server = uvicorn.Server(uvicorn.Config(app, host=bind, port=cfg.app.ui_port, log_level="warning"))
 
     if args.no_tray:
         if cfg.app.open_browser and not args.no_browser:
@@ -458,6 +478,8 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--port", type=int)
     sp.add_argument("--no-browser", action="store_true")
     sp.add_argument("--no-tray", action="store_true")
+    sp.add_argument("--lan", action="store_true", help="also serve to other devices on this network (token-protected)")
+    sp.add_argument("--new-token", action="store_true", help="LAN mode: replace the saved access link")
     sp.set_defaults(func=cmd_serve)
 
     sp = sub.add_parser("doctor", help="check hardware tier, models, LLM and audio")

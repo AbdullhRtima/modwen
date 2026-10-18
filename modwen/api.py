@@ -28,7 +28,7 @@ from modwen.services import Services
 log = logging.getLogger(__name__)
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
-ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
+from modwen.network import allowed_hosts as _allowed_hosts, host_of, origin_allowed  # noqa: E402
 
 
 class StartRequest(BaseModel):
@@ -70,20 +70,22 @@ class ActiveProfile(BaseModel):
     profile: str
 
 
-def create_app(services: Services, token: str | None = None) -> FastAPI:
+def create_app(services: Services, token: str | None = None, lan: bool | None = None) -> FastAPI:
     app = FastAPI(title="Modwen", version=__version__, docs_url=None, redoc_url=None)
     app.state.services = services
     app.state.token = token or secrets.token_urlsafe(24)
+    app.state.lan = services.cfg.app.lan_access if lan is None else lan
+    app.state.allowed_hosts = _allowed_hosts(services.cfg, app.state.lan)
     s = services
 
     # ----- security middleware -----
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        host = (request.headers.get("host") or "").rsplit(":", 1)[0]
-        if host not in ALLOWED_HOSTS:
-            return PlainTextResponse("Forbidden host", status_code=403)
-        origin = request.headers.get("origin")
-        if origin and not origin.startswith(("http://127.0.0.1", "http://localhost", "http://[::1]")):
+        host = host_of(request.headers.get("host"))
+        if host not in app.state.allowed_hosts:
+            return PlainTextResponse("Forbidden host. To use Modwen from another device, start it with "
+                                     "`modwen serve --lan`.", status_code=403)
+        if not origin_allowed(request.headers.get("origin"), app.state.allowed_hosts):
             return PlainTextResponse("Forbidden origin", status_code=403)
         path = request.url.path
         q_token = request.query_params.get("token")
@@ -308,10 +310,9 @@ def create_app(services: Services, token: str | None = None) -> FastAPI:
     # ----- websocket -----
     @app.websocket("/ws/events")
     async def events(ws: WebSocket):
-        host = (ws.headers.get("host") or "").rsplit(":", 1)[0]
-        origin = ws.headers.get("origin")
+        host = host_of(ws.headers.get("host"))
         tok = ws.cookies.get("mw_token") or ws.query_params.get("token") or ""
-        if host not in ALLOWED_HOSTS or (origin and not origin.startswith(("http://127.0.0.1", "http://localhost"))) \
+        if host not in app.state.allowed_hosts or not origin_allowed(ws.headers.get("origin"), app.state.allowed_hosts) \
                 or not secrets.compare_digest(tok, app.state.token):
             await ws.close(code=4401)
             return

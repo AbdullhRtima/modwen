@@ -40,6 +40,9 @@ class AppConfig(BaseModel):
     data_dir: str = "auto"
     open_browser: bool = True
     setup_complete: bool = False  # first-run onboarding finished
+    # Opt-in: serve the UI to other devices on the local network (still token-protected). Needs a restart.
+    lan_access: bool = False
+    allowed_hosts: list[str] = []  # extra host names accepted in LAN mode (e.g. a DNS name for this machine)
 
     @field_validator("ui_host")
     @classmethod

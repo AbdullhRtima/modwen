@@ -83,6 +83,35 @@ function General({ settings, save, ctx }: SP & { ctx: Ctx }) {
           options={[["system", `System (${sysTz})`], ...tzs.map((t) => [t, t] as [string, string])]} /></div>
       <div className="field"><label>Setup</label>
         <div><button className="btn" onClick={() => ctx.go("#/welcome")}>Run the setup wizard again</button></div></div>
+      <Network ctx={ctx} save={save} />
+    </div>
+  );
+}
+
+function Network({ ctx, save }: { ctx: Ctx; save: (p: Record<string, unknown>) => void }) {
+  const [net, setNet] = useState<Awaited<ReturnType<typeof setup.network>> | null>(null);
+  const load = () => setup.network().then(setNet).catch(() => undefined);
+  useEffect(() => {
+    load();
+  }, []);
+  if (!net) return null;
+  return (
+    <div className="field" style={{ alignItems: "start" }}><label>Other devices</label>
+      <div>
+        <label className="check"><input type="checkbox" checked={net.lan_access_setting}
+          onChange={async (e) => { await save({ "app.lan_access": e.target.checked }); load(); }} />
+          Allow access from other devices on this network</label>
+        <div className="faint" style={{ fontSize: 12, marginTop: 4 }}>Anyone with the link below can use Modwen. The
+          connection is plain HTTP, so use trusted networks only (home / office). Recording still uses this computer's mic.</div>
+        {net.restart_needed && <div className="banner warn" style={{ marginTop: 8 }}>Restart Modwen to apply
+          ({net.lan_access_setting ? "turn on" : "turn off"} network access).</div>}
+        {net.lan_active && net.urls.map((u) => (
+          <div key={u} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+            <code style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 380 }}>{u.split("?")[0]}</code>
+            <button className="btn sm" onClick={() => navigator.clipboard.writeText(u).then(() => ctx.toast("Link copied"))}>Copy link</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

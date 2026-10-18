@@ -182,6 +182,8 @@ export const setup = {
   saveProfile: (name: string, b: { base_url: string; model: string; api_key?: string; context_window: number;
     temperature: number; structured_output: string; thinking: boolean }) => req("PUT", `/api/llm/profiles/${name}`, b),
   deleteProfile: (name: string) => req("DELETE", `/api/llm/profiles/${name}`),
+  network: () => req<{ lan_access_setting: boolean; lan_active: boolean; urls: string[]; restart_needed: boolean }>(
+    "GET", "/api/network"),
   people: () => req<{ people: PersonT[] }>("GET", "/api/people"),
   addPerson: (b: { display_name: string; display_name_ar?: string; email?: string }) => req<PersonT>("POST", "/api/people", b),
   editPerson: (id: string, b: { display_name: string; display_name_ar?: string | null; email?: string | null }) =>

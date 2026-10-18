@@ -21,7 +21,7 @@ EDITABLE = {
     "notes.summary_language", "notes.timezone", "notes.chunk_minutes",
     "stt.meeting_language", "stt.glossary", "stt.live.provider", "stt.live.model", "stt.final.model",
     "capture.mic_device", "capture.system_backend", "capture.system_device",
-    "notify.desktop", "notify.sound", "llm.managed.autostart",
+    "notify.desktop", "notify.sound", "llm.managed.autostart", "app.lan_access",
 }
 
 
@@ -281,6 +281,16 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
                 pass
         return {"levels": {k: round(v, 3) for k, v in peaks.items()}, "errors": errors,
                 "sources": {src.channel: getattr(src, "description", "") for src in started}}
+
+    @app.get("/api/network")
+    def network():
+        """LAN access status and the links other devices can use (only shown to token holders)."""
+        from modwen.network import lan_urls
+
+        running_lan = bool(app.state.lan)
+        return {"lan_access_setting": s.cfg.app.lan_access, "lan_active": running_lan,
+                "urls": lan_urls(s.cfg.app.ui_port, app.state.token) if running_lan else [],
+                "restart_needed": running_lan != s.cfg.app.lan_access}
 
     @app.post("/api/setup/complete")
     def setup_complete():
