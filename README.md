@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="docs/install.md"><b>Install</b></a> ·
-  <a href="docs/index.html"><b>Website</b></a> ·
+  <a href="https://abdullhrtima.github.io/modwen/"><b>Website</b></a> ·
   <a href="docs/system-design.md"><b>Design</b></a> ·
   <a href="CONTRIBUTING.md"><b>Contribute</b></a>
 </p>
