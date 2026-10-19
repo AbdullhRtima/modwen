@@ -221,31 +221,45 @@ class Store:
             return self._conn.execute("SELECT COUNT(*) FROM speakers WHERE meeting_id = ?", (mid,)).fetchone()[0]
 
     def rename_speaker(self, mid: str, speaker_id: str, new_name: str) -> str | None:
-        """Rename a speaker and substitute the old name in the latest notes. Returns the old name."""
+        """Rename a speaker and substitute the old name in the latest notes. Returns the old name.
+
+        Giving a speaker the name another speaker already has merges the two (one person split in two)."""
         with self._lock:
             row = self._conn.execute(
-                "SELECT display_name FROM speakers WHERE meeting_id = ? AND id = ?", (mid, speaker_id)
+                "SELECT display_name, is_self FROM speakers WHERE meeting_id = ? AND id = ?", (mid, speaker_id)
             ).fetchone()
             if not row:
                 return None
             old = row["display_name"]
+            twin = self._conn.execute(
+                "SELECT id FROM speakers WHERE meeting_id = ? AND id != ? AND lower(display_name) = lower(?)",
+                (mid, speaker_id, new_name),
+            ).fetchone()
             self._conn.execute(
                 "UPDATE speakers SET display_name = ?, name_source = 'manual', confidence = 1.0 "
                 "WHERE meeting_id = ? AND id = ?",
                 (new_name, mid, speaker_id),
             )
             self._conn.commit()
+        if twin:  # keep your own speaker ("You", the mic) as the one that stays
+            src, dst = (twin["id"], speaker_id) if row["is_self"] else (speaker_id, twin["id"])
+            self.merge_speakers(mid, src, dst)
         notes = self.latest_notes(mid)
         if notes and old and old != new_name:
-            pattern = re.compile(rf"(?<!\w){re.escape(old)}(?!\w)")
+            # "You" is also an ordinary word in the notes ("You should..."): replace it only where it is
+            # used as the speaker's name (an owner, or "You:" at the start of a point).
+            generic = old == "You"
+            pattern = re.compile(r"^You(?=:)" if generic else rf"(?<!\w){re.escape(old)}(?!\w)")
 
-            def sub(obj: Any) -> Any:
+            def sub(obj: Any, key: str | None = None) -> Any:
                 if isinstance(obj, str):
+                    if generic and key == "owner":
+                        return new_name if obj.strip() == old else obj
                     return pattern.sub(new_name, obj)
                 if isinstance(obj, list):
-                    return [sub(x) for x in obj]
+                    return [sub(x, key) for x in obj]
                 if isinstance(obj, dict):
-                    return {k: (v if k in ("id", "evidence_segment_ids") else sub(v)) for k, v in obj.items()}
+                    return {k: (v if k in ("id", "evidence_segment_ids") else sub(v, k)) for k, v in obj.items()}
                 return obj
 
             self._exec("UPDATE notes SET data = ? WHERE id = ?",
@@ -261,6 +275,42 @@ class Store:
             self._conn.execute("DELETE FROM speakers WHERE meeting_id = ? AND id = ?", (mid, source_id))
             self._conn.commit()
 
+    def add_speaker(self, mid: str, channel: str | None = None) -> dict:
+        """A new, unnamed "Person N" (when the user moves a line to someone the diarizer missed)."""
+        with self._lock:
+            rows = self._conn.execute("SELECT id, display_name FROM speakers WHERE meeting_id = ?", (mid,)).fetchall()
+            ids = {r["id"] for r in rows}
+            nums = [int(m.group(1)) for r in rows if (m := re.fullmatch(r"Person (\d+)", r["display_name"]))]
+            n = max(nums, default=0) + 1
+            k = n
+            while f"spk{k}" in ids:
+                k += 1
+            sp = {"id": f"spk{k}", "label": "MANUAL", "display_name": f"Person {n}", "channel": channel,
+                  "is_self": 0, "name_source": None, "confidence": 0.0}
+            self._conn.execute(
+                "INSERT INTO speakers (id, meeting_id, label, display_name, channel, is_self, name_source, confidence) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (sp["id"], mid, sp["label"], sp["display_name"], channel, 0, None, 0.0),
+            )
+            self._conn.commit()
+        return sp
+
+    def set_segment_speaker(self, mid: str, seg_id: str, speaker_id: str) -> bool:
+        """Move one transcript line to another speaker; speakers left without lines are removed."""
+        with self._lock:
+            if not self._conn.execute("SELECT 1 FROM speakers WHERE meeting_id = ? AND id = ?",
+                                      (mid, speaker_id)).fetchone():
+                return False
+            cur = self._conn.execute("UPDATE segments SET speaker_id = ? WHERE meeting_id = ? AND id = ?",
+                                     (speaker_id, mid, seg_id))
+            self._conn.execute(
+                "DELETE FROM speakers WHERE meeting_id = ? AND is_self = 0 AND id NOT IN "
+                "(SELECT DISTINCT speaker_id FROM segments WHERE meeting_id = ? AND speaker_id IS NOT NULL)",
+                (mid, mid),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
     # ----- segments -----
     def replace_segments(self, mid: str, segments: list[dict]) -> None:
         with self._lock:
@@ -268,9 +318,10 @@ class Store:
             for i, s in enumerate(segments):
                 self._conn.execute(
                     "INSERT INTO segments (id, meeting_id, seq, speaker_id, channel, start_ms, end_ms, text, "
-                    "language, confidence, overlap) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "language, confidence, overlap, edited) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (s["id"], mid, i, s.get("speaker_id"), s.get("channel"), int(s["start_ms"]), int(s["end_ms"]),
-                     s["text"], s.get("language"), float(s.get("confidence", 0.0)), int(s.get("overlap", 0))),
+                     s["text"], s.get("language"), float(s.get("confidence", 0.0)), int(s.get("overlap", 0)),
+                     int(s.get("edited") or 0)),
                 )
             self._conn.commit()
 

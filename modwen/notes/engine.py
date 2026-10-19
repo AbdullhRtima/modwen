@@ -315,7 +315,7 @@ def refresh_warnings(data: dict) -> list[str]:
     keep = [w for w in keep if "unnamed speaker" not in w]
     owners = [(a.get("owner") or "").strip() for a in data.get("action_items", [])]
     unowned = sum(1 for o in owners if not o)
-    generic = sum(1 for o in owners if re.fullmatch(r"(Others|Room|Speaker \d+)", o))
+    generic = sum(1 for o in owners if re.fullmatch(r"(Others|Room|Speaker \d+|Person \d+)", o))
     if unowned:
         keep.append(f"{unowned} action item(s) without an owner")
     if generic:
@@ -325,3 +325,29 @@ def refresh_warnings(data: dict) -> list[str]:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def retarget_line(data: dict, seg_id: str, old: str, new: str, line_speaker: dict[str, str]) -> dict:
+    """A transcript line moved from speaker ``old`` to ``new``: move the notes that rest on it too.
+
+    An action item owned by ``old`` (or a point starting "old: ...") follows the line when it cites that line
+    and no other line still spoken by ``old``. ``line_speaker`` maps line ids to speaker names after the move.
+    """
+    if not old or old == new:
+        return data
+
+    def follows(item: dict) -> bool:
+        ids = item.get("evidence_segment_ids") or []
+        return seg_id in ids and not any(line_speaker.get(i) == old for i in ids if i != seg_id)
+
+    out = dict(data)
+    for group in ("action_items",):
+        out[group] = [{**it, "owner": new} if (it.get("owner") or "").strip() == old and follows(it) else it
+                      for it in data.get(group, [])]
+    prefix = f"{old}:"
+    for group in ("key_points", "decisions"):
+        out[group] = [{**it, "text": new + it["text"][len(old):]}
+                      if (it.get("text") or "").startswith(prefix) and follows(it) else it
+                      for it in data.get(group, [])]
+    out["warnings"] = refresh_warnings(out)
+    return out

@@ -115,6 +115,10 @@ export const api = {
   rename: (id: string, sid: string, name: string) =>
     req<{ old: string; new: string }>("POST", `/api/meetings/${id}/speakers/${sid}/rename`, { name }),
   merge: (id: string, sid: string, into: string) => req("POST", `/api/meetings/${id}/speakers/${sid}/merge`, { into }),
+  redetect: (id: string, num_speakers: number | null) =>
+    req("POST", `/api/meetings/${id}/speakers/redetect`, { num_speakers }),
+  setLineSpeaker: (id: string, segId: string, speaker_id: string) =>
+    req<{ speaker_id: string; speakers: Speaker[] }>("POST", `/api/meetings/${id}/segments/${segId}/speaker`, { speaker_id }),
   editSegment: (id: string, segId: string, text: string) => req("PUT", `/api/meetings/${id}/segments/${segId}`, { text }),
   editNotes: (id: string, data: Partial<NotesData>) => req<Notes>("PUT", `/api/meetings/${id}/notes`, { data }),
   remove: (id: string) => req("DELETE", `/api/meetings/${id}`),

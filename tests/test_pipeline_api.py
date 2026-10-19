@@ -45,7 +45,7 @@ def test_import_and_process(cfg, fake_llm):
     segs = s.store.get_segments(m["id"])
     assert len(segs) == 3
     assert {sg["language"] for sg in segs} == {"en", "mixed"}
-    assert segs[0]["speaker_name"] == "Others"  # single-speaker fallback without pyannote
+    assert segs[0]["speaker_name"] == "Person 1"  # one speaker per channel without a diarizer
     notes = s.store.latest_notes(m["id"])
     assert notes["data"]["action_items"]
     assert s.notifier.sent and s.notifier.sent[-1][0] == "Notes ready: Imported"
@@ -104,7 +104,7 @@ def test_recorder_with_file_sources_and_echo(cfg, fake_llm, data_dir):
     m = _wait(s, m["id"])
     assert m["status"] == "ready", m.get("error")
     speakers = {sp["display_name"] for sp in s.store.get_speakers(m["id"])}
-    assert "You" in speakers and "Others" in speakers
+    assert "You" in speakers and "Person 1" in speakers
     assert m["bookmarks"]
     assert len(list((cfg.audio_dir / m["id"]).glob("*.flac.enc"))) >= 2
 
@@ -227,6 +227,29 @@ def test_summary_only_regeneration_keeps_edits(cfg, fake_llm):
     assert set(after["data"]["summary"]) == {"en", "ar"}
     new_reqs = fake_llm.requests[before:]
     assert new_reqs and all("Transcript lines" not in r["messages"][-1]["content"] for r in new_reqs)  # no re-extract
+
+
+def test_move_line_to_new_person_and_redetect(cfg, fake_llm):
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    mid = import_audio(s, speechy([(2.0, 2.5), (2.0, 1.0)]), title="Who")["id"]
+    assert _wait(s, mid)["status"] == "ready"
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    seg = c.get(f"/api/meetings/{mid}").json()["segments"][-1]
+    r = c.post(f"/api/meetings/{mid}/segments/{seg['id']}/speaker", json={"speaker_id": "new"}).json()
+    assert {sp["display_name"] for sp in r["speakers"]} == {"Person 1", "Person 2"}
+    after = {x["id"]: x["speaker_name"] for x in c.get(f"/api/meetings/{mid}").json()["segments"]}
+    assert after[seg["id"]] == "Person 2"
+    assert c.post(f"/api/meetings/{mid}/segments/{seg['id']}/speaker", json={"speaker_id": "zz"}).status_code == 404
+    assert c.post(f"/api/meetings/{mid}/speakers/redetect", json={"num_speakers": 99}).status_code == 400
+    texts = [x["text"] for x in c.get(f"/api/meetings/{mid}").json()["segments"]]
+    assert c.post(f"/api/meetings/{mid}/speakers/redetect", json={"num_speakers": 2}).json()["queued"]
+    s.jobs.join()
+    d = c.get(f"/api/meetings/{mid}").json()
+    assert d["meeting"]["status"] == "ready" and [x["text"] for x in d["segments"]] == texts  # transcript kept
+    assert d["meeting"]["stt_info"]["num_speakers"] == 2
 
 
 def test_setup_settings_people_and_audio(cfg, fake_llm):

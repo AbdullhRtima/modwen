@@ -138,6 +138,9 @@ a { color: var(--accent-text); }
 .tr-line.lit { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .tr-line.overlap { background: repeating-linear-gradient(135deg, var(--hatch) 0 6px, transparent 6px 12px); }
 .sp { font-weight: 600; }
+.sp-pick { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; cursor: pointer; border-radius: 4px; }
+.sp-pick:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+.select.sm { padding: 2px 6px; font-size: 12.5px; height: auto; width: auto; }
 .warnbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 12px; padding: 8px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 12.5px; flex-wrap: wrap; }
 .dropdown { position: relative; display: inline-block; }
 .menu-pop { position: absolute; inset-inline-end: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; min-width: 240px; z-index: 20; }

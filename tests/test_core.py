@@ -197,6 +197,128 @@ def test_assign_and_dedupe():
     assert all(s.get("overlap") == 1 for s in ov)
 
 
+def test_gate_to_lines_mutes_mic_echo():
+    from modwen.pipeline.merge import gate_to_lines
+
+    mic = np.ones(16000 * 10, dtype=np.float32)
+    out = gate_to_lines(mic, [{"start_ms": 2000, "end_ms": 4000}])
+    assert out[16000 * 3] == pytest.approx(1.0)  # inside your line: kept
+    assert out[16000 * 1] == 0.0 and out[16000 * 7] == 0.0  # echo elsewhere: muted
+    assert not gate_to_lines(mic, []).any()
+
+
+class _FakeDiarizer:
+    """Returns fixed turns per channel; the audio array's length tells the channels apart."""
+    name = "fake"
+
+    def __init__(self, by_len, prints=None):
+        self.by_len, self.prints, self.calls = by_len, prints or {}, []
+
+    def diarize(self, audio, min_speakers=None, max_speakers=None, num_speakers=None):
+        self.calls.append((audio.size, num_speakers))
+        return self.by_len[audio.size]
+
+    def voiceprints(self, audio, turns):
+        return {lab: v for lab, v in self.prints.items() if any(t.label == lab for t in turns)}
+
+
+def _seg(a, b, text="x"):
+    return {"start_ms": int(a * 1000), "end_ms": int(b * 1000), "text": text, "language": "en"}
+
+
+def test_label_speakers_online_echo_room_and_numbering():
+    from modwen.diarize import Turn
+    from modwen.pipeline.speakers import label_speakers
+
+    mic_audio, sys_audio = np.zeros(16000 * 100, np.float32), np.zeros(16000 * 101, np.float32)
+    # Remote: R0 talks 0-30 s, R1 talks 60-90 s. Mic: echo of the call (E) while they talk, you (M) 30-50,
+    # a colleague in the room (C) 50-60, and a tiny fragment (F) that belongs to nobody.
+    sys_turns = [Turn(0, 30, "R0"), Turn(60, 90, "R1")]
+    mic_turns = [Turn(0, 30, "E"), Turn(30, 50, "M"), Turn(50, 60, "C"), Turn(60, 90, "E"), Turn(49.5, 49.9, "F")]
+    d = _FakeDiarizer({mic_audio.size: mic_turns, sys_audio.size: sys_turns},
+                      prints={"M": np.array([1.0, 0.0]), "C": np.array([0.0, 1.0])})
+    per = {"mic": [_seg(1, 9, "echo one"), _seg(31, 40, "my update"), _seg(51, 58, "colleague"),
+                   _seg(61, 70, "echo two")],
+           "system": [_seg(0, 10, "remote A"), _seg(10, 30, "remote A again"), _seg(60, 90, "remote B")]}
+    speakers, segs = label_speakers({"mic": mic_audio, "system": sys_audio}, per, d, online=True)
+    names = {s["id"]: s["display_name"] for s in speakers}
+    said = [(names[s["speaker_id"]], s["text"]) for s in segs]
+    assert "echo one" not in {t for _, t in said} and "echo two" not in {t for _, t in said}
+    assert said == [("Person 1", "remote A"), ("Person 1", "remote A again"), ("You", "my update"),
+                    ("Person 2", "colleague"), ("Person 3", "remote B")]
+    assert next(s for s in speakers if s["is_self"])["display_name"] == "You"
+
+
+def test_label_speakers_split_voice_and_count_hint():
+    from modwen.diarize import Turn
+    from modwen.pipeline.speakers import label_speakers
+
+    mic_audio, sys_audio = np.zeros(16000 * 50, np.float32), np.zeros(16000 * 51, np.float32)
+    mic_turns = [Turn(0, 20, "M"), Turn(20, 40, "M2")]  # one person split in two by the diarizer
+    d = _FakeDiarizer({mic_audio.size: mic_turns, sys_audio.size: [Turn(40, 50, "R0")]},
+                      prints={"M": np.array([1.0, 0.0]), "M2": np.array([0.95, 0.31])})
+    per = {"mic": [_seg(1, 9, "first"), _seg(21, 30, "second")], "system": [_seg(41, 49, "third")]}
+    speakers, segs = label_speakers({"mic": mic_audio, "system": sys_audio}, per, d, online=True, num_speakers=4)
+    assert [s["speaker_id"] for s in segs] == ["you", "you", "spk1"]
+    assert (sys_audio.size, 3) in d.calls  # 4 people, 1 of them on the mic -> 3 remote voices
+
+    room = np.zeros(16000 * 30, np.float32)
+    d = _FakeDiarizer({room.size: [Turn(0, 15, "A"), Turn(15, 30, "B")]})
+    speakers, segs = label_speakers({"room": room}, {"room": [_seg(1, 10), _seg(16, 25)]}, d, online=False)
+    assert [s["display_name"] for s in speakers] == ["Person 1", "Person 2"] and not any(s["is_self"] for s in speakers)
+
+
+def test_rename_you_and_rename_to_existing_name(data_dir):
+    from modwen.storage import Store
+
+    st = Store(data_dir / "r.db")
+    mid = st.create_meeting("t")["id"]
+    st.replace_speakers(mid, [{"id": "you", "label": "SELF", "display_name": "You", "channel": "mic", "is_self": 1},
+                              {"id": "spk1", "label": "A", "display_name": "Person 1", "channel": "system"},
+                              {"id": "spk2", "label": "B", "display_name": "Person 2", "channel": "system"}])
+    st.replace_segments(mid, [{"id": f"s{i}", "speaker_id": sid, "start_ms": i, "end_ms": i + 1, "text": "x"}
+                              for i, sid in enumerate(["you", "spk1", "spk2"])])
+    st.save_notes(mid, {"key_points": [{"text": "You: finished the demo. You should test it."}],
+                        "action_items": [{"task": "Ask if you can ship", "owner": "You"}]},
+                  llm_profile="p", model="m", prompt_version="v")
+    st.rename_speaker(mid, "you", "Abdullah")
+    data = st.latest_notes(mid)["data"]
+    assert data["key_points"][0]["text"] == "Abdullah: finished the demo. You should test it."
+    assert data["action_items"][0] == {"task": "Ask if you can ship", "owner": "Abdullah"}
+
+    st.rename_speaker(mid, "spk1", "Ahmed")
+    st.rename_speaker(mid, "spk2", "ahmed")  # same person, split in two by the diarizer
+    assert [sp["id"] for sp in st.get_speakers(mid)] == ["you", "spk1"]
+    assert {g["speaker_id"] for g in st.get_segments(mid)} == {"you", "spk1"}
+
+
+def test_carry_names_after_redetect():
+    from modwen.pipeline.speakers import carry_names
+
+    speakers = [{"id": "spk1", "display_name": "Person 1"}, {"id": "spk2", "display_name": "Person 2"}]
+    segs = [{"id": "a", "speaker_id": "spk1", "start_ms": 0, "end_ms": 9000},
+            {"id": "b", "speaker_id": "spk1", "start_ms": 9000, "end_ms": 10000},
+            {"id": "c", "speaker_id": "spk2", "start_ms": 10000, "end_ms": 12000}]
+    carry_names(speakers, segs, {"a": ("Sara", 9000), "b": ("Omar", 1000), "c": ("Sara", 2000)})
+    assert [s["display_name"] for s in speakers] == ["Sara", "Person 2"]  # a name goes to one speaker only
+
+
+def test_line_speaker_edits(data_dir):
+    from modwen.storage import Store
+
+    st = Store(data_dir / "x.db")
+    m = st.create_meeting("t")
+    st.replace_speakers(m["id"], [{"id": "you", "label": "SELF", "display_name": "You", "channel": "mic", "is_self": 1},
+                                  {"id": "spk1", "label": "A", "display_name": "Person 1", "channel": "system"}])
+    st.replace_segments(m["id"], [{"id": "s0001", "speaker_id": "you", "start_ms": 0, "end_ms": 1, "text": "hi"},
+                                  {"id": "s0002", "speaker_id": "spk1", "start_ms": 2, "end_ms": 3, "text": "yo"}])
+    new = st.add_speaker(m["id"], "mic")
+    assert new["display_name"] == "Person 2"
+    assert st.set_segment_speaker(m["id"], "s0002", new["id"])
+    assert {s["id"] for s in st.get_speakers(m["id"])} == {"you", new["id"]}  # Person 1 had no lines left
+    assert not st.set_segment_speaker(m["id"], "s0001", "nobody")
+
+
 # ----- hardware tiers -----------------------------------------------------------------------
 def test_tiers():
     from modwen.hardware import HardwareInfo, choose_tier
@@ -294,3 +416,52 @@ def test_tests_never_write_outside_project(data_dir):
 
     target = save_config(Config())
     assert str(target).startswith(str(data_dir)) and os.environ["MODWEN_CONFIG"].startswith(str(data_dir))
+
+
+def test_recorder_pads_audio_a_device_dropped():
+    import time
+
+    from modwen.pipeline.recorder import Recorder, Session
+
+    class Writer:
+        def __init__(self):
+            self.n = 0
+
+        def write(self, frames):
+            self.n += frames.size
+
+    class Src:
+        def __init__(self, channel, realtime=True):
+            self.channel, self.realtime = channel, realtime
+
+    w_mic, w_sys = Writer(), Writer()
+    rec = Recorder.__new__(Recorder)
+    rec.session = Session("m", [Src("mic"), Src("system", realtime=False)], {"mic": w_mic, "system": w_sys}, None)
+    rec.session.started = time.monotonic() - 2.0  # 2 s into the meeting
+    rec._on_frames("mic", np.zeros(8000, np.float32))  # but only 0.5 s of mic arrived: 1.5 s were dropped
+    rec._on_frames("system", np.zeros(8000, np.float32))  # accelerated file replay: never padded
+    assert 1.85 * 16000 <= w_mic.n <= 2.0 * 16000
+    assert w_sys.n == 8000
+    rec._on_frames("mic", np.zeros(1600, np.float32))  # on time now: nothing added
+    assert rec.session.gap_seconds["mic"] < 1.6
+
+
+def test_live_skips_mic_echo_of_the_call():
+    import queue
+
+    from modwen.pipeline.live import LiveTranscriber
+    from modwen.stt.engines import FakeEngine
+
+    lt = LiveTranscriber(lambda: FakeEngine([("en", "hello")]), lambda e: None, "m")
+    lt.stop()
+    lt._worker.join(2)
+    lt._q = queue.Queue()  # inspect what would be transcribed, without the worker taking it
+    block = 1600
+    talk, quiet = tone(3.0), np.zeros(16000 * 2, np.float32)
+    for sysa, mica in [(talk, talk * 0.3), (quiet, quiet), (quiet, talk), (quiet, quiet)]:
+        for i in range(0, sysa.size, block):  # both channels arrive together, 100 ms at a time
+            lt.feed("system", sysa[i:i + block])
+            lt.feed("mic", mica[i:i + block])
+    queued = [ch for ch, _, _ in list(lt._q.queue)]
+    assert lt.echo_skipped == 1  # the mic copy of the remote speech
+    assert queued.count("mic") == 1 and queued.count("system") == 1  # your own words still go through

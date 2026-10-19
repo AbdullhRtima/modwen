@@ -37,7 +37,9 @@ dependencies = [
 
 [project.optional-dependencies]
 # Speech-to-text. faster-whisper works everywhere (NVIDIA GPU or CPU) and also provides Silero VAD.
-stt = ["faster-whisper>=1.0.3"]
+# sherpa-onnx runs the built-in speaker diarization (ONNX, no PyTorch or Hugging Face token). Its native
+# libraries live in sherpa-onnx-core, which PyPI metadata does not always declare, so both are pinned together.
+stt = ["faster-whisper>=1.0.3", "sherpa-onnx==1.13.8", "sherpa-onnx-core==1.13.8"]
 # Apple Silicon acceleration for Whisper.
 mac = ["mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 # Speaker diarization (large: pulls in PyTorch). Needs a Hugging Face token once to download the model.

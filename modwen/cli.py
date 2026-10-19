@@ -192,7 +192,15 @@ def cmd_doctor(args) -> int:
 
         print(f"Diarization : {ok} pyannote installed")
     except Exception:
-        print("Diarization : single speaker per channel (optional: uv sync --extra diarization)")
+        from modwen.diarize import sherpa_models_present
+
+        try:
+            import sherpa_onnx  # noqa: F401
+
+            state = "models ready" if sherpa_models_present(cfg.models_dir) else "models download on first use"
+            print(f"Diarization : {ok} built-in (sherpa-onnx), {state}")
+        except Exception:
+            print(f"Diarization : {bad} one speaker per channel (install: uv sync --extra stt)")
     if args.json:
         print(json.dumps({"hardware": info.to_dict(), "plan": plan.to_dict(), "llm": h}, indent=2))
     return 0
@@ -353,11 +361,23 @@ def cmd_models(args) -> int:
 
 
 def _download_diarization(cfg) -> None:
-    """Cache the pyannote model too, if the optional extra is installed and a token is saved."""
+    """Cache the speaker-detection models: the built-in ones, and pyannote's if that extra is installed."""
+    try:
+        import sherpa_onnx  # noqa: F401
+
+        from modwen.diarize import download_sherpa_models, sherpa_models_present
+
+        if sherpa_models_present(cfg.models_dir):
+            print("Speaker detection models already downloaded")
+        else:
+            print("Downloading speaker detection models (~35 MB) ...")
+            download_sherpa_models(cfg.models_dir)
+            print("  done: speaker detection")
+    except ImportError:
+        print("Speaker detection: sherpa-onnx not installed (uv sync --extra stt); skipping.")
     try:
         import pyannote.audio  # noqa: F401
     except Exception:
-        print("Diarization: pyannote not installed (optional: uv sync --extra diarization); skipping.")
         return
     from modwen.config import resolve_secret
     from modwen.diarize import PyannoteDiarizer

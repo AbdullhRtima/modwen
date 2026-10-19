@@ -141,7 +141,7 @@ flowchart LR
 | VAD + segmenter | Cut speech into short utterances and drop silence, which stops Whisper hallucinating on silence | Silero VAD |
 | Live STT | Captions about 2–5 s behind speech, for the live view only. Never sent to the LLM. | faster-whisper / mlx-whisper, large-v3-turbo |
 | Final STT | Accurate transcript with word timestamps, run after Stop | faster-whisper (NVIDIA/CPU), mlx-whisper (Apple Silicon) |
-| Diarization | "Who spoke when", run on the system-audio channel (and on the mic channel when in person) | pyannote.audio (`speaker-diarization-community-1`) |
+| Diarization | "Who spoke when", run on every channel; mic echo of the call is detected and dropped | sherpa-onnx (built in), or pyannote.audio (`speaker-diarization-community-1`) |
 | Merge + align | Assign words to speaker turns, put both channels on one timeline, remove echo duplicates | Own code |
 | Speaker naming | Map speaker clusters to people (§5) | pyannote embeddings + rules |
 | Notes engine | Build prompts, split long transcripts into chunks, call the LLM, validate the JSON, check output language | `openai` SDK, Pydantic, Jinja2 prompt templates |
@@ -194,17 +194,21 @@ stateDiagram-v2
    - A `Meeting` row is created with status `recording`, and the tray icon turns red.
 2. **Capture.** The helpers stream 16 kHz mono PCM for each channel.
    - Audio is written to disk as encrypted 30-second Opus chunks.
+   - Each channel is kept on the clock: if a device drops audio (an input overflow), the gap is filled with
+     silence so the mic and system tracks stay aligned (echo detection and line timing depend on it).
    - The same audio also goes to the VAD.
 3. **Live pass (MVP, kept simple).** VAD utterances go to the turbo model, and the text is pushed to the UI over WebSocket.
-   - Labels are "You" (mic) and "Others" (system audio).
+   - Labels are "You" (mic) and "Others" (system audio). A mic utterance heard mostly while the system
+     channel is playing is the call leaking into the mic and is skipped.
    - There is no live diarization and no live naming; real names appear only after processing.
    - Live text is shown only. It's never stored as the final transcript and never sent to the LLM.
    - If the machine falls behind (CPU only), the live view skips ahead and shows "live paused", and recording continues untouched.
 4. **Stop.** Status becomes `processing`, and the final pass runs on each channel:
    - Final STT with word timestamps.
-   - pyannote on the system-audio channel. The mic channel is labeled "you".
+   - Diarization on every channel (built-in sherpa-onnx, or pyannote if installed). On the mic, the call leaking
+     from the speakers is detected and dropped, and the main mic voice is "You".
    - Both channels are merged onto one timeline, and echo duplicates are removed.
-5. **Speaker naming.** Names are assigned automatically. Speakers that can't be matched stay as "Speaker 2" and so on.
+5. **Speaker naming.** Names are assigned automatically. Speakers that can't be matched stay as "Person 1", "Person 2" and so on.
 6. **Notes.** The notes engine builds the prompt (§7).
    - Long transcripts are split, processed in chunks, then merged.
    - The output must pass JSON-schema validation and a language check, with up to 2 retries.
@@ -291,19 +295,29 @@ Ratings are my estimates, **not benchmarks**. Phase 2 starts with a bake-off on 
 
 ## 5. Speaker diarization and naming
 
-**Detection.** pyannote runs on the system-audio channel, and also on the mic channel in in-person mode.
-- Pass `min_speakers`/`max_speakers` when the participant count is known.
+**Detection.** Every channel is diarized (`modwen/pipeline/speakers.py`). The built-in diarizer is sherpa-onnx:
+pyannote's segmentation model plus a CAM++ speaker-embedding model, about 35 MB, run with ONNX Runtime and
+downloaded once with no account. pyannote.audio is used instead when its optional extra is installed.
+- **Mic channel (online).** Without headphones the mic also hears the call. That echo is transcribed again, often
+  with different words, so text matching alone misses it. A mic voice heard at least 70% of its time while the
+  remote side talks is treated as echo and its lines are dropped (the clean copy is in the system channel).
+  Of the remaining mic voices, the one that speaks most is you; a second voice that sounds like you (voiceprint
+  cosine ≥ 0.6) is merged into you, and anyone else is a person in the room with you.
+- **Everyone else** is "Person 1", "Person 2", ... in order of first appearance. Tiny clusters (under 8 s or 2%
+  of the speech) are folded into the nearest real voice.
+- The review screen can re-run detection with the number of people in the meeting, which fixes the cluster
+  count. `min_speakers`/`max_speakers` and the clustering `threshold` are in the config.
 - Overlapping speech is flagged on each segment (`overlap=true`) rather than guessed.
 
 **Naming.** Modwen tries these sources in order of confidence:
 
 | # | Source | How | Confidence |
 |---|---|---|---|
-| 1 | Mic channel | Everything on the mic channel is you (`is_self`) | Very high (online meetings) |
+| 1 | Mic channel | The main voice on the mic channel is you (`is_self`) | Very high (online meetings) |
 | 2 | Voice enrollment | You record about 30 s of a person once, with their consent. Modwen stores an embedding and matches by cosine similarity (threshold set in the bake-off, about 0.7). | High |
 | 3 | Participant list | From the calendar invite (v1) or the Meet companion (Phase 4). This narrows the candidate names; with 2 remote people, one is already known. | Medium |
 | 4 | LLM suggestion | The LLM spots cues like "thanks, Sara" and offers them as **suggestions only**, shown with a "?" | Low |
-| 5 | Manual | Rename in the review UI. Modwen then offers "Remember this voice?", which enrolls the person. | Final |
+| 5 | Manual | Rename in the review UI, or click the name on a single line to move it to someone else (or a new person). | Final |
 
 - Renaming a speaker updates the transcript and substitutes the name in the notes without calling the LLM again.
 - Voiceprints are biometric data, so they're encrypted, deletable, and only kept with consent.
@@ -461,7 +475,8 @@ stt:
   # model: auto picks per hardware tier (§6.1); set explicitly to override
 
 diarization:
-  provider: pyannote
+  provider: auto        # auto | sherpa | pyannote | none
+  threshold: 1.0        # built-in diarizer clustering; higher -> fewer speakers
   model: pyannote/speaker-diarization-community-1
   hf_token: "keychain:huggingface"
   voiceprint_threshold: 0.70

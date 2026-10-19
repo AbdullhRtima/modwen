@@ -10,6 +10,7 @@ from typing import Callable
 
 import numpy as np
 
+from modwen.audio import SAMPLE_RATE
 from modwen.audio.capture import CaptureError, CaptureSource, MicSource, is_bluetooth_name, system_source
 from modwen.audio.chunks import ChunkWriter
 from modwen.audio.vad import rms_level
@@ -21,6 +22,10 @@ log = logging.getLogger(__name__)
 
 class RecorderBusy(RuntimeError):
     pass
+
+
+# How far a channel may lag the clock (normal delivery jitter) before the missing audio is filled with silence.
+CLOCK_SLACK = int(0.3 * SAMPLE_RATE)
 
 
 class Session:
@@ -38,6 +43,9 @@ class Session:
         self.last_sound = {ch: time.monotonic() for ch in writers}
         self.warnings: dict[str, str] = {}
         self.bookmarks: list[int] = []
+        self.written = {ch: 0 for ch in writers}
+        self.gap_seconds = {ch: 0.0 for ch in writers}
+        self.realtime = {c.channel: getattr(c, "realtime", True) for c in sources}
 
     def elapsed(self) -> float:
         now = self._pause_t if self.paused else time.monotonic()
@@ -140,7 +148,21 @@ class Recorder:
         w = s.writers.get(channel)
         if w is None:
             return
+        if s.realtime.get(channel):
+            # Keep every channel on the clock. When a device drops audio (input overflow, a stalled helper)
+            # its track would get shorter and slide earlier than the others; fill the hole with silence so the
+            # mic and system audio stay aligned (echo detection and line timing depend on it).
+            behind = int(s.elapsed() * SAMPLE_RATE) - (s.written[channel] + frames.size)
+            if behind > CLOCK_SLACK:
+                gap = behind - CLOCK_SLACK // 3
+                w.write(np.zeros(gap, dtype=np.float32))
+                if s.live:
+                    s.live.feed(channel, np.zeros(gap, dtype=np.float32))
+                s.written[channel] += gap
+                s.gap_seconds[channel] += gap / SAMPLE_RATE
+                log.info("%s fell %.2f s behind the clock; padded with silence", channel, gap / SAMPLE_RATE)
         w.write(frames)
+        s.written[channel] += frames.size
         lvl = rms_level(frames)
         s.levels[channel] = round(0.6 * s.levels.get(channel, 0) + 0.4 * lvl, 3)
         if lvl > 0.15:

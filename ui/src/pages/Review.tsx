@@ -4,6 +4,7 @@ import type { Ctx } from "../App";
 import { StatusChip } from "./Home";
 
 const SPEAKER_COLORS = ["--sp1", "--sp2", "--sp3", "--sp4", "--sp5", "--sp6", "--sp7", "--sp8"];
+export const UNNAMED_SPEAKER = /^(Person \d+|Speaker \d+|Others|Room)$/;
 
 export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -103,7 +104,7 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
   const processing = meeting.status === "processing" || meeting.status === "recording";
   const failed = meeting.status === "failed";
   const data = notes?.data;
-  const unnamed = speakers.filter((s) => /^(Speaker \d+|Others|Room)$/.test(s.display_name)).length;
+  const unnamed = speakers.filter((s) => UNNAMED_SPEAKER.test(s.display_name)).length;
   const lowConf = segments.filter((s) => s.overlap).length;
   const warnings = [
     unnamed ? `${unnamed} unnamed speaker${unnamed > 1 ? "s" : ""}` : "",
@@ -255,7 +256,8 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
             </div>
             <div className="pane-b" ref={trRef}>
               {segments.map((s) => (
-                <TranscriptLine key={s.id} s={s} color={colorOf(s.speaker_id)}
+                <TranscriptLine key={s.id} s={s} color={colorOf(s.speaker_id)} speakers={speakers}
+                  onSpeaker={(sid) => api.setLineSpeaker(id, s.id, sid).then(load)}
                   lit={lit.seg.has(s.id) || (playing && pos * 1000 >= s.start_ms && pos * 1000 < s.end_ms)}
                   hit={Boolean(q) && hits.includes(s)}
                   onClick={() => clickLine(s.id)}
@@ -336,14 +338,27 @@ function ActionRow({ a, lit, speakers, evButton, onChange }: { a: ActionItem; li
   );
 }
 
-function TranscriptLine({ s, color, lit, hit, onClick, onSave }: { s: Segment; color: string; lit: boolean; hit?: boolean;
-  onClick: () => void; onSave: (text: string) => void }) {
+function TranscriptLine({ s, color, lit, hit, speakers, onClick, onSave, onSpeaker }: { s: Segment; color: string;
+  lit: boolean; hit?: boolean; speakers: Speaker[]; onClick: () => void; onSave: (text: string) => void;
+  onSpeaker: (speakerId: string) => void }) {
   const [editing, setEditing] = useState(false);
+  const [picking, setPicking] = useState(false);
   return (
     <div data-seg={s.id} className={`tr-line ${lit ? "lit" : ""} ${hit ? "hit" : ""} ${s.overlap ? "overlap" : ""}`} onClick={onClick}
       onDoubleClick={() => setEditing(true)}>
       <span className="ts">{fmtTs(s.start_ms)}</span>
-      <span className="who"><span className="sp" style={{ color }}>{s.speaker_name ?? "?"}</span>
+      <span className="who">
+        {picking ? (
+          <select className="select sm" autoFocus value={s.speaker_id} onClick={(e) => e.stopPropagation()}
+            onBlur={() => setPicking(false)}
+            onChange={(e) => { setPicking(false); if (e.target.value !== s.speaker_id) onSpeaker(e.target.value); }}>
+            {speakers.map((o) => <option key={o.id} value={o.id}>{o.display_name}</option>)}
+            <option value="new">+ New person</option>
+          </select>
+        ) : (
+          <button className="sp sp-pick" style={{ color }} title="Who said this? Click to change"
+            onClick={(e) => { e.stopPropagation(); setPicking(true); }}>{s.speaker_name ?? "?"}</button>
+        )}
         {s.overlap ? <span className="badge warn">overlap</span> : null}
         {s.edited ? <span className="faint">✎</span> : null}
         <span className="faint" style={{ fontSize: 11 }}>{s.language}</span></span>
@@ -363,6 +378,7 @@ function SpeakerDrawer({ id, speakers, segments, onClose, onChanged }: { id: str
   }, []);
   const [names, setNames] = useState<Record<string, string>>({});
   const [merges, setMerges] = useState<Record<string, string>>({});
+  const [people, setPeople] = useState("");
   const stats = (sid: string) => {
     const segs = segments.filter((s) => s.speaker_id === sid);
     const secs = segs.reduce((t, s) => t + (s.end_ms - s.start_ms) / 1000, 0);
@@ -374,6 +390,12 @@ function SpeakerDrawer({ id, speakers, segments, onClose, onChanged }: { id: str
     onChanged();
     onClose();
   };
+  const redetect = async () => {
+    const n = parseInt(people, 10);
+    await api.redetect(id, Number.isFinite(n) && n > 0 ? n : null);
+    onChanged();
+    onClose();
+  };
   return (
     <div className="drawer">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -381,26 +403,33 @@ function SpeakerDrawer({ id, speakers, segments, onClose, onChanged }: { id: str
       {speakers.map((s) => (
         <div key={s.id} className="spk">
           <div className="top"><b>{s.display_name}</b>
-            {s.is_self ? <span className="badge ok">✓ mic channel</span>
+            {s.is_self ? <span className="badge ok">✓ your voice</span>
               : s.name_source === "manual" ? <span className="badge ok">✓ named</span> : <span className="badge warn">unnamed</span>}</div>
           <div className="faint" style={{ fontSize: 12, margin: "4px 0 8px" }}>{stats(s.id)}</div>
-          {!s.is_self && (
-            <>
-              <datalist id="mw-people">{known.map((n) => <option key={n} value={n} />)}</datalist>
-              <input className="input" list="mw-people" placeholder="Name, e.g. Sara Haddad" value={names[s.id] ?? ""}
-                onChange={(e) => setNames({ ...names, [s.id]: e.target.value })} style={{ marginBottom: 6 }} />
-              {speakers.length > 2 && (
-                <select className="select" value={merges[s.id] ?? ""} onChange={(e) => setMerges({ ...merges, [s.id]: e.target.value })}>
-                  <option value="">Merge into… (fix a split speaker)</option>
-                  {speakers.filter((o) => o.id !== s.id).map((o) => <option key={o.id} value={o.id}>{o.display_name}</option>)}
-                </select>
-              )}
-            </>
+          <datalist id="mw-people">{known.map((n) => <option key={n} value={n} />)}</datalist>
+          <input className="input" list="mw-people" placeholder={s.is_self ? "Not you? Type who it is" : "Name, e.g. Sara Haddad"}
+            value={names[s.id] ?? ""} onChange={(e) => setNames({ ...names, [s.id]: e.target.value })} style={{ marginBottom: 6 }} />
+          {speakers.length > 1 && (
+            <select className="select" value={merges[s.id] ?? ""} onChange={(e) => setMerges({ ...merges, [s.id]: e.target.value })}>
+              <option value="">Merge into… (same person split in two)</option>
+              {speakers.filter((o) => o.id !== s.id).map((o) => <option key={o.id} value={o.id}>{o.display_name}</option>)}
+            </select>
           )}
         </div>
       ))}
       <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} onClick={apply}>Apply</button>
-      <p className="faint" style={{ fontSize: 12 }}>Renaming updates the transcript and the names in the notes without calling the AI model again.</p>
+      <p className="faint" style={{ fontSize: 12 }}>Renaming updates the transcript and the names in the notes without calling the AI model again.
+        Giving two speakers the same name merges them. To fix a single line, click the name next to it in the transcript.</p>
+      <div className="spk" style={{ marginTop: 16 }}>
+        <b>Wrong speakers?</b>
+        <p className="faint" style={{ fontSize: 12, margin: "4px 0 8px" }}>Detect the voices again from the recording. Your text edits are kept;
+          names you gave are reset and the notes are rewritten.</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input className="input" type="number" min={1} max={20} placeholder="People (optional)" value={people}
+            onChange={(e) => setPeople(e.target.value)} style={{ flex: 1 }} title="How many people were in the meeting, you included" />
+          <button className="btn" onClick={redetect}>↻ Re-detect speakers</button>
+        </div>
+      </div>
     </div>
   );
 }

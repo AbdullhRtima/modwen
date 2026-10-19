@@ -91,7 +91,9 @@ class STTConfig(BaseModel):
 
 
 class DiarizationConfig(BaseModel):
-    provider: Literal["auto", "pyannote", "none"] = "auto"
+    provider: Literal["auto", "sherpa", "pyannote", "none"] = "auto"
+    # Clustering threshold for the built-in (sherpa) diarizer: higher -> fewer speakers.
+    threshold: float = 1.0
     model: str = "pyannote/speaker-diarization-community-1"
     hf_token: str | None = "keychain:huggingface"
     min_speakers: int | None = None

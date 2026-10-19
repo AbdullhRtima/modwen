@@ -11,7 +11,7 @@ from typing import Callable
 import numpy as np
 
 from modwen.audio.chunks import list_channels, read_channel
-from modwen.pipeline.merge import assign_speakers, dedupe_echo, mark_overlaps
+from modwen.pipeline.speakers import carry_names, label_speakers
 from modwen.storage import now_iso
 from modwen.stt.transcriber import transcribe_channel
 
@@ -59,7 +59,8 @@ class Processor:
         self.publish = publish
 
     # ------------------------------------------------------------------
-    def process(self, meeting_id: str, *, skip_transcription: bool = False) -> dict | None:
+    def process(self, meeting_id: str, *, skip_transcription: bool = False, redetect: bool = False,
+                num_speakers: int | None = None) -> dict | None:
         store = self.store
         m = store.get_meeting(meeting_id)
         if not m:
@@ -68,7 +69,9 @@ class Processor:
         store.update_meeting(meeting_id, status="processing", error=None)
         self._emit({"type": "status", "meeting_id": meeting_id, "status": "processing"})
         try:
-            if not skip_transcription:
+            if redetect:
+                self._redetect(m, prog, num_speakers)
+            elif not skip_transcription:
                 self._transcribe_and_merge(m, prog)
             prog.state["steps"].update({"transcribe": "done", "speakers": "done", "notes": "running"})
             prog.update(store, step="notes", transcribe=1.0)
@@ -100,6 +103,10 @@ class Processor:
         if scope == "summary" and self.store.latest_notes(meeting_id):
             return self.regenerate_summary(meeting_id)
         return self.process(meeting_id, skip_transcription=True)
+
+    def redetect_speakers(self, meeting_id: str, num_speakers: int | None = None) -> dict | None:
+        """Run speaker detection again on the saved transcript (text edits kept), then rewrite the notes."""
+        return self.process(meeting_id, redetect=True, num_speakers=num_speakers)
 
     def regenerate_summary(self, meeting_id: str) -> dict | None:
         """Rewrite only the summary from the current (possibly hand-edited) items. Edits are kept."""
@@ -138,12 +145,7 @@ class Processor:
     def _transcribe_and_merge(self, m: dict, prog: Progress) -> None:
         cfg, store = self.cfg, self.store
         mid = m["id"]
-        mdir = cfg.audio_dir / mid
-        data_key = self.keystore.unwrap(store.get_wrapped_key(mid))
-        channels = list_channels(mdir)
-        if not channels:
-            raise RuntimeError("No audio was recorded for this meeting")
-        audio = {ch: read_channel(mdir, ch, data_key) for ch in channels}
+        audio = self._load_audio(m)
         total = sum(a.size for a in audio.values()) or 1
         duration_ms = int(max(a.size for a in audio.values()) / 16000 * 1000)
         store.update_meeting(mid, duration_ms=duration_ms)
@@ -166,55 +168,53 @@ class Processor:
             )
             done_samples += a.size
 
+        self._speakers(m, prog, audio, per_channel, stt_engine=getattr(engine, "name", "?"))
+
+    def _load_audio(self, m: dict) -> dict[str, np.ndarray]:
+        mdir = self.cfg.audio_dir / m["id"]
+        data_key = self.keystore.unwrap(self.store.get_wrapped_key(m["id"]))
+        channels = list_channels(mdir)
+        if not channels:
+            raise RuntimeError("No audio was recorded for this meeting")
+        return {ch: read_channel(mdir, ch, data_key) for ch in channels}
+
+    def _redetect(self, m: dict, prog: Progress, num_speakers: int | None) -> None:
+        audio = self._load_audio(m)
+        per_channel: dict[str, list[dict]] = {}
+        named = {sp["id"]: sp["display_name"] for sp in self.store.get_speakers(m["id"]) if sp["name_source"] == "manual"}
+        previous = {}  # line id -> (name the user gave its speaker, line length)
+        for s in self.store.get_segments(m["id"]):
+            if s["speaker_id"] in named:
+                previous[s["id"]] = (named[s["speaker_id"]], s["end_ms"] - s["start_ms"])
+            seg = {k: s[k] for k in ("id", "start_ms", "end_ms", "text", "language", "confidence", "edited")}
+            per_channel.setdefault(s["channel"] or "system", []).append(seg)
+        if not per_channel:
+            raise RuntimeError("This meeting has no transcript yet")
+        info = m.get("stt_info") or {}
+        self._speakers(m, prog, audio, per_channel, stt_engine=info.get("engine", "?"), num_speakers=num_speakers,
+                       keep_ids=True, previous=previous)
+
+    def _speakers(self, m: dict, prog: Progress, audio: dict[str, np.ndarray], per_channel: dict[str, list[dict]],
+                  *, stt_engine: str, num_speakers: int | None = None, keep_ids: bool = False,
+                  previous: dict[str, tuple[str, int]] | None = None) -> None:
+        cfg, store, mid = self.cfg, self.store, m["id"]
         prog.state["steps"].update({"transcribe": "done", "speakers": "running"})
         prog.update(store, step="speakers", transcribe=1.0)
-
         diarizer = self.diarizer_factory()
-        speakers: list[dict] = []
-        segments: list[dict] = []
-        online = m.get("mode", "online") == "online"
-
-        if "mic" in per_channel and online:
-            speakers.append({"id": "you", "label": "SELF", "display_name": "You", "channel": "mic",
-                             "is_self": 1, "name_source": "self_channel", "confidence": 1.0})
-        if "mic" in per_channel and "system" in per_channel:
-            per_channel["mic"] = dedupe_echo(per_channel["mic"], per_channel["system"])
-
-        label_to_id: dict[str, str] = {}
-        counter = 0
-        for ch, segs in per_channel.items():
-            if ch == "mic" and online:
-                for s in segs:
-                    s["speaker_id"] = "you"
-                    s["channel"] = ch
-                segments.extend(segs)
-                continue
-            turns = diarizer.diarize(audio[ch], cfg.diarization.min_speakers, cfg.diarization.max_speakers)
-            assign_speakers(segs, turns)
-            used = sorted({s["speaker_label"] for s in segs})
-            single = len(used) <= 1 and getattr(diarizer, "name", "") == "single"
-            for lab in used:
-                key = f"{ch}:{lab}"
-                if key not in label_to_id:
-                    counter += 1
-                    sid = f"spk{counter}"
-                    label_to_id[key] = sid
-                    name = ("Others" if online else "Room") if single else f"Speaker {counter + (1 if online else 0)}"
-                    speakers.append({"id": sid, "label": lab, "display_name": name, "channel": ch, "is_self": 0,
-                                     "name_source": None, "confidence": 0.0})
-            for s in segs:
-                s["speaker_id"] = label_to_id[f"{ch}:{s['speaker_label']}"]
-                s["channel"] = ch
-            segments.extend(segs)
-
-        segments = mark_overlaps(segments)
-        for i, s in enumerate(segments):
-            s["id"] = f"s{i + 1:04d}"
+        speakers, segments = label_speakers(
+            audio, per_channel, diarizer, online=m.get("mode", "online") == "online", num_speakers=num_speakers,
+            min_speakers=cfg.diarization.min_speakers, max_speakers=cfg.diarization.max_speakers)
+        if not keep_ids:
+            for i, s in enumerate(segments):
+                s["id"] = f"s{i + 1:04d}"
+        if previous:
+            carry_names(speakers, segments, previous)
         store.replace_speakers(mid, speakers)
         store.replace_segments(mid, segments)
-        store.update_meeting(mid, stt_info={"engine": getattr(engine, "name", "?"),
-                                            "diarizer": getattr(diarizer, "name", "?"),
-                                            "channels": channels})
+        info = {"engine": stt_engine, "diarizer": getattr(diarizer, "name", "?"), "channels": sorted(audio)}
+        if num_speakers:
+            info["num_speakers"] = num_speakers
+        store.update_meeting(mid, stt_info=info)
         prog.state["steps"]["speakers"] = "done"
         prog.update(store)
 

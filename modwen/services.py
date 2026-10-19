@@ -127,7 +127,12 @@ class Services:
             return self._diarizer_factory_override()
         from modwen.diarize import make_diarizer
 
-        return self._engine("diarizer", lambda: make_diarizer(self.cfg))
+        d = self._engine("diarizer", lambda: make_diarizer(self.cfg))
+        if d.name == "single" and self.cfg.diarization.provider != "none":
+            # A fallback (e.g. the model download failed while offline): try again for the next meeting.
+            with self._engine_lock:
+                self._engine_cache.pop("diarizer", None)
+        return d
 
     def llm(self, profile: str | None = None):
         from modwen.notes.llm_client import make_client
@@ -152,6 +157,9 @@ class Services:
     def enqueue_regenerate(self, meeting_id: str, **kw) -> None:
         self.jobs.put(("regenerate", meeting_id, kw))
 
+    def enqueue_redetect(self, meeting_id: str, **kw) -> None:
+        self.jobs.put(("redetect", meeting_id, kw))
+
     def _run_jobs(self) -> None:
         while True:
             kind, mid, kw = self.jobs.get()
@@ -160,6 +168,8 @@ class Services:
                     self.processor.process(mid)
                 elif kind == "regenerate":
                     self.processor.regenerate_notes(mid, **kw)
+                elif kind == "redetect":
+                    self.processor.redetect_speakers(mid, **kw)
             except Exception:
                 log.exception("job %s %s failed", kind, mid)
             finally:

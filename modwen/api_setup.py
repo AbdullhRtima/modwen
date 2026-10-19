@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from modwen.egress import EgressBlocked, ensure_local
+from modwen.pipeline.merge import gate_to_lines
 
 log = logging.getLogger(__name__)
 
@@ -109,15 +110,27 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
 
     @app.post("/api/setup/whisper/download")
     def whisper_download():
+        from modwen.diarize import download_sherpa_models, sherpa_models_present
+
         backend, live, final = s.model_choice
         models = [m for m in dict.fromkeys([final, live]) if not whisper_models.is_present(s.cfg, m, backend)]
-        if not models:
+        try:
+            import sherpa_onnx  # noqa: F401
+
+            speakers = not sherpa_models_present(s.cfg.models_dir)
+        except ImportError:
+            speakers = False
+        if not models and not speakers:
             return {"job": None, "message": "Speech models already downloaded"}
+        steps = len(models) + int(speakers)
 
         def run(job, update):
             for i, m in enumerate(models, 1):
-                update(step=f"Speech model {i}/{len(models)}: Whisper {m}", done=0, total=0)
+                update(step=f"Speech model {i}/{steps}: Whisper {m}", done=0, total=0)
                 whisper_models.download(s.cfg, m, backend, update)
+            if speakers:
+                update(step=f"Speech model {steps}/{steps}: speaker detection", done=0, total=0)
+                download_sherpa_models(s.cfg.models_dir, lambda done, total: update(done=done, total=total))
             s.reset_engines()
 
         return {"job": s.tasks.start("whisper", "Download speech models", run).to_dict()}
@@ -324,7 +337,7 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         return {"deleted": pid}
 
     # ----------------------------------------------------------------- audio player
-    _cache: dict[str, bytes] = {}
+    _cache: dict[tuple, bytes] = {}
 
     @app.get("/api/meetings/{mid}/audio")
     def meeting_audio(mid: str, request: Request):
@@ -336,13 +349,23 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         m = s.store.get_meeting(mid)
         if not m:
             raise HTTPException(404, "Meeting not found")
-        data = _cache.get(mid)
+        segments = s.store.get_segments(mid)
+        mic_lines = [g for g in segments if g["channel"] == "mic"]
+        # The mix depends on which mic lines exist, so moving lines or re-detecting speakers rebuilds it.
+        cache_key = (mid, bool(segments), tuple((g["start_ms"], g["end_ms"]) for g in mic_lines))
+        data = _cache.get(cache_key)
         if data is None:
             key = s.keystore.unwrap(s.store.get_wrapped_key(mid))
             mdir = s.cfg.audio_dir / mid
-            tracks = [read_channel(mdir, ch, key) for ch in list_channels(mdir)]
+            channels = list_channels(mdir)
+            tracks = [read_channel(mdir, ch, key) for ch in channels]
             if not tracks:
                 raise HTTPException(404, "No audio for this meeting")
+            if "mic" in channels and "system" in channels and segments:
+                # Without headphones the mic also hears the call, a little late: mixed in, every remote
+                # sentence plays twice. Keep the mic only where a local voice was transcribed.
+                i = channels.index("mic")
+                tracks[i] = gate_to_lines(tracks[i], mic_lines)
             n = max(t.size for t in tracks)
             mix = np.zeros(n, dtype=np.float32)
             for t in tracks:
@@ -353,7 +376,7 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
             sf.write(bio, mix, 16000, format="FLAC", subtype="PCM_16")
             data = bio.getvalue()
             _cache.clear()
-            _cache[mid] = data
+            _cache[cache_key] = data
         size = len(data)
         rng = request.headers.get("range")
         headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}

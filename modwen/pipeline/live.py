@@ -1,8 +1,9 @@
 """Simple live captions (design: "keep it simple").
 
 Per channel: buffer audio, end an utterance on ~0.7 s of silence or 12 s max, transcribe it with the fast
-model in a worker thread, publish "You"/"Others" lines. Live text is display-only: never stored as the
-final transcript, never sent to the LLM. If the machine falls behind, utterances are skipped and a
+model in a worker thread, publish "You"/"Others" lines. A mic utterance heard mostly while the system
+channel is playing is the call leaking into the mic (no headphones) and is skipped, so it doesn't show up
+as "You". Live text is display-only: never stored as the final transcript, never sent to the LLM. If the machine falls behind, utterances are skipped and a
 "live paused" flag is raised; recording itself is never affected.
 """
 
@@ -24,6 +25,8 @@ from modwen.stt.language import choose_language, script_language
 log = logging.getLogger(__name__)
 
 LABELS = {"mic": "You", "system": "Others", "room": "Room"}
+ECHO_COVERAGE = 0.6  # share of a mic utterance during which the remote side was audible
+ECHO_PAD = int(0.3 * SAMPLE_RATE)  # the echo reaches the mic a little after the system audio
 
 
 class _Endpointer:
@@ -80,6 +83,9 @@ class LiveTranscriber:
         self.error: str | None = None
         self._q: queue.Queue = queue.Queue()
         self._ep: dict[str, _Endpointer] = {}
+        self._remote: list[list[int]] = []  # [start, end] sample spans where the system channel was audible
+        self._remote_pos = 0
+        self.echo_skipped = 0
         self._running = True
         self._worker = threading.Thread(target=self._run, name="live-stt", daemon=True)
         if self.enabled:
@@ -89,7 +95,12 @@ class LiveTranscriber:
         if not self.enabled:
             return
         ep = self._ep.setdefault(channel, _Endpointer())
+        if channel == "system":
+            self._track_remote(frames, ep.th)
         for start, utt in ep.feed(frames):
+            if channel == "mic" and self._remote_share(start, start + utt.size) >= ECHO_COVERAGE:
+                self.echo_skipped += 1
+                continue
             if self._q.qsize() >= self.max_backlog:
                 try:
                     self._q.get_nowait()  # drop the oldest: live view skips ahead
@@ -99,6 +110,24 @@ class LiveTranscriber:
                     self.paused = True
                     self.publish({"type": "live_status", "meeting_id": self.meeting_id, "paused": True})
             self._q.put((channel, start, utt))
+
+    def _track_remote(self, frames: np.ndarray, threshold_db: float) -> None:
+        a, self._remote_pos = self._remote_pos, self._remote_pos + frames.size
+        rms = float(np.sqrt(np.mean(frames**2) + 1e-12)) if frames.size else 0.0
+        if 20 * np.log10(rms + 1e-12) <= threshold_db:
+            return
+        if self._remote and a <= self._remote[-1][1] + ECHO_PAD:
+            self._remote[-1][1] = self._remote_pos
+        else:
+            self._remote.append([a, self._remote_pos])
+        while self._remote and self._remote[0][1] < self._remote_pos - 120 * SAMPLE_RATE:
+            self._remote.pop(0)
+
+    def _remote_share(self, a: int, b: int) -> float:
+        if b <= a or not self._remote:
+            return 0.0
+        hit = sum(max(0, min(b, e + ECHO_PAD) - max(a, s)) for s, e in self._remote)
+        return min(1.0, hit / (b - a))
 
     def _run(self) -> None:
         try:

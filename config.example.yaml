@@ -25,7 +25,8 @@ stt:
   vad: auto                   # auto | silero | energy
 
 diarization:
-  provider: auto              # auto | pyannote | none   (pyannote needs: uv sync --extra diarization)
+  provider: auto              # auto | sherpa | pyannote | none   (sherpa is built in; pyannote: uv sync --extra diarization)
+  threshold: 1.0              # built-in diarizer: raise if one person is split in two, lower if two people are merged
   hf_token: "keychain:huggingface"   # only used once to download the pyannote model
 
 llm:

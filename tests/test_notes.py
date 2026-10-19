@@ -165,3 +165,17 @@ def test_hallucinated_deadline_is_replaced_or_dropped(cfg, fake_llm):
     assert (a1["due_raw"], a1["due_date"]) == ("tomorrow", "2026-10-17")
     assert (a2["due_raw"], a2["due_date"]) == (None, None)
     assert any("Dropped a deadline" in w for w in d["warnings"])
+
+
+
+def test_moving_a_line_moves_its_notes():
+    from modwen.notes.engine import retarget_line
+
+    data = {"action_items": [{"task": "Send the demo", "owner": "Person 2", "evidence_segment_ids": ["s0005"]},
+                             {"task": "Fix CI", "owner": "Person 2", "evidence_segment_ids": ["s0005", "s0006"]}],
+            "key_points": [{"text": "Person 2: finished the PDF export", "evidence_segment_ids": ["s0005"]}],
+            "decisions": [], "warnings": []}
+    after = {"s0005": "You", "s0006": "Person 2"}  # s0005 was really you; s0006 is still Person 2
+    out = retarget_line(data, "s0005", "Person 2", "You", after)
+    assert [a["owner"] for a in out["action_items"]] == ["You", "Person 2"]
+    assert out["key_points"][0]["text"] == "You: finished the PDF export"

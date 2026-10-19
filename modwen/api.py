@@ -58,6 +58,14 @@ class SegmentEdit(BaseModel):
     text: str
 
 
+class SegmentSpeaker(BaseModel):
+    speaker_id: str  # an existing speaker id, or "new" for a new "Person N"
+
+
+class RedetectRequest(BaseModel):
+    num_speakers: int | None = None  # everyone in the meeting, you included; None = detect automatically
+
+
 class NotesEdit(BaseModel):
     data: dict[str, Any]
 
@@ -249,6 +257,35 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
         meeting_or_404(mid)
         s.store.merge_speakers(mid, sid, req.into)
         return {"merged": sid, "into": req.into}
+
+    @app.post("/api/meetings/{mid}/speakers/redetect")
+    def redetect(mid: str, req: RedetectRequest):
+        meeting_or_404(mid)
+        if req.num_speakers is not None and not 1 <= req.num_speakers <= 20:
+            raise HTTPException(400, "num_speakers must be between 1 and 20")
+        s.enqueue_redetect(mid, num_speakers=req.num_speakers)
+        return {"queued": True}
+
+    @app.post("/api/meetings/{mid}/segments/{seg_id}/speaker")
+    def set_segment_speaker(mid: str, seg_id: str, req: SegmentSpeaker):
+        meeting_or_404(mid)
+        sid = req.speaker_id
+        seg = next((x for x in s.store.get_segments(mid) if x["id"] == seg_id), None)
+        if seg is None:
+            raise HTTPException(404, "Line not found")
+        if sid == "new":
+            sid = s.store.add_speaker(mid, seg.get("channel"))["id"]
+        if not s.store.set_segment_speaker(mid, seg_id, sid):
+            raise HTTPException(404, "Line or speaker not found")
+        notes = s.store.latest_notes(mid)
+        if notes:
+            from modwen.notes.engine import retarget_line
+
+            lines = {x["id"]: x["speaker_name"] for x in s.store.get_segments(mid)}
+            data = retarget_line(notes["data"], seg_id, seg.get("speaker_name") or "", lines[seg_id] or "", lines)
+            if data != notes["data"]:
+                s.store.update_notes_data(notes["id"], data)
+        return {"speaker_id": sid, "speakers": s.store.get_speakers(mid)}
 
     @app.put("/api/meetings/{mid}/segments/{seg_id}")
     def edit_segment(mid: str, seg_id: str, req: SegmentEdit):

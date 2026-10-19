@@ -37,6 +37,7 @@ def cfg(data_dir):
     c.notify.desktop = False
     c.stt.live.provider = "none"
     c.stt.vad = "energy"  # synthetic tones stand in for speech; Silero (correctly) ignores tones
+    c.diarization.provider = "none"  # no model downloads in tests
     return c
 
 

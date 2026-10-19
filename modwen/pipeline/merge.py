@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from difflib import SequenceMatcher
 
+import numpy as np
+
 from modwen.diarize import Turn
 
 
@@ -42,15 +44,15 @@ def _strip_echo(mic_text: str, sys_text: str, min_chars: int = 10, coverage: flo
     return " ".join(mic_text.split())
 
 
-def dedupe_echo(mic: list[dict], system: list[dict], threshold: float = 0.72) -> list[dict]:
+def dedupe_echo(mic: list[dict], system: list[dict], threshold: float = 0.72, slack_ms: int = 1500) -> list[dict]:
     """Drop mic segments that are just the remote audio leaking into the mic, and cut echoed
-    remote sentences out of longer mic lines."""
+    remote sentences out of longer mic lines. ``slack_ms`` absorbs timestamp drift between the channels."""
     kept = []
     for m in mic:
         m0, m1 = m["start_ms"], m["end_ms"]
         echo = False
         for s in system:
-            ov = _overlap(m0, m1, s["start_ms"], s["end_ms"])
+            ov = min(m1 - m0, _overlap(m0 - slack_ms, m1 + slack_ms, s["start_ms"], s["end_ms"]))
             if ov <= 0:
                 continue
             if ov / max(1, m1 - m0) >= 0.5 and _similar(m["text"], s["text"]) >= threshold:
@@ -74,3 +76,17 @@ def mark_overlaps(segments: list[dict], min_ms: int = 600) -> list[dict]:
             ) >= min_ms:
                 a["overlap"] = b["overlap"] = 1
     return ordered
+
+
+def gate_to_lines(audio: np.ndarray, lines: list[dict], pad_ms: int = 300, fade_ms: int = 30,
+                  sample_rate: int = 16000) -> np.ndarray:
+    """Silence ``audio`` outside the given transcript lines (with a little padding and short fades)."""
+    gain = np.zeros(audio.size, dtype=np.float32)
+    for ln in lines:
+        a = max(0, (ln["start_ms"] - pad_ms) * sample_rate // 1000)
+        b = min(audio.size, (ln["end_ms"] + pad_ms) * sample_rate // 1000)
+        gain[a:b] = 1.0
+    fade = max(1, fade_ms * sample_rate // 1000)
+    if fade > 1 and gain.any():
+        gain = np.convolve(gain, np.ones(fade, dtype=np.float32) / fade, mode="same")
+    return (audio * gain).astype(np.float32)

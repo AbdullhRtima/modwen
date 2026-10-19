@@ -39,6 +39,7 @@ class CaptureError(RuntimeError):
 class CaptureSource:
     channel: str = "mic"
     description: str = ""
+    realtime = True  # delivers audio at the speed of the clock (the recorder fills gaps it leaves)
 
     def start(self, callback: FrameCallback) -> None:
         raise NotImplementedError
@@ -80,8 +81,8 @@ class DeviceSource(CaptureSource):
         log.info("Opening %s for channel %s", self.description, self.channel)
 
         def cb(indata, frames, time_info, status):  # PortAudio thread
-            if status:
-                log.debug("audio status %s: %s", self.channel, status)
+            if status:  # e.g. input overflow: audio was lost; the recorder pads the gap to keep channels in sync
+                log.info("audio status %s: %s", self.channel, status)
             callback(self.channel, to_mono_16k(indata.copy(), rate))
 
         self._stream = sd.InputStream(device=idx, channels=channels, samplerate=rate, dtype="float32",
@@ -253,6 +254,7 @@ class FileSource(CaptureSource):
         self.path = Path(path)
         self.channel = channel
         self.speed = speed
+        self.realtime = speed == 1.0
         self.description = f"file {self.path.name} x{speed}"
         self._running = False
         self._thread = None

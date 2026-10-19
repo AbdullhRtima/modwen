@@ -74,7 +74,7 @@ mic + system audio ─► encrypted 30 s chunks ─► live captions (fast Whisp
                                    │
                          Stop ─► VAD windows ─► Whisper large-v3 (per-window language: ar/en/mixed)
                                    │
-                         speakers (You / Others / pyannote) ─► local LLM (OpenAI-compatible, localhost)
+                         speakers (You / Person 1..N, echo dropped) ─► local LLM (OpenAI-compatible, localhost)
                                    │
                          notes JSON (every item cites transcript lines) ─► review UI ─► Copy / Export .md
 ```
