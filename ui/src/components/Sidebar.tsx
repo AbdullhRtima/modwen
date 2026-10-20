@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, fmtDuration, Meeting } from "../api";
 import type { Ctx } from "../App";
 import { Key, useI18n } from "../i18n";
+import { useServerEvents } from "../events";
 import { I } from "./icons";
 
 /** Meetings grouped the way people remember them: today, yesterday, this week, older. */
@@ -22,10 +23,13 @@ export function useMeetings(ctx: Ctx) {
   useEffect(() => {
     load();
   }, []);
-  useEffect(() => {
-    const t = ctx.lastEvent?.type;
-    if (t && ["notes_ready", "failed", "recording_stopped", "recording_started", "status", "progress", "meetings_changed"].includes(t)) load();
-  }, [ctx.lastEvent]);
+  useServerEvents(ctx, (e) => {
+    if (e.type === "progress") {  // update the % chip in place; no request per tick
+      setMeetings((ms) => ms && ms.map((m) => (m.id === e.meeting_id ? { ...m, status: "processing", progress: e.progress as Meeting["progress"] } : m)));
+      return;
+    }
+    if (["notes_ready", "failed", "recording_stopped", "recording_started", "status", "meetings_changed", "resync"].includes(e.type)) load();
+  });
   return { meetings, reload: load };
 }
 

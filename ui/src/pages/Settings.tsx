@@ -3,6 +3,7 @@ import { api, setup, SetupStatus } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
 import JobProgress, { useJob } from "../components/JobProgress";
+import { useServerEvents } from "../events";
 import { Key, useI18n } from "../i18n";
 
 type Tab = "general" | "audio" | "transcription" | "ai" | "notifications" | "privacy" | "about";
@@ -26,9 +27,9 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
     setup.status().then(setSt);
   };
   useEffect(reload, []);
-  useEffect(() => {
-    if (ctx.lastEvent?.type === "job") setup.status().then(setSt);
-  }, [ctx.lastEvent]);
+  useServerEvents(ctx, (e) => {
+    if (e.type === "job" || e.type === "resync") setup.status().then(setSt);
+  });
 
   const save = async (patch: Record<string, unknown>) => {
     try {

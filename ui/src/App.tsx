@@ -19,6 +19,8 @@ export type Ctx = {
   llmActive: string;
   events: BBEvent[];
   lastEvent: BBEvent | null;
+  /** Every server event, in order (lastEvent can skip one when two arrive together). Returns unsubscribe. */
+  subscribe: (fn: (e: BBEvent) => void) => () => void;
   toast: (msg: string, kind?: "ok" | "error") => void;
   fail: (err: unknown) => void;
   go: (hash: string) => void;
@@ -46,6 +48,11 @@ export default function App() {
   const [authError, setAuthError] = useState(false);
   const [lastEvent, setLastEvent] = useState<BBEvent | null>(null);
   const [events, setEvents] = useState<BBEvent[]>([]);
+  const listeners = useRef(new Set<(e: BBEvent) => void>());
+  const subscribe = useCallback((fn: (e: BBEvent) => void) => {
+    listeners.current.add(fn);
+    return () => { listeners.current.delete(fn); };
+  }, []);
   const [toastMsg, setToastMsg] = useState<{ msg: string; kind: "ok" | "error" } | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const firstRunChecked = useRef(false);
@@ -85,7 +92,13 @@ export default function App() {
 
   useEffect(() => {
     refreshStatus();
+    let connected = false;
     const stop = connectEvents((e) => {
+      // "hello" opens every connection; a second one means we were disconnected and may have missed events,
+      // so pages reload what they show ("resync").
+      const all = e.type === "hello" && connected ? [e, { type: "resync" }] : [e];
+      if (e.type === "hello") connected = true;
+      for (const ev of all) listeners.current.forEach((fn) => fn(ev));
       setLastEvent(e);
       setEvents((prev) => [...prev.slice(-300), e]);
       if (e.type === "recorder") setRecorder(e as unknown as RecorderStatus);
@@ -99,7 +112,7 @@ export default function App() {
     };
   }, [refreshStatus]);
 
-  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, toast, fail, go, refreshStatus };
+  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, subscribe, toast, fail, go, refreshStatus };
   const path = hash.replace(/^#/, "") || "/";
   let page = <Home ctx={ctx} />;
   let narrow = false;

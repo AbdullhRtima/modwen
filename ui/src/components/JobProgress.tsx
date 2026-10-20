@@ -1,18 +1,18 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { fmtGB, Job } from "../api";
 import type { Ctx } from "../App";
+import { useServerEvents } from "../events";
 import { I } from "./icons";
 
 // Live progress for a background job (download/install), fed by "job" events over the WebSocket.
 export function useJob(ctx: Ctx, initial: Job | null): [Job | null, (j: Job | null) => void] {
   const [job, setJob] = useState<Job | null>(initial);
-  useEffect(() => {
-    const e = ctx.lastEvent;
-    if (e?.type === "job") {
+  useServerEvents(ctx, (e) => {
+    if (e.type === "job") {
       const j = e.job as Job;
       setJob((cur) => (cur && cur.id === j.id ? j : cur));
     }
-  }, [ctx.lastEvent]);
+  });
   return [job, setJob];
 }
 

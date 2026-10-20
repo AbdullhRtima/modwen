@@ -3,11 +3,12 @@ import { api, fmtTs } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
 import { useI18n } from "../i18n";
+import { serverText } from "../serverText";
 import { openPill } from "../pages/Pill";
 
 /** The floating recording pill: shown on every page while a meeting is being recorded. */
 export default function RecordingBar({ ctx, onLive = false }: { ctx: Ctx; onLive?: boolean }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const r = ctx.recorder;
   const [elapsed, setElapsed] = useState(r.elapsed_ms ?? 0);
   useEffect(() => {
@@ -17,7 +18,7 @@ export default function RecordingBar({ ctx, onLive = false }: { ctx: Ctx; onLive
     return () => window.clearInterval(timer);
   }, [r.elapsed_ms, r.paused]);
 
-  const warnings = Object.values(r.warnings ?? {});
+  const warnings = Object.values(r.warnings ?? {}).map((w) => serverText(w, lang));
   const levels = r.levels ?? {};
   const act = (fn: () => Promise<unknown>, ok?: string) => fn().then(() => { ctx.refreshStatus(); if (ok) ctx.toast(ok); }, ctx.fail);
   const stop = async () => {

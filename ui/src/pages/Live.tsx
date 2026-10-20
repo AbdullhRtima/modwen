@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useServerEvents } from "../events";
 import { api, fmtTs, LiveLine } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
@@ -15,12 +16,11 @@ export default function Live({ ctx }: { ctx: Ctx }) {
   useEffect(() => {
     if (r.meeting_id) api.live(r.meeting_id).then((d) => setLines(d.lines), () => undefined);
   }, [r.meeting_id]);
-  useEffect(() => {
-    const e = ctx.lastEvent;
-    if (!e) return;
+  useServerEvents(ctx, (e) => {
     if (e.type === "live_line" && e.meeting_id === r.meeting_id) setLines((prev) => [...prev.slice(-499), e.line as LiveLine]);
     if (e.type === "live_status") setLivePaused(Boolean(e.paused));
-  }, [ctx.lastEvent]);
+    if (e.type === "resync" && r.meeting_id) api.live(r.meeting_id).then((d) => setLines(d.lines), () => undefined);
+  });
   useEffect(() => {
     if (follow && box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [lines, follow]);

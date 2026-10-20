@@ -3,6 +3,7 @@ import { setup, SetupStatus } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
 import JobProgress, { useJob } from "../components/JobProgress";
+import { useServerEvents } from "../events";
 import { useI18n } from "../i18n";
 import { AudioTest } from "./Settings";
 
@@ -14,10 +15,9 @@ export default function Welcome({ ctx }: { ctx: Ctx }) {
   useEffect(() => {
     reload();
   }, []);
-  useEffect(() => {
-    const t = ctx.lastEvent?.type;
-    if (t === "job") reload();
-  }, [ctx.lastEvent]);
+  useServerEvents(ctx, (e) => {
+    if (e.type === "job" || e.type === "resync") reload();
+  });
 
   const steps = [tr("Permissions", "الأذونات"), tr("This computer", "هذا الجهاز"), tr("Models", "النماذج"), tr("Notifications", "الإشعارات")];
   if (!st) return <p className="muted"><I.spin className="spin-anim" /> {tr("Checking this computer…", "جارٍ فحص هذا الجهاز…")}</p>;

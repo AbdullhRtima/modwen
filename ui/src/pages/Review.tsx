@@ -3,13 +3,15 @@ import { ActionItem, api, fmtDuration, fmtTs, Meeting, Notes, NotesData, PersonT
 import type { Ctx } from "../App";
 import { StatusChip } from "./Home";
 import { fmtDate, useI18n } from "../i18n";
+import { serverText } from "../serverText";
+import { useServerEvents } from "../events";
 import { I } from "../components/icons";
 
 const SPEAKER_COLORS = ["--sp1", "--sp2", "--sp3", "--sp4", "--sp5", "--sp6", "--sp7", "--sp8"];
 export const UNNAMED_SPEAKER = /^(Person \d+|Speaker \d+|Others|Room|Not sure)$/;
 
 export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
-  const { t, lang: ui } = useI18n();
+  const { t, tr, lang: ui } = useI18n();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
@@ -39,13 +41,13 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
   }, [id]);
 
   useEffect(load, [load]);
-  useEffect(() => {
-    const e = ctx.lastEvent;
-    if (!e || e.meeting_id !== id) return;
+  useServerEvents(ctx, (e) => {
+    if (e.type === "resync") return load();  // reconnected: we may have missed the end of processing
+    if (e.meeting_id !== id) return;
     if (e.type === "progress") setMeeting((m) => (m ? { ...m, status: "processing", progress: e.progress as Progress } : m));
     if (e.type === "meetings_changed" && e.change === "deleted") ctx.go("#/");  // deleted in another window
     else if (["notes_ready", "failed", "status"].includes(e.type)) load();
-  }, [ctx.lastEvent, id, load]);
+  });
 
   const colorOf = useMemo(() => {
     const map: Record<string, string> = {};
@@ -118,7 +120,7 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
   const lowConf = segments.filter((s) => s.overlap).length;
   const warnings = [
     unnamed ? `${unnamed} ${t("unnamedN")}` : "",
-    ...(data?.warnings ?? []),
+    ...(data?.warnings ?? []).map((w) => serverText(w, ui)),
     lowConf ? `${lowConf} ${t("overlapN")}` : "",
   ].filter(Boolean);
   const point = (id_: string, text: string, original: string | undefined, ids: string[], low = false) => (
@@ -254,14 +256,14 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
                     }
                   }} /></span></div>
             <div className="player">
-              <button className="play" aria-label={playing ? t("pause") : "Play"} onClick={() => {
+              <button className="play" aria-label={playing ? t("pause") : tr("Play", "تشغيل")} onClick={() => {
                 const a = audioRef.current;
                 if (!a) return;
                 if (a.paused) a.play().catch(() => undefined);
                 else a.pause();
               }}>{playing ? <I.pause size={15} fill="currentColor" /> : <I.play size={15} fill="currentColor" />}</button>
               <span className="ts">{fmtTs(pos * 1000)}</span>
-              <input type="range" min={0} max={dur || 0} step={0.5} value={pos} aria-label="Position" onChange={(e) => seek(Number(e.target.value) * 1000)} />
+              <input type="range" min={0} max={dur || 0} step={0.5} value={pos} aria-label={tr("Position", "الموضع")} onChange={(e) => seek(Number(e.target.value) * 1000)} />
               <span className="ts">{fmtTs((dur || meeting.duration_ms / 1000) * 1000)}</span>
               <audio ref={audioRef} preload="metadata" src={`/api/meetings/${id}/audio`}
                 onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
@@ -303,7 +305,7 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
 
 function ProcessingCard({ meeting, onRetry, onRegenerate, hasTranscript }: { meeting: Meeting; onRetry: () => void;
   onRegenerate: () => void; hasTranscript: boolean }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const p = meeting.progress as Progress;
   const steps = p?.steps ?? { audio: "done", transcribe: "pending", speakers: "pending", notes: "pending" };
   const icon = (st: string, n: number) => (st === "done" ? <I.check size={13} /> : st === "failed" ? <I.close size={13} /> : st === "running" ? "" : String(n));
@@ -323,7 +325,7 @@ function ProcessingCard({ meeting, onRetry, onRegenerate, hasTranscript }: { mee
       </div>
       {meeting.status === "processing" && <p className="muted" style={{ marginTop: 14 }}>{eta} {t("closeOk")}</p>}
       {meeting.status === "failed" && (
-        <div className="banner err" style={{ marginTop: 14 }}><I.fail />{meeting.error}
+        <div className="banner err" style={{ marginTop: 14 }}><I.fail />{serverText(meeting.error ?? "", lang)}
           {hasTranscript ? <>&nbsp;{t("transcriptSaved")}&nbsp;<button className="btn sm" onClick={onRegenerate}>{t("retryNotes")}</button></>
             : <>&nbsp;<button className="btn sm" onClick={onRetry}>{t("retry")}</button></>}
           <a className="btn sm" href="#/settings/ai">{t("aiSettings")}</a>
@@ -364,7 +366,8 @@ function ActionRow({ a, lit, speakers, colorOf, evButton, onChange }: { a: Actio
 function TranscriptLine({ s, color, lit, hit, speakers, onClick, onSave, onSpeaker }: { s: Segment; color: string;
   lit: boolean; hit?: boolean; speakers: Speaker[]; onClick: () => void; onSave: (text: string) => void;
   onSpeaker: (speakerId: string) => void }) {
-  const { t } = useI18n();
+  const { t, tr } = useI18n();
+  const langTag = (l: string) => ({ en: "EN", ar: "AR", mixed: tr("mixed", "مختلط") } as Record<string, string>)[l] ?? l;
   const [editing, setEditing] = useState(false);
   const [picking, setPicking] = useState(false);
   return (
@@ -387,7 +390,7 @@ function TranscriptLine({ s, color, lit, hit, speakers, onClick, onSave, onSpeak
           onClick={(e) => { e.stopPropagation(); setPicking(true); }}><I.unsure size={12} />{t("notSure")}</button> : null}
         {s.overlap ? <span className="badge warn">{t("overlap")}</span> : null}
         {s.edited ? <I.edit size={12} className="faint" /> : null}
-        <span className="faint" style={{ fontSize: 11 }}>{s.language}</span></span>
+        <span className="faint" style={{ fontSize: 11 }}>{langTag(s.language)}</span></span>
       {editing ? (
         <textarea className="input txt" autoFocus defaultValue={s.text} dir="auto"
           onBlur={(e) => { setEditing(false); if (e.target.value !== s.text) onSave(e.target.value); }} />

@@ -667,3 +667,34 @@ def test_ai_server_is_killed_outright_even_if_it_ignores_sigterm(tmp_path):
     t0 = time.monotonic()
     ManagedLLM._kill_tree(p.pid)
     assert p.wait(timeout=5) is not None and time.monotonic() - t0 < 3  # gone at once, SIGTERM not needed
+
+
+def test_server_messages_have_an_arabic_translation_in_the_ui():
+    """ui/src/serverText.ts translates notes / recording warnings by pattern; a reworded message must not slip past."""
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).parent.parent / "ui" / "src" / "serverText.ts").read_text(encoding="utf-8")
+    patterns = [re.compile(p) for p in re.findall(r"\[/(\^.*?\$)/,", src)]
+    assert len(patterns) >= 12
+    samples = [  # the exact f-strings of modwen/notes/engine.py and modwen/pipeline/recorder.py
+        f"Dropped a deadline not found in the transcript ({'بكرة'!r})", "3 item(s) without transcript evidence (low confidence)",
+        "2 action item(s) without an owner", "Summary (ar) failed: timeout",
+        "Bluetooth mic lowers accuracy. Use built-in or wired.",
+        "The microphone device changed; recording continues on MacBook Pro Microphone.",
+        "Lost the system device and could not reopen it: busy", "No system audio for 75 s. Is the meeting muted?",
+        "Recording for 3.0 h; safety stop at 4 h.", "Low disk space (1.5 GB); stopping to protect the recording.",
+        "This computer is busy; live captions are paused. The recording is safe.",
+        "The audio device dropped sound 2 time(s); timing was kept. Close heavy apps if this keeps happening.",
+        "Modwen closed before any audio was saved (audio is saved every 30 s). Nothing to process.",
+    ]
+    for msg in samples:
+        assert any(p.match(msg) for p in patterns), msg
+    engine = (Path(__file__).parent.parent / "modwen" / "notes" / "engine.py").read_text(encoding="utf-8")
+    recorder = (Path(__file__).parent.parent / "modwen" / "pipeline" / "recorder.py").read_text(encoding="utf-8")
+    for fragment in ("Dropped a deadline not found in the transcript", "without transcript evidence (low confidence)",
+                     "action item(s) without an owner"):
+        assert fragment in engine, fragment
+    for fragment in ("Bluetooth mic lowers accuracy", "Is the meeting muted?", "safety stop at", "Low disk space",
+                     "live captions are paused", "dropped sound"):
+        assert fragment in recorder, fragment

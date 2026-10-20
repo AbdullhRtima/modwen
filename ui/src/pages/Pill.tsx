@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { api, fmtTs } from "../api";
 import type { Ctx } from "../App";
 import { useI18n } from "../i18n";
+import { serverText } from "../serverText";
 import { I } from "../components/icons";
 
 // Compact floating recording pill, opened in its own small browser window (#/pill).
 // In v1 (Tauri) the same page becomes an always-on-top native window.
 export default function Pill({ ctx }: { ctx: Ctx }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const r = ctx.recorder;
   const [elapsed, setElapsed] = useState(r.elapsed_ms ?? 0);
 
@@ -42,14 +43,14 @@ export default function Pill({ ctx }: { ctx: Ctx }) {
           <span>{t("notRecording")}</span>
           <span style={{ flex: 1 }} />
           <button className="pb" onClick={() => openMain("#/start")}><I.record size={14} />{t("record")}</button>
-          <button className="pb" aria-label="Close" onClick={() => window.close()}><I.close size={14} /></button>
+          <button className="pb" aria-label={lang === "ar" ? "إغلاق" : "Close"} onClick={() => window.close()}><I.close size={14} /></button>
         </div></div>
       </div>
     );
   }
 
   const levels = r.levels ?? {};
-  const warnings = Object.values(r.warnings ?? {});
+  const warnings = Object.values(r.warnings ?? {}).map((w) => serverText(w, lang));
   const meter = (label: string, key: string) =>
     key in levels ? <span className="meter">{label}<span className="bar"><i style={{ width: `${levels[key] * 100}%` }} /></span></span> : null;
 
