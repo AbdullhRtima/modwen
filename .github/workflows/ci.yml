@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    env:
+      UV_CACHE_DIR: ${{ github.workspace }}/.cache/uv
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          extras="--extra stt --extra desktop"
+          if [ "$RUNNER_OS" = "Windows" ]; then extras="$extras --extra windows"; fi
+          uv sync --frozen $extras
+
+      - name: Lint (errors only; the style backlog is tracked separately)
+        run: uv run ruff check --select E9,F modwen tests
+
+      - name: Tests (no network, no models)
+        run: uv run pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build the web UI (type-check + bundle)
+        working-directory: ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
