@@ -275,7 +275,7 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         errors: dict[str, str] = {}
         lock = threading.Lock()
 
-        def on_frames(channel, frames, rate=None):
+        def on_frames(channel, frames, rate=None, capture_time=None):  # same callback shape as the recorder's
             with lock:
                 peaks[channel] = max(peaks.get(channel, 0.0), rms_level(frames))
 

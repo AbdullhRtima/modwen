@@ -325,14 +325,19 @@ class Services:
         while True:
             _, _, kind, mid, kw = self.jobs.get()
             try:
-                if kind == "process":
+                if not self.store.get_meeting(mid):
+                    log.info("Skipping %s for meeting %s: it was deleted", kind, mid)
+                elif kind == "process":
                     self.processor.process(mid)
                 elif kind == "regenerate":
                     self.processor.regenerate_notes(mid, **kw)
                 elif kind == "redetect":
                     self.processor.redetect_speakers(mid, **kw)
             except Exception:
-                log.exception("job %s %s failed", kind, mid)
+                if self.store.get_meeting(mid):
+                    log.exception("job %s %s failed", kind, mid)
+                else:  # deleted while it ran (e.g. by retention): nothing to save, not an error
+                    log.info("Meeting %s was deleted while %s ran; its result was discarded", mid, kind)
             finally:
                 with self._pending_lock:
                     left = self._pending.get(mid, 1) - 1
@@ -389,6 +394,13 @@ class Services:
         """Meetings left 'recording'/'processing' by a crash are re-processed from their saved chunks."""
         for m in self.store.list_meetings(limit=50):
             if m["status"] in ("recording", "processing"):
+                if m["status"] == "recording" and not any((self.cfg.audio_dir / m["id"]).glob("*.flac.enc")):
+                    # closed before the first chunk was written: there is nothing to process, say so plainly
+                    log.warning("Meeting %s ended before any audio was saved", m["id"])
+                    self.store.update_meeting(m["id"], status="failed", error=(
+                        f"Modwen closed before any audio was saved (audio is saved every "
+                        f"{self.cfg.capture.chunk_seconds:g} s). Nothing to process."))
+                    continue
                 log.warning("Recovering meeting %s left in state %s", m["id"], m["status"])
                 self.store.update_meeting(m["id"], status="processing")
                 self.enqueue_processing(m["id"])

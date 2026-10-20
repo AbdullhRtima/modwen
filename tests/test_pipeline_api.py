@@ -563,3 +563,83 @@ def test_meeting_list_changes_are_announced(cfg, fake_llm):
     assert c.delete(f"/api/meetings/{mid}").json() == {"deleted": mid}
     assert changes()[-1] == (mid, "deleted")
     assert all(m["id"] != mid for m in c.get("/api/meetings").json()["meetings"])
+
+
+def test_audio_test_reports_levels_from_timestamped_sources(cfg, fake_llm, monkeypatch):
+    """Sources call back with (channel, frames, rate, captured_at) since timestamped capture; the Settings / setup
+    audio test must accept that shape (it crashed in every source thread and showed no levels)."""
+    import numpy as np
+
+    import modwen.audio.capture as capture
+    from modwen.api import create_app
+
+    class Fake:
+        def __init__(self, channel, level):
+            self.channel, self.level, self.description = channel, level, f"fake {channel}"
+
+        def start(self, cb):
+            cb(self.channel, np.full((1600, 1), self.level, dtype=np.float32), 16000, 12.5)
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(capture, "MicSource", lambda device=None: Fake("mic", 0.3))
+    monkeypatch.setattr(capture, "system_source", lambda cfg: Fake("system", 0.2))
+    s = _services(cfg, fake_llm)
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    r = c.post("/api/setup/audio-test", params={"seconds": 1}).json()
+    assert r["errors"] == {} and r["levels"]["mic"] > 0.2 and r["levels"]["system"] > 0.1
+
+
+def test_notes_edits_must_keep_each_items_text(cfg, fake_llm):
+    """An action item saved without its task used to be accepted and then break the Markdown export (500)."""
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    mid = import_audio(s, speechy([(2.0, 2.5), (2.0, 1.0)]), title="Items")["id"]
+    assert _wait(s, mid)["status"] == "ready"
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    for bad in ({"action_items": [{"task": None}]}, {"action_items": [{}]}, {"decisions": [{"text": 3}]},
+                {"open_questions": [{}]}):
+        assert c.put(f"/api/meetings/{mid}/notes", json={"data": bad}).status_code == 400, bad
+    items = c.get(f"/api/meetings/{mid}").json()["notes"]["data"]["action_items"]
+    items[0]["task"] = ""  # an emptied field is fine
+    assert c.put(f"/api/meetings/{mid}/notes", json={"data": {"action_items": items}}).status_code == 200
+    assert c.get(f"/api/meetings/{mid}/export.md").status_code == 200
+
+
+def test_restart_recovers_or_explains_interrupted_meetings(cfg, fake_llm):
+    """After a crash: a meeting with saved audio is processed again; one closed before its first audio chunk is
+    marked failed with a plain reason instead of being queued and failing with "No audio was recorded"."""
+    from modwen.api import import_audio
+
+    s = _services(cfg, fake_llm)
+    with_audio = import_audio(s, speechy([(2.0, 2.5)]), title="Saved")["id"]
+    assert _wait(s, with_audio)["status"] == "ready"
+    empty = s.store.create_meeting("Too short", status="recording")["id"]
+    s.store.update_meeting(with_audio, status="recording")  # as if it crashed mid-recording
+    s2 = _services(cfg, fake_llm)  # a fresh start runs the recovery
+    assert _wait(s2, with_audio)["status"] == "ready"
+    gone = s2.store.get_meeting(empty)
+    assert gone["status"] == "failed" and "before any audio was saved" in gone["error"]
+
+
+def test_meeting_cannot_be_deleted_during_a_summary_rewrite(cfg, fake_llm):
+    """A summary-only rewrite keeps the meeting "ready"; deleting it then used to crash the job when it saved
+    (FOREIGN KEY constraint failed). Delete now waits for any queued or running job."""
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    mid = import_audio(s, speechy([(2.0, 2.5), (2.0, 1.0)]), title="Busy")["id"]
+    assert _wait(s, mid)["status"] == "ready"
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    with s._pending_lock:  # as if the rewrite were still queued or running
+        s._pending[mid] = 1
+    assert c.get(f"/api/meetings/{mid}").json()["meeting"]["status"] == "ready"
+    assert c.delete(f"/api/meetings/{mid}").status_code == 409
+    with s._pending_lock:
+        s._pending.pop(mid)
+    assert c.delete(f"/api/meetings/{mid}").status_code == 200

@@ -78,14 +78,31 @@ class NotesEdit(BaseModel):
     data: dict[str, Any]
 
 
+class _Point(BaseModel):
+    model_config = {"extra": "allow"}  # evidence ids, original text, confidence... are kept as they are
+    text: str
+
+
+class _Action(BaseModel):
+    model_config = {"extra": "allow"}
+    task: str  # an item without its text breaks the export and the review page
+    owner: str | None = None
+    due_date: str | None = None
+
+
+class _Question(BaseModel):
+    model_config = {"extra": "allow"}
+    question: str
+
+
 class NotesPatch(BaseModel):
     """The parts of the notes the user may edit, each optional; items keep their extra fields."""
     model_config = {"extra": "forbid"}
     summary: dict[str, str] | None = None
-    key_points: list[dict[str, Any]] | None = None
-    decisions: list[dict[str, Any]] | None = None
-    action_items: list[dict[str, Any]] | None = None
-    open_questions: list[dict[str, Any]] | None = None
+    key_points: list[_Point] | None = None
+    decisions: list[_Point] | None = None
+    action_items: list[_Action] | None = None
+    open_questions: list[_Question] | None = None
 
 
 class ProfileTest(BaseModel):
@@ -268,7 +285,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
         m = meeting_or_404(mid)
         if m["status"] == "recording" and s.recorder.session and s.recorder.session.meeting_id == mid:
             raise HTTPException(409, "This meeting is being recorded. Stop it first.")
-        if m["status"] == "processing" and s.is_queued_or_running(mid):
+        if s.is_queued_or_running(mid):  # also a summary-only rewrite, which keeps the meeting "ready"
             raise HTTPException(409, "Modwen is still working on this meeting. Delete it when it has finished.")
         import shutil
 
