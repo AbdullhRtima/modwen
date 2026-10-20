@@ -197,3 +197,47 @@ def test_subtitle_credit_hallucination_is_dropped():
     assert is_hallucination("المترجم للقناة")
     assert is_hallucination("المترجمات لك في القناة")
     assert not is_hallucination("المترجم للقناة كان ممتاز في الاجتماع اليوم وقدم لنا خطة كاملة للمشروع")
+
+
+def test_waits_for_a_restarting_model_but_not_after_a_timeout(cfg, monkeypatch):
+    """A dropped connection (the local model restarting) is retried for a while; a read timeout is not repeated."""
+    import httpx
+    import pytest
+
+    from modwen.notes.llm_client import LLMClient, LLMError, make_client
+
+    monkeypatch.setattr(LLMClient, "CONNECT_WAITS", (0.0, 0.0, 0.0))
+    ok = httpx.Response(200, json={"id": "x", "object": "chat.completion", "created": 0, "model": "m", "choices": [
+        {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "hello"}}]})
+    calls = []
+
+    def flaky(request):
+        calls.append(1)
+        if len(calls) <= 2:
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response.")
+        return ok
+
+    client = make_client(cfg, http_client=httpx.Client(transport=httpx.MockTransport(flaky)))
+    assert client.chat([{"role": "user", "content": "hi"}]) == "hello" and len(calls) == 3
+
+    calls.clear()
+
+    def slow(request):
+        calls.append(1)
+        raise httpx.ReadTimeout("timed out")
+
+    client = make_client(cfg, http_client=httpx.Client(transport=httpx.MockTransport(slow)))
+    with pytest.raises(LLMError):
+        client.chat([{"role": "user", "content": "hi"}])
+    assert len(calls) == 1
+
+    calls.clear()
+
+    def down(request):
+        calls.append(1)
+        raise httpx.ConnectError("connection refused")
+
+    client = make_client(cfg, http_client=httpx.Client(transport=httpx.MockTransport(down)))
+    with pytest.raises(LLMError):
+        client.chat([{"role": "user", "content": "hi"}])
+    assert len(calls) == 4  # first try + three waits, then it gives up with a clear error

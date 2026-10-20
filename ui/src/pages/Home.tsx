@@ -50,7 +50,8 @@ export default function Home({ ctx }: { ctx: Ctx }) {
         <StatusChip m={m} />
         {m.status === "failed" && <button className="btn sm" onClick={(e) => {
           e.preventDefault();
-          api.retry(m.id).then(reload, ctx.fail);
+          // only the notes failed: keep the transcript (re-transcribing a long meeting takes as long again)
+          (m.error?.startsWith("notes") ? api.regenerate(m.id, {}) : api.retry(m.id)).then(reload, ctx.fail);
         }}>{t("retry")}</button>}
       </div>
     </a>

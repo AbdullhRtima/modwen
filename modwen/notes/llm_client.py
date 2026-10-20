@@ -12,7 +12,7 @@ import re
 from typing import TypeVar
 
 import httpx
-from openai import BadRequestError, OpenAI
+from openai import APIConnectionError, APITimeoutError, BadRequestError, OpenAI
 from pydantic import BaseModel, ValidationError
 
 from modwen.config import LLMProfile, resolve_secret
@@ -78,6 +78,24 @@ class LLMClient:
         except Exception as exc:
             return {"ok": False, "error": str(exc), "base_url": self.profile.base_url, "model": self.profile.model}
 
+    # A dropped or refused connection usually means the local server is restarting (Modwen restarts its own model
+    # after a GPU error, or the app was restarted): wait for it instead of failing a 2-hour meeting's notes.
+    CONNECT_WAITS = (3.0, 6.0, 10.0, 15.0, 20.0, 30.0)  # ~85 s in all
+
+    def _create_waiting_for_server(self, kwargs: dict):
+        import time
+
+        for wait in (*self.CONNECT_WAITS, None):
+            try:
+                return self.client.chat.completions.create(**kwargs)
+            except APITimeoutError:
+                raise  # it was answering, just too slowly: repeating would only double the wait
+            except APIConnectionError as exc:
+                if wait is None:
+                    raise
+                log.warning("AI model at %s unreachable (%s); retrying in %.0f s", self.profile.base_url, exc, wait)
+                time.sleep(wait)
+
     def chat(self, messages: list[dict], *, schema: type[BaseModel] | None = None, max_tokens: int | None = None,
              temperature: float | None = None) -> str:
         msgs = [dict(m) for m in messages]
@@ -99,7 +117,7 @@ class LLMClient:
         elif schema is not None and self.mode == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
         try:
-            resp = self.client.chat.completions.create(**kwargs)
+            resp = self._create_waiting_for_server(kwargs)
         except BadRequestError as exc:
             # Some servers reject json_schema; degrade once to json_object, then to prompt-only.
             if schema is not None and self.mode != "prompt_only":
