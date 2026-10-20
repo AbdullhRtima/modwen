@@ -98,7 +98,12 @@ class DiarizationConfig(BaseModel):
     hf_token: str | None = "keychain:huggingface"
     min_speakers: int | None = None
     max_speakers: int | None = None
+    # Voiceprints (§5.1): name a speaker when its voice matches an enrolled person this well (cosine) and
+    # beats the next person by the margin; between suggest and threshold it is only a suggestion.
     voiceprint_threshold: float = 0.70
+    voiceprint_margin: float = 0.05
+    voiceprint_suggest: float = 0.60
+    remember_my_voice: bool = False  # keep a voiceprint of you (from the mic) to find you in in-person meetings
 
 
 class LLMProfile(BaseModel):
@@ -112,7 +117,7 @@ class LLMProfile(BaseModel):
     extra_body: dict[str, Any] = {}
     strip_think: bool = True
     no_think_suffix: bool = False  # append "/no_think" to the last user message (Qwen3 hybrid models via Ollama)
-    timeout_seconds: float = 900
+    timeout_seconds: float = 600  # longest wait for one reply (CPU machines generate slowly)
 
 
 def _default_profiles() -> dict[str, LLMProfile]:

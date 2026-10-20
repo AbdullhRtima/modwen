@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionItem, api, fmtDuration, fmtTs, Meeting, Notes, NotesData, Progress, Segment, setup, Speaker } from "../api";
+import { ActionItem, api, fmtDuration, fmtTs, Meeting, Notes, NotesData, PersonT, Progress, Segment, setup, Speaker, VoiceResult } from "../api";
 import type { Ctx } from "../App";
 import { StatusChip } from "./Home";
 
 const SPEAKER_COLORS = ["--sp1", "--sp2", "--sp3", "--sp4", "--sp5", "--sp6", "--sp7", "--sp8"];
-export const UNNAMED_SPEAKER = /^(Person \d+|Speaker \d+|Others|Room)$/;
+export const UNNAMED_SPEAKER = /^(Person \d+|Speaker \d+|Others|Room|Not sure)$/;
 
 export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -81,8 +81,12 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
     ctx.toast(opts.actions_only ? "Action items copied" : "Notes copied as Markdown");
   };
   const saveNotes = async (patch: Partial<NotesData>) => {
-    const n = await api.editNotes(id, patch);
-    setNotes(n);
+    try {
+      setNotes(await api.editNotes(id, patch));
+    } catch (e) {
+      ctx.fail(e);
+      load();
+    }
   };
   const switchLang = (l: string) => {
     setLang(l);
@@ -257,11 +261,11 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
             <div className="pane-b" ref={trRef}>
               {segments.map((s) => (
                 <TranscriptLine key={s.id} s={s} color={colorOf(s.speaker_id)} speakers={speakers}
-                  onSpeaker={(sid) => api.setLineSpeaker(id, s.id, sid).then(load)}
+                  onSpeaker={(sid) => api.setLineSpeaker(id, s.id, sid).then(load, ctx.fail)}
                   lit={lit.seg.has(s.id) || (playing && pos * 1000 >= s.start_ms && pos * 1000 < s.end_ms)}
                   hit={Boolean(q) && hits.includes(s)}
                   onClick={() => clickLine(s.id)}
-                  onSave={(text) => api.editSegment(id, s.id, text).then(() => setSegments((all) => all.map((x) => (x.id === s.id ? { ...x, text, edited: 1 } : x))))} />
+                  onSave={(text) => api.editSegment(id, s.id, text).then(() => setSegments((all) => all.map((x) => (x.id === s.id ? { ...x, text, edited: 1 } : x))), ctx.fail)} />
               ))}
             </div>
           </div>
@@ -274,7 +278,8 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
       )}
 
       {drawer && <SpeakerDrawer id={id} speakers={speakers} segments={segments} onClose={() => setDrawer(false)}
-        onChanged={() => { load(); ctx.toast("Speakers updated"); }} />}
+        locked={processing} onError={(e) => { ctx.fail(e); load(); }}
+        onChanged={(msg) => { load(); ctx.toast(msg ?? "Speakers updated"); }} />}
       <div style={{ marginTop: 24 }}>
         <button className="btn ghost sm" onClick={() => {
           if (confirm("Delete this meeting, its audio and notes? This cannot be undone.")) api.remove(id).then(() => ctx.go("#/"));
@@ -359,6 +364,8 @@ function TranscriptLine({ s, color, lit, hit, speakers, onClick, onSave, onSpeak
           <button className="sp sp-pick" style={{ color }} title="Who said this? Click to change"
             onClick={(e) => { e.stopPropagation(); setPicking(true); }}>{s.speaker_name ?? "?"}</button>
         )}
+        {s.uncertain ? <button className="badge warn" title="Modwen isn't sure who said this. Click to choose the person."
+          onClick={(e) => { e.stopPropagation(); setPicking(true); }}>? not sure</button> : null}
         {s.overlap ? <span className="badge warn">overlap</span> : null}
         {s.edited ? <span className="faint">✎</span> : null}
         <span className="faint" style={{ fontSize: 11 }}>{s.language}</span></span>
@@ -370,45 +377,124 @@ function TranscriptLine({ s, color, lit, hit, speakers, onClick, onSave, onSpeak
   );
 }
 
-function SpeakerDrawer({ id, speakers, segments, onClose, onChanged }: { id: string; speakers: Speaker[];
-  segments: Segment[]; onClose: () => void; onChanged: () => void }) {
-  const [known, setKnown] = useState<string[]>([]);
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+function SpeakerDrawer({ id, speakers, segments, locked, onClose, onChanged, onError }: { id: string;
+  speakers: Speaker[]; segments: Segment[]; locked: boolean; onClose: () => void; onChanged: (msg?: string) => void;
+  onError: (e: unknown) => void }) {
+  const [known, setKnown] = useState<PersonT[]>([]);
   useEffect(() => {
-    setup.people().then((r) => setKnown(r.people.map((p) => p.display_name)));
+    setup.people().then((r) => setKnown(r.people));
   }, []);
+  const personOf = (s: Speaker) => known.find((p) => p.id === s.person_id);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [remember, setRemember] = useState<Record<string, boolean>>({});
   const [merges, setMerges] = useState<Record<string, string>>({});
   const [people, setPeople] = useState("");
+  const [busy, setBusy] = useState(false);
+  const voiceMsg = (name: string, v: VoiceResult) =>
+    !v ? null : v.saved ? `${name}'s voice saved (${Math.round(v.seconds)} s)` : `${name}'s voice not saved: ${v.reason}`;
+  const run = async (fn: () => Promise<string | null | undefined>) => {
+    setBusy(true);
+    try {
+      const msg = await fn();
+      onChanged(msg ?? undefined);
+      onClose();
+    } catch (e) {
+      onError(e);  // the drawer stays open, so nothing typed is lost
+    } finally {
+      setBusy(false);
+    }
+  };
   const stats = (sid: string) => {
     const segs = segments.filter((s) => s.speaker_id === sid);
     const secs = segs.reduce((t, s) => t + (s.end_ms - s.start_ms) / 1000, 0);
     return `${segs.length} lines · ${secs >= 60 ? `${Math.round(secs / 60)} min` : `${Math.round(secs)} s`}`;
   };
-  const apply = async () => {
-    for (const [sid, name] of Object.entries(names)) if (name.trim()) await api.rename(id, sid, name.trim());
-    for (const [sid, into] of Object.entries(merges)) if (into) await api.merge(id, sid, into);
-    onChanged();
-    onClose();
-  };
-  const redetect = async () => {
+  const apply = () => run(async () => {
+    const msgs: string[] = [];
+    for (const [sid, raw] of Object.entries(names)) {
+      const name = raw.trim();
+      if (!name) continue;
+      const sp = speakers.find((x) => x.id === sid);
+      const r = await api.linkPerson(id, sid, { name, remember_voice: !sp?.is_self && Boolean(remember[sid]) });
+      const m = voiceMsg(name, r.voice);
+      if (m) msgs.push(m);
+    }
+    // Naming can already merge speakers (same name twice): skip merges whose speakers are gone.
+    let alive = new Set((await api.meeting(id)).speakers.map((x) => x.id));
+    for (const [sid, into] of Object.entries(merges)) {
+      if (!into || !alive.has(sid) || !alive.has(into)) continue;
+      const r = await api.merge(id, sid, into);
+      alive = new Set(r.speakers.map((x) => x.id));
+    }
+    return msgs.join(" · ") || null;
+  });
+  const confirm = (s: Speaker) => run(async () => {
+    const r = await api.confirmVoice(id, s.id);
+    const name = s.suggestion?.name ?? s.display_name;
+    return voiceMsg(name, r.voice) ?? `Confirmed: ${name}`;
+  });
+  const rememberVoice = (s: Speaker) => run(async () => {
+    const r = await api.linkPerson(id, s.id, { name: s.display_name, remember_voice: true });
+    return voiceMsg(s.display_name, r.voice);
+  });
+  const reject = (s: Speaker) => run(async () => {
+    await api.rejectVoice(id, s.id);
+    return "Got it. Modwen won't pair them again in this meeting";
+  });
+  const redetect = () => run(async () => {
     const n = parseInt(people, 10);
     await api.redetect(id, Number.isFinite(n) && n > 0 ? n : null);
-    onChanged();
-    onClose();
-  };
+    return null;
+  });
   return (
     <div className="drawer">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <b>Speakers</b><button className="btn ghost sm" onClick={onClose}>✕</button></div>
+      {locked && <div className="banner warn">Modwen is still working on this meeting. Speakers can be changed when it has finished.</div>}
+      <fieldset disabled={locked || busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {speakers.map((s) => (
         <div key={s.id} className="spk">
           <div className="top"><b>{s.display_name}</b>
-            {s.is_self ? <span className="badge ok">✓ your voice</span>
+            {s.name_source === "voiceprint" ? <span className="badge ok" title="Matched to a saved voiceprint">✓ recognised by voice · {pct(s.confidence)}</span>
+              : s.is_self ? <span className="badge ok">✓ your voice</span>
               : s.name_source === "manual" ? <span className="badge ok">✓ named</span> : <span className="badge warn">unnamed</span>}</div>
           <div className="faint" style={{ fontSize: 12, margin: "4px 0 8px" }}>{stats(s.id)}</div>
-          <datalist id="mw-people">{known.map((n) => <option key={n} value={n} />)}</datalist>
-          <input className="input" list="mw-people" placeholder={s.is_self ? "Not you? Type who it is" : "Name, e.g. Sara Haddad"}
+          {!s.is_self && !UNNAMED_SPEAKER.test(s.display_name) && s.name_source !== "voiceprint" && (() => {
+            const p = personOf(s);
+            return p?.voice
+              ? <div className="faint" style={{ fontSize: 12, marginBottom: 8 }}>✓ {s.display_name}'s voice is saved: recognised in later meetings</div>
+              : <button className="btn sm" style={{ marginBottom: 8 }} disabled={busy} onClick={() => rememberVoice(s)}
+                  title="Only with their consent. Saves a voiceprint so Modwen recognises them in later meetings">
+                  🎙 Remember {s.display_name}'s voice</button>;
+          })()}
+          {s.is_self ? (
+            <div className="faint" style={{ fontSize: 12, marginBottom: 8 }}>This is you. <a href="#/people">Set your name on the
+              People page</a>; your voice is saved from Settings → Privacy → Remember my voice.</div>
+          ) : null}
+          {s.name_source === "voiceprint" && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <button className="btn sm" disabled={busy} onClick={() => confirm(s)} title="Right person: keep the name and learn from this meeting">✓ Confirm</button>
+              <button className="btn sm ghost" disabled={busy} onClick={() => reject(s)}>Not {s.display_name}</button>
+            </div>
+          )}
+          {s.suggestion && s.name_source !== "voiceprint" && (
+            <div className="banner info" style={{ margin: "0 0 8px", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <span>Sounds like <b>{s.suggestion.name}</b>? ({pct(s.suggestion.score)})</span>
+              <button className="btn sm" disabled={busy} onClick={() => confirm(s)}>Yes, it's {s.suggestion.name}</button>
+              <button className="btn sm ghost" disabled={busy} onClick={() => reject(s)}>No</button>
+            </div>
+          )}
+          <datalist id="mw-people">{known.filter((p) => !p.is_self).map((p) => <option key={p.id} value={p.display_name} />)}</datalist>
+          <input className="input" list="mw-people" placeholder={s.is_self ? "Not you? Type who it was" : "Name, e.g. Sara Haddad"}
             value={names[s.id] ?? ""} onChange={(e) => setNames({ ...names, [s.id]: e.target.value })} style={{ marginBottom: 6 }} />
+          {!s.is_self && (names[s.id] ?? "").trim() && (
+            <label className="check" style={{ fontSize: 12.5, marginBottom: 6 }}>
+              <input type="checkbox" checked={Boolean(remember[s.id])} onChange={(e) => setRemember({ ...remember, [s.id]: e.target.checked })} />
+              Remember this voice, so Modwen recognises {(names[s.id] ?? "").trim()} next time (they agreed)
+            </label>
+          )}
           {speakers.length > 1 && (
             <select className="select" value={merges[s.id] ?? ""} onChange={(e) => setMerges({ ...merges, [s.id]: e.target.value })}>
               <option value="">Merge into… (same person split in two)</option>
@@ -417,19 +503,21 @@ function SpeakerDrawer({ id, speakers, segments, onClose, onChanged }: { id: str
           )}
         </div>
       ))}
-      <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} onClick={apply}>Apply</button>
-      <p className="faint" style={{ fontSize: 12 }}>Renaming updates the transcript and the names in the notes without calling the AI model again.
+      <button className="btn primary" style={{ width: "100%", justifyContent: "center" }} disabled={busy} onClick={apply}>{busy ? "Saving…" : "Apply"}</button>
+      <p className="faint" style={{ fontSize: 12 }}>Names are saved on the People page: rename or delete someone there and every meeting follows.
+        Renaming updates the transcript and the names in the notes without calling the AI model again.
         Giving two speakers the same name merges them. To fix a single line, click the name next to it in the transcript.</p>
       <div className="spk" style={{ marginTop: 16 }}>
         <b>Wrong speakers?</b>
-        <p className="faint" style={{ fontSize: 12, margin: "4px 0 8px" }}>Detect the voices again from the recording. Your text edits are kept;
-          names you gave are reset and the notes are rewritten.</p>
+        <p className="faint" style={{ fontSize: 12, margin: "4px 0 8px" }}>Detect the voices again from the recording. Your text edits and the
+          names you gave are kept, saved voices are matched again, and the notes are rewritten.</p>
         <div style={{ display: "flex", gap: 8 }}>
           <input className="input" type="number" min={1} max={20} placeholder="People (optional)" value={people}
             onChange={(e) => setPeople(e.target.value)} style={{ flex: 1 }} title="How many people were in the meeting, you included" />
-          <button className="btn" onClick={redetect}>↻ Re-detect speakers</button>
+          <button className="btn" disabled={busy} onClick={redetect}>↻ Re-detect speakers</button>
         </div>
       </div>
+      </fieldset>
     </div>
   );
 }

@@ -16,11 +16,29 @@ from modwen import __version__
 from modwen.config import default_config_path, load_config, save_config
 
 
+LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
+
+
 def _setup_logging(verbose: bool) -> None:
-    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,
-                        format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
-    for noisy in ("httpx", "httpcore", "faster_whisper", "urllib3", "multipart"):
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format=LOG_FORMAT, datefmt="%H:%M:%S")
+    for noisy in ("httpx", "httpx2", "httpcore", "openai", "faster_whisper", "urllib3", "multipart"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+def log_file(cfg):
+    return cfg.data_dir / "logs" / "modwen.log"
+
+
+def _log_to_file(cfg) -> None:
+    """Keep a rotating log in the data dir (5 MB x 3), so a problem can be reported after the window is closed.
+    Logs never contain meeting content: no transcript text, titles or notes."""
+    from logging.handlers import RotatingFileHandler
+
+    path = log_file(cfg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    h = RotatingFileHandler(path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")
+    h.setFormatter(logging.Formatter(LOG_FORMAT))
+    logging.getLogger().addHandler(h)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -33,6 +51,8 @@ def cmd_serve(args) -> int:
     from modwen.services import Services
 
     cfg = load_config(args.config)
+    _log_to_file(cfg)
+    logging.getLogger(__name__).info("Modwen %s starting", __version__)
     if args.port:
         cfg.app.ui_port = args.port
     lan = bool(getattr(args, "lan", False) or cfg.app.lan_access)

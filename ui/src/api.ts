@@ -35,11 +35,13 @@ export type Progress = {
 };
 
 export type Speaker = { id: string; label: string; display_name: string; channel: string; is_self: number;
-  name_source: string | null; confidence: number };
+  name_source: string | null; confidence: number; person_id: string | null;
+  suggestion: { person_id: string; name: string; score: number } | null };
+export type VoiceResult = { saved: boolean; seconds: number; reason?: string } | null;
 
 export type Segment = { id: string; seq: number; speaker_id: string; channel: string; start_ms: number;
   end_ms: number; text: string; language: string; confidence: number; overlap: number; edited: number;
-  speaker_name: string | null };
+  speaker_name: string | null; uncertain?: number };
 
 export type Point = { id: string; text: string; original_text: string; evidence_segment_ids: string[];
   confidence: number };
@@ -114,9 +116,15 @@ export const api = {
     req("POST", `/api/meetings/${id}/regenerate`, b),
   rename: (id: string, sid: string, name: string) =>
     req<{ old: string; new: string }>("POST", `/api/meetings/${id}/speakers/${sid}/rename`, { name }),
-  merge: (id: string, sid: string, into: string) => req("POST", `/api/meetings/${id}/speakers/${sid}/merge`, { into }),
+  merge: (id: string, sid: string, into: string) =>
+    req<{ into: string; speakers: Speaker[] }>("POST", `/api/meetings/${id}/speakers/${sid}/merge`, { into }),
   redetect: (id: string, num_speakers: number | null) =>
     req("POST", `/api/meetings/${id}/speakers/redetect`, { num_speakers }),
+  linkPerson: (id: string, sid: string, b: { person_id?: string; name?: string; remember_voice: boolean }) =>
+    req<{ speaker_id: string; voice: VoiceResult; speakers: Speaker[] }>("POST", `/api/meetings/${id}/speakers/${sid}/person`, b),
+  confirmVoice: (id: string, sid: string) =>
+    req<{ voice: VoiceResult; speakers: Speaker[] }>("POST", `/api/meetings/${id}/speakers/${sid}/confirm`),
+  rejectVoice: (id: string, sid: string) => req<{ speakers: Speaker[] }>("POST", `/api/meetings/${id}/speakers/${sid}/reject`),
   setLineSpeaker: (id: string, segId: string, speaker_id: string) =>
     req<{ speaker_id: string; speakers: Speaker[] }>("POST", `/api/meetings/${id}/segments/${segId}/speaker`, { speaker_id }),
   editSegment: (id: string, segId: string, text: string) => req("PUT", `/api/meetings/${id}/segments/${segId}`, { text }),
@@ -135,12 +143,11 @@ export const api = {
     models?: string[]; base_url: string }>("POST", "/api/llm/test", { profile }),
   setActive: (profile: string) => req("POST", "/api/llm/active", { profile }),
   importFile: async (file: File, title: string, language: string) => {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("title", title);
-    fd.append("meeting_language", language);
-    const res = await fetch("/api/meetings/import", { method: "POST", body: fd, credentials: "same-origin",
-      headers: envToken ? { "x-modwen-token": envToken } : {} });
+    // The file is the raw body: the server streams it into an encrypted temp file (form uploads would be
+    // spooled to disk unencrypted).
+    const q = new URLSearchParams({ title, meeting_language: language });
+    const res = await fetch(`/api/meetings/import?${q}`, { method: "POST", body: file, credentials: "same-origin",
+      headers: { "content-type": file.type || "application/octet-stream", ...(envToken ? { "x-modwen-token": envToken } : {}) } });
     if (!res.ok) throw new ApiError(res.status, (await res.json()).detail ?? res.statusText);
     return (await res.json()) as Meeting;
   },
@@ -165,7 +172,8 @@ export type SetupStatus = {
 };
 
 export type PersonT = { id: string; display_name: string; display_name_ar: string | null; email: string | null;
-  is_self: number; voiceprint: string | null };
+  is_self: number; consent_at: string | null;
+  voice: { samples: number; seconds: number; kinds: Record<string, number> } | null };
 
 export const setup = {
   status: () => req<SetupStatus>("GET", "/api/setup/status"),
@@ -189,10 +197,12 @@ export const setup = {
   network: () => req<{ lan_access_setting: boolean; lan_active: boolean; urls: string[]; restart_needed: boolean }>(
     "GET", "/api/network"),
   people: () => req<{ people: PersonT[] }>("GET", "/api/people"),
-  addPerson: (b: { display_name: string; display_name_ar?: string; email?: string }) => req<PersonT>("POST", "/api/people", b),
+  addPerson: (b: { display_name: string; display_name_ar?: string | null; email?: string | null }) => req<PersonT>("POST", "/api/people", b),
   editPerson: (id: string, b: { display_name: string; display_name_ar?: string | null; email?: string | null }) =>
-    req<PersonT>("PUT", `/api/people/${id}`, b),
-  deletePerson: (id: string) => req("DELETE", `/api/people/${id}`),
+    req<PersonT & { meetings: number }>("PUT", `/api/people/${id}`, b),
+  deletePerson: (id: string) => req<{ meetings: number }>("DELETE", `/api/people/${id}`),
+  thisIsMe: (id: string) => req<PersonT>("POST", `/api/people/${id}/self`),
+  deleteVoiceprint: (id: string) => req("DELETE", `/api/people/${id}/voiceprint`),
 };
 
 export const fmtGB = (bytes: number) => `${(bytes / 1e9).toFixed(bytes > 1e9 ? 1 : 2)} GB`;

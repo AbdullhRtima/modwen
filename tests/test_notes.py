@@ -179,3 +179,21 @@ def test_moving_a_line_moves_its_notes():
     out = retarget_line(data, "s0005", "Person 2", "You", after)
     assert [a["owner"] for a in out["action_items"]] == ["You", "Person 2"]
     assert out["key_points"][0]["text"] == "You: finished the PDF export"
+
+
+def test_windows_always_fit_the_model_budget():
+    from modwen.notes.engine import estimate_tokens, fit_budget, transcript_line
+
+    lines = [{"id": f"s{i:04d}", "start_ms": i * 1000, "end_ms": i * 1000 + 900, "language": "ar",
+              "speaker_name": "Person 1", "text": "كلام سريع جدا في اجتماع طويل " * 6} for i in range(120)]
+    parts = fit_budget(lines, budget=400)
+    assert sum(len(p) for p in parts) == len(lines) and len(parts) > 1
+    assert all(sum(estimate_tokens(transcript_line(s)) + 1 for s in p) <= 400 for p in parts)
+
+
+def test_subtitle_credit_hallucination_is_dropped():
+    from modwen.stt.hallucination import is_hallucination
+
+    assert is_hallucination("المترجم للقناة")
+    assert is_hallucination("المترجمات لك في القناة")
+    assert not is_hallucination("المترجم للقناة كان ممتاز في الاجتماع اليوم وقدم لنا خطة كاملة للمشروع")

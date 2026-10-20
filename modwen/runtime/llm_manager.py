@@ -163,21 +163,46 @@ class ManagedLLM:
     def pid_file(self) -> Path:
         return self.root / "llama-server.pid"
 
-    def _kill_leftover(self) -> None:
-        """If Modwen was closed abruptly, its previous llama-server may still hold the port: stop that one only."""
-        if not self.pid_file.exists():
-            return
-        try:
-            import psutil
+    def _our_servers(self) -> list:
+        """Every llama-server started from Modwen's own folder (also orphans whose watchdog is gone)."""
+        import psutil
 
-            pid = int(self.pid_file.read_text().strip())
-            p = psutil.Process(pid)
-            if "llama-server" in " ".join(p.cmdline()) and str(self.bin_dir) in " ".join(p.cmdline()):
-                log.info("Stopping leftover managed llama-server (pid %s)", pid)
-                self._kill_tree(pid)
-        except Exception:
-            pass
-        self.pid_file.unlink(missing_ok=True)
+        mine = []
+        for p in psutil.process_iter(["pid", "cmdline"]):
+            cmd = " ".join(p.info.get("cmdline") or [])
+            if "llama-server" in cmd and str(self.bin_dir) in cmd and p.pid != os.getpid():
+                mine.append(p)
+        return mine
+
+    def _kill_leftover(self) -> None:
+        """If Modwen was closed abruptly, its previous llama-server may still hold the port and GPU memory: stop
+        every one from Modwen's folder. One that survives a SIGKILL is stuck in the GPU driver; only a restart
+        of the computer frees it, so say that instead of failing later with "Compute error"."""
+        import psutil
+
+        if self.pid_file.exists():
+            try:
+                pid = int(self.pid_file.read_text().strip())
+                if str(self.bin_dir) in " ".join(psutil.Process(pid).cmdline()):
+                    self._kill_tree(pid)
+            except (ValueError, psutil.Error):
+                pass
+            self.pid_file.unlink(missing_ok=True)
+        leftovers = self._our_servers()
+        if not leftovers:
+            return
+        log.info("Stopping leftover managed llama-server(s): %s", [p.pid for p in leftovers])
+        for p in leftovers:
+            try:
+                p.kill()
+            except psutil.NoSuchProcess:
+                pass
+        _, stuck = psutil.wait_procs(leftovers, timeout=6)
+        if stuck:
+            raise RuntimeError(
+                "An earlier copy of the local AI model is stuck in macOS and still holds GPU memory "
+                f"(process {', '.join(str(p.pid) for p in stuck)}). Restart your computer, then retry the notes. "
+                "Your transcript is saved.")
 
     def start(self, wait: float = 120) -> dict:
         m = self.cfg.llm.managed
@@ -227,18 +252,16 @@ class ManagedLLM:
             root = psutil.Process(pid)
         except psutil.NoSuchProcess:
             return
+        # SIGKILL right away. Asked to exit politely (SIGTERM), this llama.cpp build can hang forever freeing
+        # Metal memory in its exit handler, leaving an unkillable process that holds GPU memory and the port
+        # (seen 2026-10-20). Killed outright, the kernel frees everything; there's no state worth saving.
         procs = root.children(recursive=True) + [root]
         for p in procs:
-            try:
-                p.terminate()
-            except psutil.NoSuchProcess:
-                pass
-        _, alive = psutil.wait_procs(procs, timeout=4)
-        for p in alive:
             try:
                 p.kill()
             except psutil.NoSuchProcess:
                 pass
+        psutil.wait_procs(procs, timeout=6)
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:

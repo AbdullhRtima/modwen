@@ -25,7 +25,9 @@ if [ ! -f ui/dist/index.html ]; then
   if command -v npm >/dev/null 2>&1; then (cd ui && npm ci --no-audit --no-fund && npm run build); else
     echo "Note: the web UI is not built and Node.js is not installed. Use a release zip, or install Node.js."; fi
 fi
-if [ ! -x modwen/native/macos/build/modwen-tap ] && command -v swiftc >/dev/null 2>&1; then
+# Build the system-audio helper when missing or older than its source (a new protocol version).
+if { [ ! -x modwen/native/macos/build/modwen-tap ] || [ modwen/native/macos/modwen-tap.swift -nt modwen/native/macos/build/modwen-tap ]; } \
+   && command -v swiftc >/dev/null 2>&1; then
   bash modwen/native/macos/build.sh || true
 fi
 

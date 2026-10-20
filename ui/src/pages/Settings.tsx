@@ -52,7 +52,7 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
           {tab === "transcription" && <Transcription settings={settings} save={save} st={st} ctx={ctx} />}
           {tab === "ai" && <AIModel ctx={ctx} st={st} reload={reload} />}
           {tab === "notifications" && <Notifications settings={settings} save={save} />}
-          {tab === "privacy" && <Privacy />}
+          {tab === "privacy" && <Privacy settings={settings} save={save} />}
           {tab === "about" && <About st={st} ctx={ctx} />}
         </>
       )}
@@ -356,15 +356,23 @@ function Notifications({ settings, save }: SP) {
   );
 }
 
-function Privacy() {
+function Privacy({ settings, save }: SP) {
   return (
     <div className="card" style={{ maxWidth: 680 }}>
+      <label className="check"><input type="checkbox" checked={Boolean(settings["diarization.remember_my_voice"])}
+        onChange={(e) => save({ "diarization.remember_my_voice": e.target.checked })} />Remember my voice</label>
+      <p className="faint" style={{ fontSize: 12.5, margin: "4px 0 14px 24px" }}>Keeps a voiceprint of you, taken from your
+        microphone in online meetings, so Modwen can tell which voice is you in in-person meetings. Delete it any time on
+        the People page.</p>
       <p className="lock" style={{ fontSize: 14 }}>🔒 Local only, always</p>
       <ul className="muted">
         <li>Meeting audio and transcripts never leave this computer. Non-localhost AI endpoints are refused in code.</li>
         <li>Audio is stored encrypted (AES-256-GCM, a separate key per meeting). Deleting a meeting destroys its key.</li>
         <li>Downloads happen only when you press a Download button (speech models, llama.cpp, Qwen). No telemetry.</li>
-        <li>Retention: audio 7 days, transcripts 90 days, notes 365 days (automatic clean-up: next release).</li>
+        <li>Voiceprints are kept only for people you chose to remember (with their consent), encrypted, until you delete them.</li>
+        <li>Old data is deleted automatically: audio after {String(settings["privacy.retention.audio_days"] || "∞")} days,
+          transcripts after {String(settings["privacy.retention.transcript_days"] || "∞")}, notes after
+          {" "}{String(settings["privacy.retention.notes_days"] || "∞")} (0 = keep forever). Pinned meetings are always kept.</li>
       </ul>
     </div>
   );

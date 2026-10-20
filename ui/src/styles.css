@@ -74,6 +74,7 @@ a { color: var(--accent-text); }
 .banner.info { background: var(--accent-soft); color: var(--accent-text); }
 .banner.err { background: var(--rec-soft); color: var(--rec); }
 .notice { font-size: 12.5px; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; color: var(--text-2); }
+.toast.error { background: var(--rec); color: #fff; max-width: min(560px, 90vw); }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 50; }
 
 /* recording bar (pill) */

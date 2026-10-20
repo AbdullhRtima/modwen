@@ -184,22 +184,26 @@ def label_speakers(audio: dict[str, np.ndarray], per_channel: dict[str, list[dic
     return speakers, mark_overlaps(segments)
 
 
-def carry_names(speakers: list[dict], segments: list[dict], previous: dict[str, tuple[str, int]],
+def carry_names(speakers: list[dict], segments: list[dict], previous: dict[str, tuple],
                 share: float = 0.6) -> None:
-    """After re-detection, keep a name the user gave when most of a new speaker's speech had that name."""
+    """After re-detection, keep a name the user gave (and its People link) when most of a new speaker's speech
+    had that name. ``previous`` maps line id -> (name, line length ms[, person id])."""
     votes: dict[str, dict[str, int]] = {}
     total: dict[str, int] = {}
+    person_of: dict[str, str | None] = {}
     for s in segments:
         total[s["speaker_id"]] = total.get(s["speaker_id"], 0) + (s["end_ms"] - s["start_ms"])
         if s["id"] in previous:
-            name, ms = previous[s["id"]]
+            name, ms, *rest = previous[s["id"]]
+            person_of.setdefault(name, rest[0] if rest else None)
             votes.setdefault(s["speaker_id"], {})[name] = votes.setdefault(s["speaker_id"], {}).get(name, 0) + ms
     taken: set[str] = set()
     ranked = sorted(((ms, sid, name) for sid, v in votes.items() for name, ms in v.items()), reverse=True)
     by_id = {sp["id"]: sp for sp in speakers}
     for ms, sid, name in ranked:
         sp = by_id.get(sid)
-        if sp is None or sp.get("name_source") == "manual" or name in taken or ms < share * total.get(sid, 1):
+        if (sp is None or sp.get("is_self") or sp.get("name_source") == "manual" or name in taken
+                or ms < share * total.get(sid, 1)):
             continue
-        sp.update(display_name=name, name_source="manual", confidence=1.0)
+        sp.update(display_name=name, name_source="manual", confidence=1.0, person_id=person_of.get(name))
         taken.add(name)

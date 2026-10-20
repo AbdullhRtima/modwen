@@ -314,13 +314,109 @@ downloaded once with no account. pyannote.audio is used instead when its optiona
 | # | Source | How | Confidence |
 |---|---|---|---|
 | 1 | Mic channel | The main voice on the mic channel is you (`is_self`) | Very high (online meetings) |
-| 2 | Voice enrollment | You record about 30 s of a person once, with their consent. Modwen stores an embedding and matches by cosine similarity (threshold set in the bake-off, about 0.7). | High |
+| 2 | Voiceprint | Saved when you name a speaker and tick "Remember this voice" (with their consent); matched by cosine similarity in later meetings (§5.1). | High |
 | 3 | Participant list | From the calendar invite (v1) or the Meet companion (Phase 4). This narrows the candidate names; with 2 remote people, one is already known. | Medium |
 | 4 | LLM suggestion | The LLM spots cues like "thanks, Sara" and offers them as **suggestions only**, shown with a "?" | Low |
 | 5 | Manual | Rename in the review UI, or click the name on a single line to move it to someone else (or a new person). | Final |
 
 - Renaming a speaker updates the transcript and substitutes the name in the notes without calling the LLM again.
 - Voiceprints are biometric data, so they're encrypted, deletable, and only kept with consent.
+- **The People page is the one place a name lives.** Naming a speaker links it to a People entry
+  (`speakers.person_id`, found by name or added). Renaming the entry renames that speaker in every meeting
+  (transcript and notes); deleting it turns them back into "Person N". Your own speaker is always linked to your
+  entry ("This is me" marks an existing entry as you). Re-detect keeps the links, merges keep them, and names
+  given before links existed are linked on start. Speaker, line and notes edits are refused (409) while a meeting
+  is being processed, because processing rewrites them.
+
+### 5.1 Voiceprints: recognise people across meetings (built 2026-10-19, `modwen/voiceprints.py`)
+
+**Goal.** Name a speaker once ("Person 2 is Sara") and Modwen recognises Sara in later meetings without
+being told. Enrollment happens as a side effect of naming people in the review screen; there is no separate
+"record 30 seconds" step (that can be added later from the People page).
+
+**What a voiceprint is.** The CAM++ speaker embedding the built-in diarizer already computes (a unit vector,
+one per voice). Two clips of the same voice score a high cosine similarity; different voices score low. It
+is computed with the sherpa-onnx model, so it works whether diarization ran with sherpa or pyannote. It
+cannot be turned back into audio, but it is still biometric data and is handled as such.
+
+```mermaid
+flowchart LR
+  A[Review: name Person 2 'Sara'<br/>+ 'Remember her voice'] --> B[Embed Sara's clean lines<br/>longest, no overlap, 10-60 s]
+  B --> C[(voiceprints<br/>encrypted, per person, per kind)]
+  D[Next meeting: speakers detected] --> E[Embed each speaker]
+  E --> F{best match >= threshold<br/>and clear margin?}
+  C --> F
+  F -- yes --> G[Name it 'Sara'<br/>badge: recognised by voice]
+  F -- close --> H[Suggest 'Sara?']
+  F -- no --> I[Stay 'Person N']
+  G -- user confirms or keeps --> C
+  G -- 'Not Sara' --> I
+```
+
+**Enrollment (when a person gets assigned).**
+- In the Speakers drawer, naming a speaker links it to a person on the People page (picked from the list or
+  created). A checkbox **"Remember this voice"** appears; ticking it records consent (`consent_at`, the meeting
+  id) and saves a sample. Unticked: the name is used for this meeting only.
+- The sample is embedded from that speaker's **current** lines (after any line moves), longest first, skipping
+  overlap lines and the mic's echo, up to 60 s. Under 10 s of clean speech: not saved, the UI says why.
+- Each person keeps up to 10 samples per **kind**: `remote` (system audio, which is codec-compressed) and
+  `local` (mic / room). The match uses the mean of the samples. Old samples roll off, so voices that change
+  over time (a new headset) keep working.
+- Your own voice: from the mic channel's "You" (online meetings), one sample per meeting once you turn on
+  **Settings → Privacy → Remember my voice** (off by default). It lets Modwen find you in in-person meetings.
+  Online, "You" still comes from the mic channel, so your voiceprint is not used there.
+
+**Matching (every processed or re-detected meeting).**
+- After `label_speakers`, embed each speaker (same rules as enrollment) and score it against every enrolled
+  person, using the same kind first and the other kind if that's all there is.
+- Assign greedily by score, one person per speaker and one speaker per person per meeting. The best person
+  must beat the runner-up by `voiceprint_margin` (0.05), otherwise nothing is guessed. Then it is named when
+  `score >= voiceprint_threshold` (start 0.70) and shown as a suggestion ("Sara?") from `voiceprint_suggest`
+  (0.60) up to the threshold; otherwise it stays "Person N".
+- Nothing is computed while nobody is enrolled (and "Remember my voice" is off), so the feature costs nothing
+  until it is used. A person you already named in the meeting is never matched to another speaker.
+- Recognised speakers get `name_source = "voiceprint"`, `confidence = score`. Names the user typed
+  (`manual`) always win, and re-detect keeps them.
+- A recognised speaker adds a new sample only when the user confirms it (keeps it after editing, or clicks ✓),
+  never automatically, so a wrong match can't teach itself.
+
+**Review UI.**
+- Speakers drawer: "✓ recognised by voice · 82%" with **Not Sara** (back to Person N; those lines are never
+  matched to Sara again in this meeting, also after re-detect) and **✓ Confirm**. A suggestion shows
+  "Sounds like Sara? (65%)" with **Yes** / **No**. "Remember this voice" is unticked by default.
+- People page: per person "Voice: 4 samples (2 remote, 2 local), 3.5 min", **Delete voiceprint**. Deleting a
+  person deletes their voiceprints.
+
+**Storage and privacy.**
+- New table `voiceprints(id, person_id, kind, vector BLOB, seconds, meeting_id, speaker_id, created_at)`.
+  `vector` is AES-GCM encrypted with the master key (associated data: person id), like the audio keys.
+  New columns `persons.consent_at`, `speakers.person_id`. The unused `persons.voiceprint` column is dropped
+  from use.
+- Never leaves the machine, never sent to the LLM, kept until deleted (§10 retention).
+
+**API.**
+- `POST /api/meetings/{mid}/speakers/{sid}/person` `{person_id | new_name, remember_voice}`: link + enroll.
+- `POST /api/meetings/{mid}/speakers/{sid}/confirm` and `.../reject`.
+- `GET /api/people` adds `{voice: {samples, seconds, kinds}}`; `DELETE /api/people/{pid}/voiceprint`.
+
+**First measurement.** On a 30-min Arabic/English meeting and its re-import, each of the 4 people scored
+0.96-0.99 against themselves and 0.22-0.57 against the others (one 14 s speaker got no match). Re-imports
+share the audio, so real cross-meeting scores will be lower; that is what the calibration script is for.
+
+**Calibration.** The 0.70 threshold is a starting point. `scripts/voiceprint_eval.py` scores every named speaker
+of your own meetings against every enrolled person and prints how many would be right, wrong, or left unnamed
+at each threshold, so it can be set from real data (Arabic dialects, Zoom vs Meet audio, mic vs system).
+
+**Build order.**
+1. Storage, encryption and enrollment on naming (backend + drawer checkbox). Tests with fake embeddings.
+2. Matching during processing and re-detect, the badges, Confirm / Not this person.
+3. People page voice management, "Remember my voice" for you, the calibration script, docs.
+
+**Risks.**
+- Same person, different conditions (laptop mic one day, AirPods the next; the remote codec): mitigated by the
+  per-kind, multi-sample centroid and the margin rule. Expect weaker matches across kinds.
+- Two similar voices (siblings, same accent): the margin rule leaves them unnamed instead of guessing.
+- Short speakers (a few words) can't be recognised; they stay "Person N".
 
 ---
 

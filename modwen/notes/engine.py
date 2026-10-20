@@ -64,6 +64,23 @@ def split_windows(segments: list[dict], minutes: float, overlap_minutes: float) 
     return windows
 
 
+def fit_budget(segments: list[dict], budget: int) -> list[list[dict]]:
+    """Cut ``segments`` into consecutive runs whose transcript fits ``budget`` tokens (a line never splits)."""
+    out: list[list[dict]] = []
+    cur: list[dict] = []
+    used = 0
+    for s in segments:
+        cost = estimate_tokens(transcript_line(s)) + 1
+        if cur and used + cost > budget:
+            out.append(cur)
+            cur, used = [], 0
+        cur.append(s)
+        used += cost
+    if cur:
+        out.append(cur)
+    return out
+
+
 def _similar(a: str, b: str) -> float:
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
@@ -196,12 +213,9 @@ class NotesEngine:
             windows = [segments]
         else:
             windows = split_windows(segments, self.cfg.chunk_minutes, self.cfg.chunk_overlap_minutes)
-            # A window can still be too dense: halve the window length until each fits.
-            minutes = self.cfg.chunk_minutes
-            while any(estimate_tokens("\n".join(transcript_line(s) for s in w)) > self._budget() for w in windows) \
-                    and minutes > 2:
-                minutes /= 2
-                windows = split_windows(segments, minutes, min(self.cfg.chunk_overlap_minutes, minutes / 4))
+            # A window can still be too dense (fast speech, a small context): split by the token budget itself,
+            # so no window is ever sent larger than the model can read.
+            windows = [part for w in windows for part in fit_budget(w, self._budget())]
 
         total_steps = len(windows) + (1 if len(windows) > 1 else 0) + len(langs)
         step = 0
@@ -262,7 +276,7 @@ class NotesEngine:
                 source = " ".join([seg_text.get(i, "") for i in ids] + [a.task_original or ""])
                 if source.strip() and not grounded(due_raw, source):
                     # The model claimed a deadline the cited lines don't contain: re-read it from those lines.
-                    log.info("Ungrounded deadline %r for task %r; re-reading from transcript", due_raw, a.task)
+                    log.info("Ungrounded deadline for an action item; re-reading it from the transcript")
                     found, phrase = find_deadline(source, base)
                     due_raw = phrase
                     if not phrase:
@@ -315,7 +329,7 @@ def refresh_warnings(data: dict) -> list[str]:
     keep = [w for w in keep if "unnamed speaker" not in w]
     owners = [(a.get("owner") or "").strip() for a in data.get("action_items", [])]
     unowned = sum(1 for o in owners if not o)
-    generic = sum(1 for o in owners if re.fullmatch(r"(Others|Room|Speaker \d+|Person \d+)", o))
+    generic = sum(1 for o in owners if re.fullmatch(r"(Others|Room|Not sure|Speaker \d+|Person \d+)", o))
     if unowned:
         keep.append(f"{unowned} action item(s) without an owner")
     if generic:

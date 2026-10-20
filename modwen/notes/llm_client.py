@@ -63,8 +63,10 @@ class LLMClient:
         self.client = OpenAI(
             base_url=profile.base_url,
             api_key=resolve_secret(profile.api_key, cfg) or "sk-local",
-            timeout=profile.timeout_seconds,
-            max_retries=1,
+            # Fail fast when nothing listens; allow long generations on slow (CPU) machines. complete_json
+            # retries on its own, so the SDK must not multiply that.
+            timeout=httpx.Timeout(profile.timeout_seconds, connect=5.0, write=30.0, pool=10.0),
+            max_retries=0,
             http_client=http_client,
         )
 
@@ -133,7 +135,8 @@ class LLMClient:
                 return obj
             except (ValueError, ValidationError, json.JSONDecodeError) as exc:
                 last_err = str(exc)[:500]
-                log.info("LLM reply rejected (attempt %d): %s", attempt + 1, last_err)
+                # The error text can quote the reply (meeting content): log only its kind.
+                log.info("LLM reply rejected (attempt %d): %s", attempt + 1, type(exc).__name__)
                 msgs = list(messages) + [
                     {"role": "assistant", "content": text[:4000]},
                     {"role": "user", "content": f"That reply was not acceptable: {last_err}\n"

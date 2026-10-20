@@ -18,6 +18,11 @@ _PHRASES = [
     "ترجمة وتدقيق",
     "تم الترجمة",
     "سبحان الله وبحمده",
+    # Subtitle credits Whisper inserts into silence or cross-talk (seen in real meetings)
+    "المترجم للقناة",
+    "المترجم لقناة",
+    "المترجمات لك في القناة",
+    "ترجمة القناة",
     "موسيقى",
     # English
     "thanks for watching",

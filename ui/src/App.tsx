@@ -16,7 +16,8 @@ export type Ctx = {
   llmActive: string;
   events: BBEvent[];
   lastEvent: BBEvent | null;
-  toast: (msg: string) => void;
+  toast: (msg: string, kind?: "ok" | "error") => void;
+  fail: (err: unknown) => void;
   go: (hash: string) => void;
   refreshStatus: () => void;
 };
@@ -39,13 +40,18 @@ export default function App() {
   const [authError, setAuthError] = useState(false);
   const [lastEvent, setLastEvent] = useState<BBEvent | null>(null);
   const [events, setEvents] = useState<BBEvent[]>([]);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<{ msg: string; kind: "ok" | "error" } | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
   const firstRunChecked = useRef(false);
 
-  const toast = useCallback((msg: string) => {
-    setToastMsg(msg);
-    window.setTimeout(() => setToastMsg(null), 1800);
+  const toast = useCallback((msg: string, kind: "ok" | "error" = "ok") => {
+    setToastMsg({ msg, kind });
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastMsg(null), kind === "error" ? 6000 : 2200);
   }, []);
+  const fail = useCallback((err: unknown) => {
+    toast(err instanceof Error && err.message ? err.message : "Something went wrong", "error");
+  }, [toast]);
   const go = useCallback((h: string) => {
     location.hash = h;
   }, []);
@@ -85,7 +91,7 @@ export default function App() {
     };
   }, [refreshStatus]);
 
-  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, toast, go, refreshStatus };
+  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, toast, fail, go, refreshStatus };
   const path = hash.replace(/^#/, "") || "/";
   let page = <Home ctx={ctx} />;
   let nav = "meetings";
@@ -133,7 +139,8 @@ export default function App() {
         {recorder.recording && !path.startsWith("/live") && <RecordingBar ctx={ctx} compact />}
         {page}
       </main>
-      {toastMsg && <div className="toast">✓ {toastMsg}</div>}
+      {toastMsg && <div className={`toast ${toastMsg.kind}`} role={toastMsg.kind === "error" ? "alert" : "status"}>
+        {toastMsg.kind === "error" ? "⚠" : "✓"} {toastMsg.msg}</div>}
     </div>
   );
 }

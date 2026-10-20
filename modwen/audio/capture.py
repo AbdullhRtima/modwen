@@ -1,4 +1,10 @@
-"""Audio capture sources. Each source delivers mono float32 16 kHz frames to a callback.
+"""Audio capture sources. Each source calls ``callback(channel, frames, rate, captured_at)`` with float32 frames
+(mono, or interleaved channels as a 2-D array) at the device's own sample rate. ``captured_at`` is when the
+first frame was captured, on the ``time.monotonic()`` clock, or None if the device doesn't say.
+
+Callbacks run on real-time audio threads, so sources do no work there beyond copying: the recorder queues
+the frames and downmixes / resamples / writes them on its own thread (heavy work in a callback makes the
+driver drop audio).
 
 * ``MicSource``          - default (or chosen) microphone via PortAudio (sounddevice).
 * ``MacTapSource``       - macOS 14.2+ system audio via Core Audio process taps (Swift helper ``modwen-tap``).
@@ -12,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import platform
+import struct
 import shutil
 import subprocess
 import sys
@@ -23,13 +30,29 @@ from typing import Callable
 import numpy as np
 
 from modwen.audio import SAMPLE_RATE
-from modwen.audio.chunks import load_audio_file, to_mono_16k
+from modwen.audio.chunks import load_audio_file
 
 log = logging.getLogger(__name__)
 
-FrameCallback = Callable[[str, np.ndarray], None]
+FrameCallback = Callable[..., None]  # (channel, frames, rate, captured_at | None)
+
+
+class DeviceClock:
+    """Maps a device's own timestamps onto ``time.monotonic()``: the offset is taken once, so the spacing of
+    blocks comes from the device (exact) while arrival delays (a busy process) don't count."""
+
+    def __init__(self):
+        self.offset: float | None = None
+
+    def map(self, device_time: float) -> float | None:
+        if not device_time:
+            return None
+        if self.offset is None:
+            self.offset = time.monotonic() - device_time
+        return device_time + self.offset
 
 NATIVE_DIR = Path(__file__).resolve().parent.parent / "native" / "macos"
+TAP_MAGIC = 0x5354574D  # "MWTS", see modwen-tap.swift
 
 
 class CaptureError(RuntimeError):
@@ -40,12 +63,25 @@ class CaptureSource:
     channel: str = "mic"
     description: str = ""
     realtime = True  # delivers audio at the speed of the clock (the recorder fills gaps it leaves)
+    overflows = 0  # times the driver reported lost input
+    quiet_when_idle = False  # sends no data at all while nothing plays (not a lost device)
+
+    def alive(self) -> bool:
+        return True
 
     def start(self, callback: FrameCallback) -> None:
         raise NotImplementedError
 
     def stop(self) -> None:
         raise NotImplementedError
+
+    def restart(self, callback: FrameCallback) -> None:
+        """Reopen after the device went away (unplugged headset, Bluetooth dropped, helper crashed)."""
+        try:
+            self.stop()
+        except Exception:
+            pass
+        self.start(callback)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -80,10 +116,13 @@ class DeviceSource(CaptureSource):
         self.description = f"{info['name']} @ {rate} Hz"
         log.info("Opening %s for channel %s", self.description, self.channel)
 
-        def cb(indata, frames, time_info, status):  # PortAudio thread
-            if status:  # e.g. input overflow: audio was lost; the recorder pads the gap to keep channels in sync
-                log.info("audio status %s: %s", self.channel, status)
-            callback(self.channel, to_mono_16k(indata.copy(), rate))
+        self.overflows = 0
+        clock = DeviceClock()
+
+        def cb(indata, frames, time_info, status):  # PortAudio real-time thread: copy and hand over, nothing else
+            if status and status.input_overflow:
+                self.overflows += 1  # audio was lost; the recorder pads the gap to keep channels in sync
+            callback(self.channel, indata.copy(), rate, clock.map(getattr(time_info, "inputBufferAdcTime", 0.0)))
 
         self._stream = sd.InputStream(device=idx, channels=channels, samplerate=rate, dtype="float32",
                                       blocksize=int(rate * 0.1), callback=cb)
@@ -94,6 +133,18 @@ class DeviceSource(CaptureSource):
             self._stream.stop()
             self._stream.close()
             self._stream = None
+
+    def restart(self, callback: FrameCallback) -> None:
+        """PortAudio keeps the device list it saw at start-up: refresh it so the new default device is used."""
+        import sounddevice as sd
+
+        try:
+            self.stop()
+        except Exception:
+            self._stream = None
+        sd._terminate()
+        sd._initialize()
+        self.start(callback)
 
 
 class MicSource(DeviceSource):
@@ -117,11 +168,15 @@ class MacTapSource(CaptureSource):
     """
 
     channel = "system"
+    quiet_when_idle = True  # the tap sends nothing while no app plays sound
 
     def __init__(self):
         self._proc: subprocess.Popen | None = None
         self._thread: threading.Thread | None = None
         self._running = False
+
+    def alive(self) -> bool:
+        return self._proc is not None and self._proc.poll() is None
 
     def start(self, callback: FrameCallback) -> None:
         exe = mac_tap_binary()
@@ -137,26 +192,54 @@ class MacTapSource(CaptureSource):
             self.stop()
             raise CaptureError(f"modwen-tap failed to start: {err.strip() or 'no output'}. "
                                "Grant 'System Audio Recording' permission in System Settings > Privacy & Security.")
-        _, rate_s, ch_s = header.split()[:3]
-        rate, channels = int(float(rate_s)), int(ch_s)
+        parts = header.split()
+        rate, channels = int(float(parts[1])), int(parts[2])
+        timestamped = "TS1" in parts[3:]
         self.description = f"Core Audio tap @ {rate} Hz x{channels}"
         self._running = True
         frame_bytes = 4 * channels
         block = int(rate * 0.1) * frame_bytes
+        clock = DeviceClock()
+
+        def read_exact(stream, n: int) -> bytes | None:
+            out = b""
+            while len(out) < n:
+                part = stream.read(n - len(out))
+                if not part:
+                    return None
+                out += part
+            return out
 
         def reader():
             assert self._proc and self._proc.stdout
+            out = self._proc.stdout
             buf = b""
             while self._running:
-                data = self._proc.stdout.read(block)
+                if timestamped:  # records: magic, byte count, capture time (ns), PCM
+                    head = read_exact(out, 16)
+                    if head is None:
+                        break
+                    magic, nbytes, nanos = struct.unpack("<IIQ", head)
+                    if magic != TAP_MAGIC:
+                        log.error("modwen-tap stream out of sync; stopping system audio")
+                        break
+                    data = read_exact(out, nbytes)
+                    if data is None:
+                        break
+                    usable = len(data) - (len(data) % frame_bytes)
+                    if usable:
+                        arr = np.frombuffer(data[:usable], dtype=np.float32).reshape(-1, channels).copy()
+                        callback(self.channel, arr, rate, clock.map(nanos / 1e9))
+                    continue
+                data = out.read(block)  # an older helper without timestamps
                 if not data:
                     break
                 buf += data
                 usable = len(buf) - (len(buf) % frame_bytes)
                 if usable:
-                    arr = np.frombuffer(buf[:usable], dtype=np.float32).reshape(-1, channels)
+                    arr = np.frombuffer(buf[:usable], dtype=np.float32).reshape(-1, channels).copy()
                     buf = buf[usable:]
-                    callback(self.channel, to_mono_16k(arr, rate))
+                    callback(self.channel, arr, rate, None)
             log.info("modwen-tap reader stopped")
 
         self._thread = threading.Thread(target=reader, name="mac-tap", daemon=True)
@@ -197,9 +280,12 @@ class WasapiLoopbackSource(CaptureSource):
         channels = int(dev["maxInputChannels"]) or 2
         self.description = f"WASAPI loopback: {dev['name']} @ {rate} Hz"
 
-        def cb(in_data, frame_count, time_info, status):
-            arr = np.frombuffer(in_data, dtype=np.float32).reshape(-1, channels)
-            callback(self.channel, to_mono_16k(arr, rate))
+        self.overflows = 0
+
+        def cb(in_data, frame_count, time_info, status):  # real-time thread: copy and hand over
+            if status & getattr(pyaudio, "paInputOverflow", 0):
+                self.overflows += 1
+            callback(self.channel, np.frombuffer(in_data, dtype=np.float32).reshape(-1, channels).copy(), rate)
             return (None, pyaudio.paContinue)
 
         self._stream = self._pa.open(format=pyaudio.paFloat32, channels=channels, rate=rate, input=True,
@@ -237,7 +323,7 @@ class PulseLoopbackSource(CaptureSource):
         def loop():
             with mic.recorder(samplerate=rate, channels=2) as rec:
                 while self._running:
-                    callback(self.channel, to_mono_16k(rec.record(numframes=rate // 10), rate))
+                    callback(self.channel, rec.record(numframes=rate // 10).astype(np.float32), rate)
 
         self._thread = threading.Thread(target=loop, name="pulse-loopback", daemon=True)
         self._thread.start()
@@ -270,7 +356,7 @@ class FileSource(CaptureSource):
             for i in range(0, audio.size, block):
                 if not self._running:
                     break
-                callback(self.channel, audio[i : i + block])
+                callback(self.channel, audio[i : i + block], SAMPLE_RATE)
                 target = t0 + (i + block) / SAMPLE_RATE / self.speed
                 delay = target - time.monotonic()
                 if delay > 0:
@@ -282,6 +368,9 @@ class FileSource(CaptureSource):
 
     def stop(self) -> None:
         self._running = False
+
+    def restart(self, callback: FrameCallback) -> None:
+        """A file that has played to the end is finished, not lost: never replay it."""
 
 
 # ----------------------------------------------------------------------------------------------

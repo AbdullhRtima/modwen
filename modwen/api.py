@@ -6,20 +6,18 @@ the tray/CLI opens the UI with ?token=...), and Host/Origin must be localhost (b
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import secrets
-import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
 from modwen import __version__
 from modwen.audio.capture import CaptureError, list_input_devices
-from modwen.audio.chunks import load_audio_file, write_channel
+from modwen.audio.chunks import write_channel
 from modwen.egress import EgressBlocked, ensure_local
 from modwen.notes.render import notes_markdown
 from modwen.pipeline.recorder import RecorderBusy
@@ -32,16 +30,26 @@ from modwen.network import allowed_hosts as _allowed_hosts, host_of, origin_allo
 
 
 class StartRequest(BaseModel):
-    title: str = "Untitled meeting"
-    mode: str = "online"
-    meeting_language: str | None = None
-    sources: list[str] | None = None
-    platform: str = "other"
+    title: str = Field("Untitled meeting", max_length=200)
+    mode: Literal["online", "in_person"] = "online"
+    meeting_language: Literal["auto", "ar", "en"] | None = None
+    sources: list[Literal["mic", "system"]] | None = None
+    platform: str = Field("other", max_length=40)
     consent_confirmed: bool = False
+
+
+class KeepRequest(BaseModel):
+    keep: bool
 
 
 class RenameRequest(BaseModel):
     name: str
+
+
+class PersonLink(BaseModel):
+    person_id: str | None = None  # an entry on the People page ...
+    name: str | None = None  # ... or a name (found on the People page, or added to it)
+    remember_voice: bool = False  # the person agreed: keep a voiceprint (§5.1)
 
 
 class MergeRequest(BaseModel):
@@ -68,6 +76,16 @@ class RedetectRequest(BaseModel):
 
 class NotesEdit(BaseModel):
     data: dict[str, Any]
+
+
+class NotesPatch(BaseModel):
+    """The parts of the notes the user may edit, each optional; items keep their extra fields."""
+    model_config = {"extra": "forbid"}
+    summary: dict[str, str] | None = None
+    key_points: list[dict[str, Any]] | None = None
+    decisions: list[dict[str, Any]] | None = None
+    action_items: list[dict[str, Any]] | None = None
+    open_questions: list[dict[str, Any]] | None = None
 
 
 class ProfileTest(BaseModel):
@@ -114,6 +132,13 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
             raise HTTPException(404, "Meeting not found")
         return m
 
+    def editable_or_409(mid: str) -> dict:
+        """Speakers, lines and notes are rewritten while a meeting is processed: edits then would be lost."""
+        m = meeting_or_404(mid)
+        if m["status"] in ("recording", "processing"):
+            raise HTTPException(409, "Modwen is still working on this meeting. Try again when it has finished.")
+        return m
+
     # ----- status -----
     @app.get("/api/health")
     def health():
@@ -147,6 +172,8 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
     def start(req: StartRequest):
         if not req.consent_confirmed:
             raise HTTPException(400, "Confirm that participants were informed before recording.")
+        if req.sources is not None and not req.sources:
+            raise HTTPException(400, "Choose at least one audio source (microphone or system audio).")
         try:
             m = s.recorder.start(req.title, mode=req.mode, meeting_language=req.meeting_language,
                                  sources=req.sources, platform_name=req.platform,
@@ -154,7 +181,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
         except RecorderBusy as exc:
             raise HTTPException(409, str(exc)) from exc
         except CaptureError as exc:
-            raise HTTPException(500, str(exc)) from exc
+            raise HTTPException(409, str(exc)) from exc
         return m
 
     @app.post("/api/recorder/stop")
@@ -167,37 +194,58 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.post("/api/recorder/pause")
     def pause():
-        s.recorder.pause()
+        recording_or_409(s.recorder.pause)
         return s.recorder.status()
 
     @app.post("/api/recorder/resume")
     def resume():
-        s.recorder.resume()
+        recording_or_409(s.recorder.resume)
         return s.recorder.status()
 
     @app.post("/api/recorder/mark")
     def mark():
-        return {"at_ms": s.recorder.mark()}
+        return {"at_ms": recording_or_409(s.recorder.mark)}
+
+    def recording_or_409(action):
+        try:
+            return action()
+        except RuntimeError as exc:
+            raise HTTPException(409, "Nothing is being recorded") from exc
 
     @app.get("/api/meetings/{mid}/live")
     def live(mid: str):
         return {"lines": s.recorder.live_lines(mid)}
 
-    # ----- import a recording file (testing without a live meeting) -----
+    # ----- import a recording file -----
     @app.post("/api/meetings/import")
-    async def import_recording(file: UploadFile = File(...), title: str = Form("Imported recording"),
-                               meeting_language: str = Form("auto"), channel: str = Form("system")):
-        suffix = Path(file.filename or "audio.wav").suffix or ".wav"
-        with tempfile.NamedTemporaryFile(suffix=suffix, dir=s.cfg.data_dir, delete=False) as tmp:
-            tmp.write(await file.read())
-            tmp_path = Path(tmp.name)
+    async def import_recording(request: Request, title: str = "Imported recording", meeting_language: str = "auto",
+                               channel: str = "system"):
+        """The file is the raw request body. It is streamed into an encrypted temp file (never in the clear on
+        disk, never whole in memory), then decoded block by block into the meeting's encrypted chunks."""
+        from starlette.concurrency import run_in_threadpool
+
+        from modwen.audio.importer import SealedTempFile
+
+        if request.headers.get("content-type", "").startswith("multipart/"):
+            raise HTTPException(415, "Send the file as the request body (form uploads are spooled to disk "
+                                     "unencrypted, so Modwen refuses them)")
+        if channel not in ("system", "mic", "room"):
+            raise HTTPException(400, "channel must be system, mic or room")
+        if meeting_language not in ("auto", "ar", "en"):
+            raise HTTPException(400, "meeting_language must be auto, ar or en")
+        sealed = SealedTempFile(s.cfg.data_dir)
         try:
-            audio = await asyncio.to_thread(load_audio_file, tmp_path)
-        except Exception as exc:
-            raise HTTPException(400, f"Could not read audio file: {exc}") from exc
+            async for chunk in request.stream():
+                if chunk:
+                    await run_in_threadpool(sealed.append, chunk)
+                if sealed.size > MAX_UPLOAD_BYTES:
+                    raise HTTPException(413, f"The file is larger than {MAX_UPLOAD_BYTES // 1024**3} GB")
+            if not sealed.size:
+                raise HTTPException(400, "The file is empty")
+            return await run_in_threadpool(import_sealed, s, sealed, title=title.strip() or "Imported recording",
+                                           meeting_language=meeting_language, channel=channel)
         finally:
-            tmp_path.unlink(missing_ok=True)
-        return import_audio(s, audio, title=title, meeting_language=meeting_language, channel=channel)
+            sealed.close()
 
     # ----- meetings -----
     @app.get("/api/meetings")
@@ -216,16 +264,29 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.delete("/api/meetings/{mid}")
     def delete(mid: str):
-        meeting_or_404(mid)
+        m = meeting_or_404(mid)
+        if m["status"] == "recording" and s.recorder.session and s.recorder.session.meeting_id == mid:
+            raise HTTPException(409, "This meeting is being recorded. Stop it first.")
+        if m["status"] == "processing" and s.is_queued_or_running(mid):
+            raise HTTPException(409, "Modwen is still working on this meeting. Delete it when it has finished.")
         import shutil
 
         shutil.rmtree(s.cfg.audio_dir / mid, ignore_errors=True)
         s.store.delete_meeting(mid)  # also removes the wrapped key -> audio unrecoverable
         return {"deleted": mid}
 
+    @app.put("/api/meetings/{mid}/keep")
+    def keep(mid: str, req: KeepRequest):
+        """Pin a meeting so retention never deletes it (or unpin)."""
+        meeting_or_404(mid)
+        s.store.update_meeting(mid, keep=int(req.keep))
+        return s.store.get_meeting(mid)
+
     @app.post("/api/meetings/{mid}/retry")
     def retry(mid: str):
-        meeting_or_404(mid)
+        if s.is_queued_or_running(meeting_or_404(mid)["id"]):
+            raise HTTPException(409, "This meeting is already being processed")
+        s.store.update_meeting(mid, status="processing", error=None)
         s.enqueue_processing(mid)
         return {"queued": True}
 
@@ -241,22 +302,96 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.post("/api/meetings/{mid}/speakers/{sid}/rename")
     def rename(mid: str, sid: str, req: RenameRequest):
-        meeting_or_404(mid)
-        old = s.store.rename_speaker(mid, sid, req.name.strip())
-        if old is None:
-            raise HTTPException(404, "Speaker not found")
+        """Name a speaker. The name goes on the People page too, so it can be renamed or deleted in one place."""
+        old = speaker_or_404(mid, sid)["display_name"]
+        r = link_person(mid, sid, PersonLink(name=req.name))
+        return {"old": old, "new": r["person"]["display_name"], "speaker_id": r["speaker_id"]}
+
+    def refresh_note_warnings(mid: str) -> None:
         notes = s.store.latest_notes(mid)
         if notes:
             from modwen.notes.engine import refresh_warnings
 
             s.store.update_notes_data(notes["id"], {**notes["data"], "warnings": refresh_warnings(notes["data"])})
-        return {"old": old, "new": req.name.strip()}
+
+    def speaker_or_404(mid: str, sid: str) -> dict:
+        sp = next((x for x in s.store.get_speakers(mid) if x["id"] == sid), None)
+        if sp is None:
+            raise HTTPException(404, "Speaker not found")
+        return sp
+
+    @app.post("/api/meetings/{mid}/speakers/{sid}/person")
+    def link_person(mid: str, sid: str, req: PersonLink):
+        """Say who a speaker is (a People entry, found or added by name); with remember_voice, also save their
+        voiceprint. Their name then follows the People entry: rename or delete it there."""
+        editable_or_409(mid)
+        sp = speaker_or_404(mid, sid)
+        person = s.store.get_person(req.person_id) if req.person_id else None
+        if req.person_id and person is None:
+            raise HTTPException(404, "Person not found")
+        if person is None:
+            name = (req.name or "").strip()
+            if not name:
+                raise HTTPException(400, "Type a name")
+            if name.lower() == "you" or (sp["is_self"] and s.store.self_person(create=False)
+                                         and name.lower() == s.store.self_person()["display_name"].lower()):
+                person = s.store.self_person()
+            else:
+                person = s.store.find_person(name) or s.store.upsert_person({"display_name": name})
+        if req.remember_voice and person["is_self"]:
+            raise HTTPException(400, "Your own voice is saved from Settings → Privacy → Remember my voice")
+        sid = s.store.link_speaker(mid, sid, person["id"])
+        s.store.update_speaker(mid, sid, name_source="manual", confidence=1.0)
+        refresh_note_warnings(mid)
+        voice = None
+        if req.remember_voice:
+            s.store.record_consent(person["id"], mid)
+            voice = s.enroll_speaker(mid, sid, person["id"])
+        return {"speaker_id": sid, "person": s.store.get_person(person["id"]), "voice": voice,
+                "speakers": s.store.get_speakers(mid)}
+
+    @app.post("/api/meetings/{mid}/speakers/{sid}/confirm")
+    def confirm_voice(mid: str, sid: str):
+        """The voice match (or suggestion) is right: keep the name and learn from this meeting."""
+        editable_or_409(mid)
+        sp = speaker_or_404(mid, sid)
+        pid = sp.get("person_id") if sp.get("name_source") == "voiceprint" else None
+        pid = pid or (sp.get("suggestion") or {}).get("person_id")
+        if not pid:
+            raise HTTPException(400, "This speaker was not recognised by voice")
+        if not s.store.get_person(pid):
+            raise HTTPException(404, "That person was deleted from the People page")
+        return link_person(mid, sid, PersonLink(person_id=pid, remember_voice=not s.store.get_person(pid)["is_self"]))
+
+    @app.post("/api/meetings/{mid}/speakers/{sid}/reject")
+    def reject_voice(mid: str, sid: str):
+        """Not this person: undo a voice match (or drop a suggestion) and never pair them in this meeting again."""
+        editable_or_409(mid)
+        sp = speaker_or_404(mid, sid)
+        if sp.get("name_source") == "voiceprint" and sp.get("person_id"):
+            pid = sp["person_id"]
+            if sp["is_self"] and sp["channel"] != "mic":  # "you" by voice in a room: not you after all
+                s.store.update_speaker(mid, sid, is_self=0)
+            s.store.unlink_speaker(mid, sid)
+            refresh_note_warnings(mid)
+        elif sp.get("suggestion"):
+            pid = sp["suggestion"]["person_id"]
+            s.store.update_speaker(mid, sid, suggestion=None)
+        else:
+            raise HTTPException(400, "Nothing to undo for this speaker")
+        lines = [g["id"] for g in s.store.get_segments(mid) if g["speaker_id"] == sid]
+        s.store.add_voice_reject(mid, pid, lines)
+        return {"speakers": s.store.get_speakers(mid)}
 
     @app.post("/api/meetings/{mid}/speakers/{sid}/merge")
     def merge(mid: str, sid: str, req: MergeRequest):
-        meeting_or_404(mid)
-        s.store.merge_speakers(mid, sid, req.into)
-        return {"merged": sid, "into": req.into}
+        editable_or_409(mid)
+        try:
+            kept = s.store.merge_speakers(mid, sid, req.into)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        refresh_note_warnings(mid)
+        return {"merged": sid if kept != sid else req.into, "into": kept, "speakers": s.store.get_speakers(mid)}
 
     @app.post("/api/meetings/{mid}/speakers/redetect")
     def redetect(mid: str, req: RedetectRequest):
@@ -268,7 +403,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.post("/api/meetings/{mid}/segments/{seg_id}/speaker")
     def set_segment_speaker(mid: str, seg_id: str, req: SegmentSpeaker):
-        meeting_or_404(mid)
+        editable_or_409(mid)
         sid = req.speaker_id
         seg = next((x for x in s.store.get_segments(mid) if x["id"] == seg_id), None)
         if seg is None:
@@ -289,19 +424,24 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.put("/api/meetings/{mid}/segments/{seg_id}")
     def edit_segment(mid: str, seg_id: str, req: SegmentEdit):
-        meeting_or_404(mid)
+        editable_or_409(mid)
         s.store.update_segment_text(mid, seg_id, req.text)
         return {"ok": True}
 
     @app.put("/api/meetings/{mid}/notes")
     def edit_notes(mid: str, req: NotesEdit):
-        meeting_or_404(mid)
+        editable_or_409(mid)
         notes = s.store.latest_notes(mid)
         if not notes:
             raise HTTPException(404, "No notes yet")
         from modwen.notes.engine import refresh_warnings
 
-        data = {**notes["data"], **req.data, "edited": True}
+        try:
+            patch = NotesPatch.model_validate(req.data).model_dump(exclude_unset=True)
+        except ValidationError as exc:
+            raise HTTPException(400, f"Invalid notes: {exc.errors()[0]['msg']} at "
+                                     f"{'.'.join(str(x) for x in exc.errors()[0]['loc'])}") from exc
+        data = {**notes["data"], **patch, "edited": True}
         data["warnings"] = refresh_warnings(data)
         s.store.update_notes_data(notes["id"], data)
         return s.store.latest_notes(mid)
@@ -313,8 +453,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
                             actions_only=actions_only)
         headers = {}
         if download:
-            safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in m["title"]).strip("-").lower()
-            headers["Content-Disposition"] = f'attachment; filename="{safe or "meeting"}-{(m["started_at"] or "")[:10]}.md"'
+            headers["Content-Disposition"] = attachment_header(m["title"], (m["started_at"] or "")[:10], "md")
         return PlainTextResponse(md, headers=headers, media_type="text/markdown; charset=utf-8")
 
     # ----- LLM profiles -----
@@ -373,7 +512,8 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
     if (UI_DIST / "index.html").exists():
         @app.get("/", include_in_schema=False)
         def index():
-            return FileResponse(UI_DIST / "index.html")
+            # Always revalidate: after an update the browser must not keep the old UI (assets are hashed).
+            return FileResponse(UI_DIST / "index.html", headers={"Cache-Control": "no-cache"})
 
         @app.get("/assets/{path:path}", include_in_schema=False)
         def assets(path: str):
@@ -388,6 +528,51 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
                     "npm run build</code>, then restart. The API is running.</p>")
 
     return app
+
+
+MAX_UPLOAD_BYTES = 8 * 1024**3
+
+
+def attachment_header(title: str, date: str, ext: str) -> str:
+    """Content-Disposition for a download named after the meeting. Headers must be Latin-1, so an Arabic title
+    goes in the RFC 5987 ``filename*`` (browsers use it) with an ASCII fallback."""
+    from urllib.parse import quote
+
+    def slug(text: str, ascii_only: bool) -> str:
+        keep = (lambda c: c.isascii() and c.isalnum()) if ascii_only else str.isalnum
+        return "-".join("".join(c if keep(c) else " " for c in text).split()).lower()
+
+    fallback = f"{slug(title, True) or 'meeting'}-{date}.{ext}".replace("-.", ".")
+    full = f"{slug(title, False) or 'meeting'}-{date}.{ext}".replace("-.", ".")
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(full)}"
+
+
+def import_sealed(s: Services, sealed, *, title: str, meeting_language: str, channel: str) -> dict:
+    """Create a meeting from an uploaded recording (see ``modwen.audio.importer``) and queue it."""
+    import shutil
+
+    from modwen.audio.chunks import ChunkWriter
+    from modwen.audio.importer import decode_into, probe
+
+    try:
+        info = probe(sealed)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    data_key, wrapped = s.keystore.new_data_key()
+    m = s.store.create_meeting(title, wrapped_key=wrapped, status="processing",
+                               mode="online" if channel != "room" else "in_person", meeting_language=meeting_language,
+                               platform="import", summary_language=s.cfg.notes.summary_language,
+                               llm_profile=s.cfg.llm.active, hardware_tier=s.plan.tier, channels=[channel],
+                               timezone=s.cfg.notes.timezone, duration_ms=int(info.duration * 1000))
+    mdir = s.cfg.audio_dir / m["id"]
+    try:
+        decode_into(sealed, ChunkWriter(mdir, channel, data_key, s.cfg.capture.chunk_seconds))
+    except Exception as exc:
+        shutil.rmtree(mdir, ignore_errors=True)
+        s.store.delete_meeting(m["id"])
+        raise HTTPException(400, f"Could not read the audio file: {exc}") from exc
+    s.enqueue_processing(m["id"])
+    return s.store.get_meeting(m["id"])  # type: ignore[return-value]
 
 
 def import_audio(s: Services, audio, *, title: str, meeting_language: str = "auto", channel: str = "system") -> dict:

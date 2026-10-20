@@ -21,12 +21,13 @@ def main() -> int:
     child = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr, creationflags=flags)
 
     def stop(*_):
+        # Kill outright: a polite SIGTERM can leave llama-server hung in its GPU clean-up (see llm_manager).
         if child.poll() is None:
-            child.terminate()
+            child.kill()
             try:
-                child.wait(timeout=3)
+                child.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                child.kill()
+                pass
         sys.exit(0)
 
     for sig in ("SIGTERM", "SIGINT", "SIGHUP", "SIGBREAK"):

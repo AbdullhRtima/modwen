@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import re
+import threading
 from typing import Any
 
-import numpy as np
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
 from modwen.egress import EgressBlocked, ensure_local
-from modwen.pipeline.merge import gate_to_lines
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +21,8 @@ EDITABLE = {
     "stt.meeting_language", "stt.glossary", "stt.live.provider", "stt.live.model", "stt.final.model",
     "capture.mic_device", "capture.system_backend", "capture.system_device",
     "notify.desktop", "notify.sound", "llm.managed.autostart", "app.lan_access",
+    "diarization.remember_my_voice",
+    "privacy.retention.audio_days", "privacy.retention.transcript_days", "privacy.retention.notes_days",
 }
 
 
@@ -240,15 +240,22 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         unknown = set(patch) - EDITABLE
         if unknown:
             raise HTTPException(400, f"Not editable: {', '.join(sorted(unknown))}")
-        before = s.cfg.model_dump()
+        # Validate the whole config with the patch applied, then copy the *validated* values to the live config
+        # (so "15" becomes 15, and nothing changes at all when one value is invalid).
+        draft = s.cfg.model_dump()
         for k, v in patch.items():
-            _set(s.cfg, k, v)
+            *parents, last = k.split(".")
+            node = draft
+            for part in parents:
+                node = node[part]
+            node[last] = v
         try:
-            Config.model_validate(s.cfg.model_dump())
+            checked = Config.model_validate(draft)
         except ValidationError as exc:
-            for k in patch:
-                _set(s.cfg, k, _get(Config.model_validate(before), k))
-            raise HTTPException(400, str(exc)) from exc
+            err = exc.errors()[0]
+            raise HTTPException(400, f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}") from exc
+        for k in patch:
+            _set(s.cfg, k, _get(checked, k))
         if any(k.startswith("stt.") for k in patch):
             s.reset_engines()
         return {"saved": save(), "settings": {k: _get(s.cfg, k) for k in sorted(EDITABLE)}}
@@ -268,7 +275,7 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         errors: dict[str, str] = {}
         lock = threading.Lock()
 
-        def on_frames(channel, frames):
+        def on_frames(channel, frames, rate=None):
             with lock:
                 peaks[channel] = max(peaks.get(channel, 0.0), rms_level(frames))
 
@@ -310,6 +317,36 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         s.cfg.app.setup_complete = True
         return {"saved": save()}
 
+    @app.get("/api/diagnostics", response_class=PlainTextResponse)
+    def diagnostics(lines: int = 400):
+        """A report to attach to a bug: versions, hardware, setup, recent log lines. No meeting content, no keys."""
+        import platform
+        import sys
+
+        from modwen import __version__
+        from modwen.cli import log_file
+
+        backend, live, final = s.model_choice
+        llm = s.llm_status()
+        prof = s.cfg.llm.profiles.get(s.cfg.llm.active)
+        out = [
+            f"Modwen {__version__} · Python {sys.version.split()[0]} · {platform.platform()}",
+            f"Hardware: {s.hardware.to_dict()}",
+            f"Tier: {s.plan.tier} · STT {backend} final={final} live={live}",
+            f"Diarizer: {s.cfg.diarization.provider} · threshold {s.cfg.diarization.threshold}",
+            f"LLM: {s.cfg.llm.active} model={prof.model if prof else '?'} url={prof.base_url if prof else '?'} "
+            f"ok={llm.get('ok')} {'' if llm.get('ok') else llm.get('error', '')}",
+            f"Managed LLM: {s.llm_manager.status()}",
+            f"Meetings: {len(s.store.list_meetings(limit=1000))} · jobs queued: {s.jobs.qsize()}",
+            f"Recorder: {s.recorder.status()}",
+            "", f"--- last {lines} log lines ---",
+        ]
+        try:
+            text = log_file(s.cfg).read_text(encoding="utf-8", errors="replace").splitlines()[-max(1, min(lines, 5000)):]
+        except OSError:
+            text = ["(no log file yet)"]
+        return PlainTextResponse("\n".join(out + text))
+
     @app.post("/api/notify/test")
     def notify_test():
         s.notifier.notify("Notes ready: Test meeting", "This is how Modwen tells you your notes are done.", None)
@@ -318,74 +355,112 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
     # ----------------------------------------------------------------- people
     @app.get("/api/people")
     def people():
-        return {"people": s.store.list_persons()}
+        voice = s.store.voice_summary()
+        return {"people": [{**p, "voice": voice.get(p["id"])} for p in s.store.list_persons()]}
+
+    @app.delete("/api/people/{pid}/voiceprint")
+    def delete_voiceprint(pid: str):
+        if not s.store.get_person(pid):
+            raise HTTPException(404, "Person not found")
+        s.store.delete_voiceprints(pid)
+        if s.store.get_person(pid)["is_self"] and s.cfg.diarization.remember_my_voice:
+            s.cfg.diarization.remember_my_voice = False  # otherwise the next meeting would save it again
+            save()
+        return {"deleted": pid}
 
     @app.post("/api/people")
     def add_person(p: Person):
         try:
             return s.store.upsert_person(p.model_dump())
         except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
+            raise HTTPException(409 if "already" in str(exc) else 400, str(exc)) from exc
 
     @app.put("/api/people/{pid}")
     def edit_person(pid: str, p: Person):
-        return s.store.upsert_person({**p.model_dump(), "id": pid})
+        """Edit a person; a new name replaces the old one in every meeting (transcript and notes)."""
+        meetings = len({sp["meeting_id"] for sp in s.store.linked_speakers(pid)})
+        try:
+            person = s.store.upsert_person({**p.model_dump(), "id": pid})
+        except KeyError as exc:
+            raise HTTPException(404, "Person not found") from exc
+        except ValueError as exc:
+            raise HTTPException(409 if "already" in str(exc) else 400, str(exc)) from exc
+        return {**person, "meetings": meetings}
 
     @app.delete("/api/people/{pid}")
     def delete_person(pid: str):
-        s.store.delete_person(pid)
-        return {"deleted": pid}
+        """Delete a person and their voiceprints; in meetings they become "Person N" again."""
+        try:
+            meetings = s.store.delete_person(pid)
+        except KeyError as exc:
+            raise HTTPException(404, "Person not found") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"deleted": pid, "meetings": meetings}
+
+    @app.post("/api/people/{pid}/self")
+    def this_is_me(pid: str):
+        """This person is you: your earlier entry (and its voiceprints) merge into it."""
+        try:
+            return s.store.make_self(pid)
+        except KeyError as exc:
+            raise HTTPException(404, "Person not found") from exc
 
     # ----------------------------------------------------------------- audio player
-    _cache: dict[tuple, bytes] = {}
+    _players: dict[tuple, object] = {}
+    _players_lock = threading.Lock()
+    max_range = 4 * 1024 * 1024  # an open-ended range ("bytes=0-") gets this much; the browser asks for more
 
     @app.get("/api/meetings/{mid}/audio")
     def meeting_audio(mid: str, request: Request):
-        """All channels mixed to mono FLAC, decrypted in memory only (never written to disk)."""
-        import soundfile as sf
+        """The meeting as one mono WAV, rendered per byte range from the encrypted chunks (decrypted in memory
+        only, never written to disk). Seeking and long meetings cost the same as a short one."""
+        from starlette.responses import StreamingResponse
 
-        from modwen.audio.chunks import list_channels, read_channel
+        from modwen.audio.playback import MeetingAudio
 
         m = s.store.get_meeting(mid)
         if not m:
             raise HTTPException(404, "Meeting not found")
+        if m.get("audio_deleted_at"):
+            raise HTTPException(404, "The audio of this meeting was deleted (retention settings)")
+        mdir = s.cfg.audio_dir / mid
+        channels = sorted({p.name.split("-")[0] for p in mdir.glob("*-*.flac.enc")})
+        if not channels:
+            raise HTTPException(404, "No audio for this meeting")
         segments = s.store.get_segments(mid)
         mic_lines = [g for g in segments if g["channel"] == "mic"]
-        # The mix depends on which mic lines exist, so moving lines or re-detecting speakers rebuilds it.
-        cache_key = (mid, bool(segments), tuple((g["start_ms"], g["end_ms"]) for g in mic_lines))
-        data = _cache.get(cache_key)
-        if data is None:
-            key = s.keystore.unwrap(s.store.get_wrapped_key(mid))
-            mdir = s.cfg.audio_dir / mid
-            channels = list_channels(mdir)
-            tracks = [read_channel(mdir, ch, key) for ch in channels]
-            if not tracks:
-                raise HTTPException(404, "No audio for this meeting")
-            if "mic" in channels and "system" in channels and segments:
-                # Without headphones the mic also hears the call, a little late: mixed in, every remote
-                # sentence plays twice. Keep the mic only where a local voice was transcribed.
-                i = channels.index("mic")
-                tracks[i] = gate_to_lines(tracks[i], mic_lines)
-            n = max(t.size for t in tracks)
-            mix = np.zeros(n, dtype=np.float32)
-            for t in tracks:
-                mix[: t.size] += t
-            peak = float(np.max(np.abs(mix))) or 1.0
-            mix = mix / max(1.0, peak)
-            bio = io.BytesIO()
-            sf.write(bio, mix, 16000, format="FLAC", subtype="PCM_16")
-            data = bio.getvalue()
-            _cache.clear()
-            _cache[cache_key] = data
-        size = len(data)
-        rng = request.headers.get("range")
+        gate = mic_lines if ("mic" in channels and "system" in channels and segments) else None
+        chunk_names = tuple(sorted(p.name for p in mdir.glob("*-*.flac.enc")))
+        cache_key = (mid, chunk_names, None if gate is None else tuple((g["start_ms"], g["end_ms"]) for g in gate))
+        with _players_lock:
+            player = _players.get(cache_key)
+        if player is None:
+            player = MeetingAudio(mdir, s.keystore.unwrap(s.store.get_wrapped_key(mid)), gate)
+            with _players_lock:
+                _players.clear()  # one meeting at a time is plenty, and frees the old one's cache
+                _players[cache_key] = player
+        size = player.size
         headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
+        rng = request.headers.get("range")
         if rng and rng.startswith("bytes="):
-            start_s, _, end_s = rng[6:].partition("-")
-            start = int(start_s or 0)
-            end = min(int(end_s) if end_s else size - 1, size - 1)
+            start_s, _, end_s = rng[6:].split(",")[0].partition("-")
+            try:
+                if start_s:
+                    start, end = int(start_s), int(end_s) if end_s else None
+                else:  # suffix range: the last N bytes
+                    start, end = max(0, size - int(end_s)), size - 1
+            except ValueError:
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
             if start >= size:
                 return Response(status_code=416, headers={"Content-Range": f"bytes */{size}"})
+            end = min(size - 1, end if end is not None else start + max_range - 1)
             headers["Content-Range"] = f"bytes {start}-{end}/{size}"
-            return Response(data[start : end + 1], status_code=206, media_type="audio/flac", headers=headers)
-        return Response(data, media_type="audio/flac", headers=headers)
+            return Response(player.wav_bytes(start, end), status_code=206, media_type="audio/wav", headers=headers)
+
+        def stream():
+            for a in range(0, size, max_range):
+                yield player.wav_bytes(a, min(size, a + max_range) - 1)
+
+        headers["Content-Length"] = str(size)
+        return StreamingResponse(stream(), media_type="audio/wav", headers=headers)

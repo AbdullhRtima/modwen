@@ -436,14 +436,67 @@ def test_recorder_pads_audio_a_device_dropped():
 
     w_mic, w_sys = Writer(), Writer()
     rec = Recorder.__new__(Recorder)
-    rec.session = Session("m", [Src("mic"), Src("system", realtime=False)], {"mic": w_mic, "system": w_sys}, None)
-    rec.session.started = time.monotonic() - 2.0  # 2 s into the meeting
-    rec._on_frames("mic", np.zeros(8000, np.float32))  # but only 0.5 s of mic arrived: 1.5 s were dropped
-    rec._on_frames("system", np.zeros(8000, np.float32))  # accelerated file replay: never padded
+    s = Session("m", [Src("mic"), Src("system", realtime=False)], {"mic": w_mic, "system": w_sys}, None)
+    s.started = time.monotonic() - 2.0  # 2 s into the meeting
+    now = time.monotonic()
+    rec._handle(s, "mic", np.zeros(8000, np.float32), 16000, now)  # only 0.5 s of mic arrived: 1.5 s were lost
+    rec._handle(s, "system", np.zeros(8000, np.float32), 16000, now)  # accelerated file replay: never padded
     assert 1.85 * 16000 <= w_mic.n <= 2.0 * 16000
     assert w_sys.n == 8000
-    rec._on_frames("mic", np.zeros(1600, np.float32))  # on time now: nothing added
-    assert rec.session.gap_seconds["mic"] < 1.6
+    rec._handle(s, "mic", np.zeros(1600, np.float32), 16000, now)  # on time now: nothing added
+    assert s.gap_seconds["mic"] < 1.6
+    # A block that waited in the queue is judged by when it arrived, not when it was written.
+    late = Writer()
+    s2 = Session("m2", [Src("mic")], {"mic": late}, None)
+    t0 = s2.started
+    for i in range(10):
+        rec._handle(s2, "mic", np.zeros(1600, np.float32), 16000, t0 + (i + 1) * 0.1)
+    assert late.n == 16000 and s2.gap_seconds["mic"] == 0
+
+
+def test_recorder_resamples_as_one_stream_and_stops_cleanly(cfg, data_dir):
+    """48 kHz stereo device blocks become one continuous 16 kHz mono track (no restarts between blocks)."""
+    import threading
+
+    from modwen.audio.chunks import list_channels, read_channel
+    from modwen.crypto import KeyStore
+    from modwen.pipeline.recorder import Recorder
+    from modwen.storage import Store
+
+    class Device:
+        channel, realtime, overflows, description = "mic", False, 0, "test device @ 48000 Hz"
+
+        def start(self, cb):
+            def run():
+                t = np.arange(4800) / 48000
+                for i in range(30):  # 3 s in 100 ms blocks, a 440 Hz tone in both channels
+                    x = np.sin(2 * np.pi * 440 * (t + i * 0.1)).astype(np.float32) * 0.5
+                    cb("mic", np.stack([x, x], axis=1), 48000)
+                done.set()
+
+            threading.Thread(target=run, daemon=True).start()
+
+        def stop(self):
+            pass
+
+    done = threading.Event()
+    store, keys = Store(data_dir / "r.db"), KeyStore(cfg)
+    rec = Recorder(cfg, store, keys, lambda e: None, on_stopped=lambda mid: None)
+    m = rec.start("t", extra_sources=[Device()])
+    done.wait(5)
+    mid = rec.stop()
+    try:
+        rec.stop()  # a second Stop (watchdog + user) is refused, not a crash in the writer
+    except RuntimeError:
+        pass
+    audio = read_channel(cfg.audio_dir / mid, "mic", keys.unwrap(store.get_wrapped_key(m["id"])))
+    assert list_channels(cfg.audio_dir / mid) == ["mic"]
+    assert abs(audio.size - 3 * 16000) < 400  # all 3 s kept, nothing dropped at the start
+    spec = np.abs(np.fft.rfft(audio[2000:-2000]))
+    freqs = np.fft.rfftfreq(audio[2000:-2000].size, 1 / 16000)
+    assert abs(freqs[spec.argmax()] - 440) < 5
+    clicks = np.abs(np.diff(audio[2000:-2000])).max()
+    assert clicks < 0.2  # a smooth tone: no jumps where blocks meet
 
 
 def test_live_skips_mic_echo_of_the_call():
@@ -465,3 +518,149 @@ def test_live_skips_mic_echo_of_the_call():
     queued = [ch for ch, _, _ in list(lt._q.queue)]
     assert lt.echo_skipped == 1  # the mic copy of the remote speech
     assert queued.count("mic") == 1 and queued.count("system") == 1  # your own words still go through
+
+
+def test_playback_gates_mic_across_chunk_boundaries(data_dir):
+    from modwen.audio.chunks import ChunkWriter
+    from modwen.audio.playback import MeetingAudio
+    from modwen.crypto import generate_key
+
+    key = generate_key()
+    for ch, value in (("mic", 0.5), ("system", 0.0)):
+        w = ChunkWriter(data_dir / "m", ch, key, chunk_seconds=1)  # 1 s chunks: the line crosses a boundary
+        for _ in range(40):  # 100 ms blocks, like a recording
+            w.write(np.full(1600, value, np.float32))
+        w.close()
+    player = MeetingAudio(data_dir / "m", key, [{"start_ms": 1500, "end_ms": 2500}])
+    assert player.total == 4 * 16000 and len(player.channels["mic"]) == 4
+    out = player.render(0, player.total)
+    assert out[int(2.0 * 16000)] == pytest.approx(0.5, abs=1e-3)  # inside your line (2nd/3rd chunk boundary)
+    assert out[int(0.5 * 16000)] == 0 and out[int(3.5 * 16000)] == 0  # the call's echo elsewhere: muted
+    whole = player.wav_bytes(0, player.size - 1)
+    assert whole[:4] == b"RIFF" and len(whole) == player.size
+    assert player.wav_bytes(1000, 5000) == whole[1000:5001]
+
+
+def test_recorder_reopens_a_source_that_stopped_sending(cfg, data_dir):
+    import time
+
+    from modwen.crypto import KeyStore
+    from modwen.pipeline.recorder import Recorder
+    from modwen.storage import Store
+
+    class Flaky:
+        channel, realtime, overflows, description = "mic", True, 0, "USB mic"
+
+        def __init__(self):
+            self.starts = 0
+
+        def start(self, cb):
+            self.starts += 1
+
+        def stop(self):
+            pass
+
+        def restart(self, cb):
+            self.stop()
+            self.start(cb)
+
+    src = Flaky()
+    rec = Recorder(cfg, Store(data_dir / "d.db"), KeyStore(cfg), lambda e: None, on_stopped=lambda mid: None)
+    rec.start("t", extra_sources=[src])
+    s = rec.session
+    s.last_frame["mic"] = time.monotonic() - 10  # the device vanished 10 s ago: no frames at all
+    rec._revive_dead_sources(s, time.monotonic())
+    assert src.starts == 2 and "device_mic" in s.warnings
+    rec._revive_dead_sources(s, time.monotonic())  # not again right away
+    assert src.starts == 2
+    rec.stop()
+
+
+def test_recorder_uses_capture_times_late_is_not_missing():
+    from modwen.pipeline.recorder import Recorder, Session
+
+    class Writer:
+        def __init__(self):
+            self.parts = []
+
+        def write(self, frames):
+            self.parts.append(frames.copy())
+
+        @property
+        def n(self):
+            return sum(p.size for p in self.parts)
+
+    class Src:
+        channel, realtime = "system", True
+
+    rec = Recorder.__new__(Recorder)
+    w = Writer()
+    s = Session("m", [Src()], {"system": w}, None)
+    t0 = s.started
+    block = np.ones(1600, np.float32)  # 100 ms
+    # 2 s of audio captured on time, but all of it delivered 3 s late in one burst (a busy reader).
+    for i in range(20):
+        rec._handle(s, "system", block, 16000, t=t0 + 5.0, captured_at=t0 + i * 0.1)
+    assert w.n == 20 * 1600 and s.gap_seconds["system"] == 0  # nothing invented
+    # Then nothing for 3 s (no sound playing): a real hole, filled exactly.
+    rec._handle(s, "system", block, 16000, t=t0 + 5.1, captured_at=t0 + 5.0)
+    assert abs(s.gap_seconds["system"] - 3.0) < 0.01 and w.n == 5 * 16000 + 1600
+    # A device delivering more than real time: blocks that start before the written end are trimmed.
+    for i in range(10):
+        rec._handle(s, "system", np.ones(3200, np.float32), 16000, t=t0 + 6, captured_at=t0 + 5.1 + i * 0.1)
+    assert abs(w.n / 16000 - 6.2) < 0.06 and s.trimmed_seconds["system"] == pytest.approx(0.9)
+
+
+def test_quiet_system_audio_is_not_a_lost_device(cfg, data_dir):
+    import time
+
+    from modwen.crypto import KeyStore
+    from modwen.pipeline.recorder import Recorder
+    from modwen.storage import Store
+
+    class Tap:
+        channel, realtime, overflows, description, quiet_when_idle = "system", True, 0, "tap", True
+
+        def __init__(self):
+            self.starts, self.running = 0, True
+
+        def start(self, cb):
+            self.starts += 1
+
+        def stop(self):
+            pass
+
+        def alive(self):
+            return self.running
+
+        def restart(self, cb):
+            self.start(cb)
+
+    tap = Tap()
+    rec = Recorder(cfg, Store(data_dir / "q.db"), KeyStore(cfg), lambda e: None, on_stopped=lambda mid: None)
+    rec.start("t", extra_sources=[tap])
+    s = rec.session
+    s.last_frame["system"] = time.monotonic() - 60  # a quiet call: no data for a minute
+    rec._revive_dead_sources(s, time.monotonic())
+    assert tap.starts == 1  # not "reopened" just because nothing played
+    tap.running = False  # the helper process died
+    rec._revive_dead_sources(s, time.monotonic())
+    assert tap.starts == 2
+    rec.stop()
+
+
+def test_ai_server_is_killed_outright_even_if_it_ignores_sigterm(tmp_path):
+    """Regression (2026-10-20): a politely stopped llama-server hung in its GPU clean-up, held GPU memory and
+    the port, and every later note failed. Modwen must kill it outright (and find orphans by path)."""
+    import subprocess
+    import sys
+    import time
+
+    from modwen.runtime.llm_manager import ManagedLLM
+
+    stubborn = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+    p = subprocess.Popen([sys.executable, "-c", stubborn])
+    time.sleep(0.5)
+    t0 = time.monotonic()
+    ManagedLLM._kill_tree(p.pid)
+    assert p.wait(timeout=5) is not None and time.monotonic() - t0 < 3  # gone at once, SIGTERM not needed

@@ -136,8 +136,9 @@ def test_api_security_and_flow(cfg, fake_llm):
     buf = cfg.data_dir / "up.wav"
     sf.write(buf, speechy([(2.0, 1.0), (2.0, 1.0)]), 16000)
     with open(buf, "rb") as fh:
-        r = c.post("/api/meetings/import", files={"file": ("up.wav", fh, "audio/wav")},
-                   data={"title": "Uploaded", "meeting_language": "auto"})
+        assert c.post("/api/meetings/import", files={"file": ("up.wav", fh, "audio/wav")}).status_code == 415
+    r = c.post("/api/meetings/import?title=Uploaded&meeting_language=auto", content=buf.read_bytes(),
+               headers={"content-type": "audio/wav"})
     assert r.status_code == 200, r.text
     mid = r.json()["id"]
     m = _wait(s, mid)
@@ -148,7 +149,7 @@ def test_api_security_and_flow(cfg, fake_llm):
     sid = detail["speakers"][0]["id"]
     old = detail["speakers"][0]["display_name"]
     r = c.post(f"/api/meetings/{mid}/speakers/{sid}/rename", json={"name": "Sara"})
-    assert r.json() == {"old": old, "new": "Sara"}
+    assert r.json()["old"] == old and r.json()["new"] == "Sara"
     segs = c.get(f"/api/meetings/{mid}").json()["segments"]
     assert segs[0]["speaker_name"] == "Sara"
 
@@ -289,9 +290,18 @@ def test_setup_settings_people_and_audio(cfg, fake_llm):
     mid = import_audio(s, speechy([(2.0, 2.5), (2.0, 1.0)]), title="Audio")["id"]
     assert _wait(s, mid)["status"] == "ready"
     full = c.get(f"/api/meetings/{mid}/audio")
-    assert full.status_code == 200 and full.content[:4] == b"fLaC"
-    part = c.get(f"/api/meetings/{mid}/audio", headers={"range": "bytes=0-99"})
-    assert part.status_code == 206 and len(part.content) == 100
+    assert full.status_code == 200 and full.content[:4] == b"RIFF"
+    import io
+
+    wav, rate = sf.read(io.BytesIO(full.content), dtype="float32")
+    assert rate == 16000 and wav.size == int(7.5 * 16000)  # the whole meeting (2+2.5+2+1 s), from the chunks
+    for a, b in ((0, 99), (44, 1000), (30_001, 90_000), (len(full.content) - 50, len(full.content) - 1)):
+        part = c.get(f"/api/meetings/{mid}/audio", headers={"range": f"bytes={a}-{b}"})
+        assert part.status_code == 206 and part.content == full.content[a:b + 1]
+        assert part.headers["content-range"] == f"bytes {a}-{b}/{len(full.content)}"
+    open_ended = c.get(f"/api/meetings/{mid}/audio", headers={"range": "bytes=100-"})
+    assert open_ended.status_code == 206 and open_ended.content == full.content[100:100 + len(open_ended.content)]
+    assert c.get(f"/api/meetings/{mid}/audio", headers={"range": f"bytes={len(full.content)}-"}).status_code == 416
 
     assert c.post("/api/setup/complete").status_code == 200 and s.cfg.app.setup_complete
 
@@ -330,3 +340,208 @@ def test_host_parsing():
     assert origin_allowed("http://localhost:5173", {"localhost"})
     assert not origin_allowed("http://localhost.evil.com", {"localhost"})
     assert not origin_allowed("file://x", {"localhost"})
+
+
+def test_import_never_writes_plaintext_and_streams(cfg, fake_llm, data_dir):
+    import io
+    import os
+
+    from modwen.api import create_app
+    from modwen.audio.chunks import read_channel
+    from modwen.audio.importer import SealedTempFile, remove_leftovers
+
+    # The sealed temp file: random-access reads give the plaintext back; the bytes on disk are not it.
+    payload = os.urandom(70_001)
+    st = SealedTempFile(data_dir)
+    for i in range(0, len(payload), 4096):
+        st.append(payload[i:i + 4096])
+    disk = st.path.read_bytes()
+    assert len(disk) == len(payload) and disk != payload and payload[:64] not in disk
+    for off, n in ((0, 10), (17, 33), (4095, 3), (69_990, 50)):
+        st.seek(off)
+        assert st.read(n) == payload[off:off + n]
+    path = st.path
+    st.close()
+    assert not path.exists()
+
+    # An upload: 48 kHz stereo WAV becomes one 16 kHz mono channel of the right length.
+    s = _services(cfg, fake_llm)
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    t = np.arange(48000 * 7) / 48000
+    stereo = np.stack([np.sin(2 * np.pi * 300 * t), np.sin(2 * np.pi * 300 * t)], axis=1).astype(np.float32) * 0.3
+    buf = io.BytesIO()
+    sf.write(buf, stereo, 48000, format="WAV")
+    r = c.post("/api/meetings/import?title=Stereo", content=buf.getvalue(), headers={"content-type": "audio/wav"})
+    assert r.status_code == 200, r.text
+    mid = r.json()["id"]
+    assert not list(cfg.data_dir.glob("import-*.sealed"))  # the temp file is gone
+    _wait(s, mid)
+    audio = read_channel(cfg.audio_dir / mid, "system", s.keystore.unwrap(s.store.get_wrapped_key(mid)))
+    assert abs(audio.size - 7 * 16000) < 200
+
+    # Not audio: a clear error and no half-made meeting.
+    before = len(s.store.list_meetings())
+    r = c.post("/api/meetings/import?title=Junk", content=b"definitely not audio" * 100)
+    assert r.status_code == 400 and "supported audio" in r.json()["detail"]
+    assert len(s.store.list_meetings()) == before
+    (cfg.data_dir / "import-x.sealed").write_bytes(b"x")
+    assert remove_leftovers(cfg.data_dir) == 1
+
+
+def test_notes_use_a_model_that_answers(cfg, fake_llm, monkeypatch):
+    from modwen.notes.llm_client import LLMError
+
+    s = _services(cfg, fake_llm)
+    profiles = list(cfg.llm.profiles)
+    active, other = cfg.llm.active, next(p for p in profiles if p != cfg.llm.active)
+    cfg.llm.fallback = [other]
+    up = {active: True, other: True}
+    monkeypatch.setattr(s, "llm_status", lambda n=None: {"ok": up[n], "error": "connection refused"})
+    assert s.pick_llm("deleted_profile") == active  # the meeting's profile is gone: use the active one
+    up[active] = False
+    assert s.pick_llm() == other  # active is down: the fallback writes the notes
+    up[other] = False
+    try:
+        s.pick_llm()
+        raise AssertionError("expected an error")
+    except LLMError as exc:
+        assert "No AI model answered" in str(exc) and "Start your local model" in str(exc)
+
+
+def test_api_edge_cases_found_in_the_audit(cfg, fake_llm):
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    mid = import_audio(s, speechy([(2.0, 1.0), (2.0, 1.0)]), title="اجتماع الفريق")["id"]
+    assert _wait(s, mid)["status"] == "ready"
+
+    r = c.get(f"/api/meetings/{mid}/export.md?download=true")  # Arabic title used to crash (Latin-1 header)
+    assert r.status_code == 200
+    cd = r.headers["content-disposition"]
+    assert cd.startswith('attachment; filename="meeting-') and "filename*=UTF-8''" in cd and "%D8%A7" in cd
+
+    assert c.put(f"/api/meetings/{mid}/notes", json={"data": {"action_items": "oops"}}).status_code == 400
+    assert c.put(f"/api/meetings/{mid}/notes", json={"data": {"bogus": 1}}).status_code == 400
+    ok = c.put(f"/api/meetings/{mid}/notes", json={"data": {"summary": {"en": "Edited summary."}}})
+    assert ok.status_code == 200 and ok.json()["data"]["summary"]["en"] == "Edited summary."
+
+    for path in ("/api/recorder/pause", "/api/recorder/resume", "/api/recorder/mark"):
+        assert c.post(path).status_code == 409  # nothing is recording: a clear 409, not a 500
+
+    before = len(s.store.list_meetings())
+    bad = c.post("/api/meetings/start", json={"title": "x", "mode": "banana", "consent_confirmed": True})
+    assert bad.status_code == 422
+    no_src = c.post("/api/meetings/start", json={"title": "x", "consent_confirmed": True, "sources": []})
+    assert no_src.status_code == 400
+    assert len(s.store.list_meetings()) == before  # no "failed" leftovers from bad starts
+
+    s.store.update_meeting(mid, status="processing")
+    s._pending[mid] = 1  # a job for it is queued or running
+    assert c.post(f"/api/meetings/{mid}/retry").status_code == 409
+    assert c.delete(f"/api/meetings/{mid}").status_code == 409
+    s._pending.pop(mid)
+    s.store.update_meeting(mid, status="ready")
+    assert c.delete(f"/api/meetings/{mid}").status_code == 200
+
+    assert c.get("/").headers.get("cache-control", "no-cache") == "no-cache"
+
+
+def test_retention_deletes_old_data_and_keeps_pinned(cfg, fake_llm):
+    from datetime import datetime, timedelta, timezone
+
+    from modwen.api import import_audio
+
+    s = _services(cfg, fake_llm)
+    ids = [import_audio(s, speechy([(2.0, 1.0)]), title=f"M{i}")["id"] for i in range(3)]
+    for mid in ids:
+        _wait(s, mid)
+    old, pinned, fresh = ids
+    s.store.update_meeting(pinned, keep=1)
+    now = datetime.now(timezone.utc)
+    cfg.privacy.retention.audio_days, cfg.privacy.retention.transcript_days = 7, 0  # transcripts kept forever
+    for mid in (old, pinned):
+        s.store.update_meeting(mid, ended_at=(now - timedelta(days=10)).isoformat(timespec="seconds"))
+    done = s.apply_retention(now)
+    assert done["audio"] == 1
+    assert not (cfg.audio_dir / old).exists() and s.store.get_wrapped_key(old) is None  # crypto-shredded
+    assert s.store.get_segments(old)  # transcript kept (0 = forever)
+    assert (cfg.audio_dir / pinned).exists() and (cfg.audio_dir / fresh).exists()
+    assert s.store.get_meeting(old)["audio_deleted_at"]
+
+    cfg.privacy.retention.transcript_days, cfg.privacy.retention.notes_days = 7, 9
+    done = s.apply_retention(now)
+    assert done == {"audio": 0, "transcript": 0, "meeting": 1}  # older than notes_days: the meeting goes
+    assert s.store.get_meeting(old) is None and s.store.get_meeting(pinned) and s.store.get_meeting(fresh)
+
+
+def test_diagnostics_has_no_meeting_content(cfg, fake_llm):
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    mid = import_audio(s, speechy([(2.0, 1.0)]), title="Secret merger talks")["id"]
+    _wait(s, mid)
+    r = c.get("/api/diagnostics")
+    assert r.status_code == 200 and "Modwen" in r.text and "Tier" in r.text
+    assert "Secret merger" not in r.text and "regression" not in r.text.lower()
+
+
+def test_settings_are_validated_and_typed(cfg, fake_llm):
+    from modwen.api import create_app
+
+    s = _services(cfg, fake_llm)
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    r = c.put("/api/settings", json={"notes.chunk_minutes": "12", "privacy.retention.audio_days": 3})
+    assert r.status_code == 200 and cfg.notes.chunk_minutes == 12.0 and isinstance(cfg.notes.chunk_minutes, float)
+    bad = c.put("/api/settings", json={"notes.summary_language": "klingon", "privacy.retention.audio_days": 9})
+    assert bad.status_code == 400 and "summary_language" in bad.json()["detail"]
+    assert cfg.privacy.retention.audio_days == 3  # an invalid patch changes nothing
+
+
+def test_notes_recover_from_a_gpu_out_of_memory_error(cfg, fake_llm):
+    from modwen.api import import_audio
+    from modwen.notes.llm_client import LLMError
+
+    s = _services(cfg, fake_llm)
+    real = s.processor.notes_engine_factory
+    calls = {"n": 0, "restarts": 0}
+
+    def flaky(profile=None):
+        engine = real(profile)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            def boom(**kw):
+                raise LLMError("Error code: 500 - {'error': {'message': 'Compute error.'}}")
+            engine.generate = boom
+        return engine
+
+    def restart():
+        calls["restarts"] += 1
+        return True
+
+    s.processor.notes_engine_factory = flaky
+    s.processor.recover_llm = restart
+    mid = import_audio(s, speechy([(2.0, 1.0)]), title="OOM")["id"]
+    assert _wait(s, mid)["status"] == "ready" and calls["restarts"] == 1  # restarted once, then notes written
+
+    calls["n"] = 0
+    s.processor.notes_engine_factory = lambda p=None: (_ for _ in ()).throw(LLMError("Compute error."))
+    s.processor.retry = None
+    s.enqueue_processing(mid)
+    m = _wait_any(s, mid)
+    assert m["status"] == "failed" and "ran out of GPU memory" in m["error"]
+
+
+def _wait_any(services, mid, timeout=30):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        services.jobs.join()
+        m = services.store.get_meeting(mid)
+        if m["status"] in ("ready", "failed"):
+            return m
+    raise AssertionError("timeout")

@@ -48,7 +48,8 @@ class Processor:
     """Runs the pipeline for one meeting. Engines are injected so tests can use fakes."""
 
     def __init__(self, cfg, store, keystore, *, stt_engine_factory, diarizer_factory, notes_engine_factory,
-                 notifier=None, publish: Callable[[dict], None] | None = None):
+                 notifier=None, publish: Callable[[dict], None] | None = None, embedder_factory=None,
+                 release_stt: Callable[[], None] | None = None, recover_llm: Callable[[], bool] | None = None):
         self.cfg = cfg
         self.store = store
         self.keystore = keystore
@@ -57,6 +58,9 @@ class Processor:
         self.notes_engine_factory = notes_engine_factory
         self.notifier = notifier
         self.publish = publish
+        self.embedder_factory = embedder_factory  # voiceprints (§5.1); None = feature unavailable
+        self.release_stt = release_stt  # frees the Whisper model before the notes step on smaller machines
+        self.recover_llm = recover_llm  # restarts a local AI model left broken by a GPU out-of-memory error
 
     # ------------------------------------------------------------------
     def process(self, meeting_id: str, *, skip_transcription: bool = False, redetect: bool = False,
@@ -75,7 +79,9 @@ class Processor:
                 self._transcribe_and_merge(m, prog)
             prog.state["steps"].update({"transcribe": "done", "speakers": "done", "notes": "running"})
             prog.update(store, step="notes", transcribe=1.0)
-            notes = self._notes(m, prog)
+            if self.release_stt:
+                self.release_stt()  # also when transcription was skipped (regenerate / re-detect)
+            notes = self._notes_with_recovery(m, prog)
             prog.state["steps"]["notes"] = "done"
             prog.update(store, step="done", notes_part=prog.state["notes_parts"] or 1,
                         notes_parts=prog.state["notes_parts"] or 1)
@@ -168,9 +174,16 @@ class Processor:
             )
             done_samples += a.size
 
-        self._speakers(m, prog, audio, per_channel, stt_engine=getattr(engine, "name", "?"))
+        engine_name = getattr(engine, "name", "?")
+        del engine
+        if self.release_stt:
+            self.release_stt()
+        self._speakers(m, prog, audio, per_channel, stt_engine=engine_name)
 
     def _load_audio(self, m: dict) -> dict[str, np.ndarray]:
+        if (self.store.get_meeting(m["id"]) or m).get("audio_deleted_at"):
+            raise RuntimeError("The audio of this meeting was deleted (retention settings); the transcript and "
+                               "notes are kept")
         mdir = self.cfg.audio_dir / m["id"]
         data_key = self.keystore.unwrap(self.store.get_wrapped_key(m["id"]))
         channels = list_channels(mdir)
@@ -181,11 +194,13 @@ class Processor:
     def _redetect(self, m: dict, prog: Progress, num_speakers: int | None) -> None:
         audio = self._load_audio(m)
         per_channel: dict[str, list[dict]] = {}
-        named = {sp["id"]: sp["display_name"] for sp in self.store.get_speakers(m["id"]) if sp["name_source"] == "manual"}
-        previous = {}  # line id -> (name the user gave its speaker, line length)
+        named = {sp["id"]: (sp["display_name"], sp.get("person_id")) for sp in self.store.get_speakers(m["id"])
+                 if sp["name_source"] == "manual" and not sp["is_self"]}
+        previous = {}  # line id -> (name the user gave its speaker, line length, People link)
         for s in self.store.get_segments(m["id"]):
             if s["speaker_id"] in named:
-                previous[s["id"]] = (named[s["speaker_id"]], s["end_ms"] - s["start_ms"])
+                name, pid = named[s["speaker_id"]]
+                previous[s["id"]] = (name, s["end_ms"] - s["start_ms"], pid)
             seg = {k: s[k] for k in ("id", "start_ms", "end_ms", "text", "language", "confidence", "edited")}
             per_channel.setdefault(s["channel"] or "system", []).append(seg)
         if not per_channel:
@@ -196,7 +211,7 @@ class Processor:
 
     def _speakers(self, m: dict, prog: Progress, audio: dict[str, np.ndarray], per_channel: dict[str, list[dict]],
                   *, stt_engine: str, num_speakers: int | None = None, keep_ids: bool = False,
-                  previous: dict[str, tuple[str, int]] | None = None) -> None:
+                  previous: dict[str, tuple] | None = None) -> None:
         cfg, store, mid = self.cfg, self.store, m["id"]
         prog.state["steps"].update({"transcribe": "done", "speakers": "running"})
         prog.update(store, step="speakers", transcribe=1.0)
@@ -209,6 +224,12 @@ class Processor:
                 s["id"] = f"s{i + 1:04d}"
         if previous:
             carry_names(speakers, segments, previous)
+        me = store.self_person(create=False)
+        if me:  # you are always your People entry, so your name shows in every meeting
+            for sp in speakers:
+                if sp.get("is_self"):
+                    sp.update(person_id=me["id"], display_name=me["display_name"])
+        self._voiceprints(m, audio, speakers, segments)
         store.replace_speakers(mid, speakers)
         store.replace_segments(mid, segments)
         info = {"engine": stt_engine, "diarizer": getattr(diarizer, "name", "?"), "channels": sorted(audio)}
@@ -217,6 +238,48 @@ class Processor:
         store.update_meeting(mid, stt_info=info)
         prog.state["steps"]["speakers"] = "done"
         prog.update(store)
+
+    def _voiceprints(self, m: dict, audio: dict[str, np.ndarray], speakers: list[dict], segments: list[dict]) -> None:
+        """Recognise enrolled people by voice, and keep a sample of yours if you opted in. Never fatal."""
+        from modwen.voiceprints import VoiceBank, enroll, recognise
+
+        cfg, store = self.cfg, self.store
+        online = m.get("mode", "online") == "online"
+        bank = VoiceBank(store, self.keystore)
+        me = next((sp for sp in speakers if sp.get("is_self") and sp.get("channel") == "mic"), None)
+        learn_me = cfg.diarization.remember_my_voice and online and me is not None
+        if self.embedder_factory is None or (bank.empty() and not learn_me):
+            return
+        try:
+            embedder = self.embedder_factory()
+            if embedder is None:
+                return
+            people = {p["id"]: p for p in store.list_persons()}
+            recognise(bank, embedder, audio, speakers, segments, people, online=online,
+                      threshold=cfg.diarization.voiceprint_threshold, margin=cfg.diarization.voiceprint_margin,
+                      suggest=cfg.diarization.voiceprint_suggest, rejects=store.voice_rejects(m["id"]))
+            if learn_me:
+                me_person = store.self_person()
+                if enroll(bank, embedder, audio, segments, me, me_person["id"], m["id"])[0]:
+                    me["person_id"] = me_person["id"]
+        except Exception as exc:
+            log.warning("Voiceprints skipped for %s: %s", m["id"], exc)
+
+    def _notes_with_recovery(self, m: dict, prog: Progress) -> dict:
+        from modwen.notes.llm_client import LLMError
+
+        try:
+            return self._notes(m, prog)
+        except LLMError as exc:
+            if "Compute error" not in str(exc):
+                raise
+            if self.recover_llm and self.recover_llm():  # raises with a clear message if a restart can't help
+                try:
+                    return self._notes(m, prog)
+                except LLMError as again:
+                    exc = again
+            raise LLMError("The local AI model ran out of GPU memory. Close other heavy apps (or pick a smaller "
+                           "model in Settings → AI model), then retry. The transcript is saved.") from exc
 
     def _notes(self, m: dict, prog: Progress) -> dict:
         store = self.store

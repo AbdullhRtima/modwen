@@ -20,7 +20,7 @@ class Notifier:
 
     def notify(self, title: str, body: str, meeting_id: str | None = None) -> None:
         self.sent.append((title, body))
-        log.info("NOTIFY: %s — %s", title, body)
+        log.info("Notification for meeting %s", meeting_id or "-")  # never the text: logs hold no meeting content
         if not self.cfg.notify.desktop:
             return
         url = f"{self.base}/#/meetings/{meeting_id}" if self.base and meeting_id else self.base

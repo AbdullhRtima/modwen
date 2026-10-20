@@ -11,8 +11,10 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -69,35 +71,147 @@ def download_sherpa_models(models_dir: Path, progress=None) -> tuple[Path, Path]
     return seg, emb
 
 
+# ----- sherpa-onnx runs in a worker process -----------------------------------------------------
+# sherpa-onnx keeps Python's GIL for the whole of a call (minutes for a long meeting), which froze every other
+# thread: the web UI stopped answering while speakers were detected. One long-lived worker process holds the
+# models and does the work; this process only waits for the result, which releases the GIL.
+_POOL = None
+_POOL_LOCK = threading.Lock()
+_W: dict = {}  # in the worker: loaded models
+
+
+def _pool():
+    global _POOL
+    with _POOL_LOCK:
+        if _POOL is None:
+            import multiprocessing as mp
+            from concurrent.futures import ProcessPoolExecutor
+
+            _POOL = ProcessPoolExecutor(max_workers=1, mp_context=mp.get_context("spawn"), initializer=_w_init)
+            atexit.register(_POOL.shutdown, wait=False, cancel_futures=True)
+        return _POOL
+
+
+def _w_init() -> None:
+    """Worker start-up: Ctrl+C in the terminal reaches the whole process group; only Modwen should handle it
+    (and then shut this worker down), so the worker ignores it instead of printing a traceback."""
+    import signal
+
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def shutdown_worker() -> None:
+    global _POOL
+    with _POOL_LOCK:
+        if _POOL is not None:
+            _POOL.shutdown(wait=False, cancel_futures=True)
+            _POOL = None
+
+
+def _call(fn, *args):
+    """Run ``fn(*args)`` in the worker; restart it once if it died (e.g. out of memory)."""
+    global _POOL
+    from concurrent.futures.process import BrokenProcessPool
+
+    for attempt in (1, 2):
+        try:
+            return _pool().submit(fn, *args).result()
+        except BrokenProcessPool:
+            with _POOL_LOCK:
+                _POOL = None
+            if attempt == 2:
+                raise
+    return None
+
+
+def _w_diarizer(seg: str, emb: str, threads: int):
+    import sherpa_onnx as so
+
+    key = ("diar", seg, emb, threads)
+    if key not in _W:
+        _W[key] = so.OfflineSpeakerDiarization(_w_config(seg, emb, threads, -1, 1.0))
+    return _W[key]
+
+
+def _w_config(seg: str, emb: str, threads: int, num_clusters: int, threshold: float):
+    import sherpa_onnx as so
+
+    return so.OfflineSpeakerDiarizationConfig(
+        segmentation=so.OfflineSpeakerSegmentationModelConfig(
+            pyannote=so.OfflineSpeakerSegmentationPyannoteModelConfig(model=seg), num_threads=threads),
+        embedding=so.SpeakerEmbeddingExtractorConfig(model=emb, num_threads=threads),
+        clustering=so.FastClusteringConfig(num_clusters=num_clusters, threshold=threshold),
+        min_duration_on=0.3, min_duration_off=0.5,
+    )
+
+
+def _w_diarize(seg: str, emb: str, threads: int, threshold: float, num_clusters: int,
+               shm_name: str, n: int) -> list[tuple[float, float, int]]:
+    from multiprocessing import shared_memory
+
+    pipe = _w_diarizer(seg, emb, threads)
+    pipe.set_config(_w_config(seg, emb, threads, num_clusters, threshold))
+    shm = shared_memory.SharedMemory(name=shm_name)
+    try:
+        audio = np.ndarray((n,), dtype=np.float32, buffer=shm.buf)  # the parent's copy, not a pickled one
+        result = pipe.process(audio).sort_by_start_time()
+        del audio
+    finally:
+        shm.close()
+    return [(float(r.start), float(r.end), int(r.speaker)) for r in result]
+
+
+def _shared(audio: np.ndarray):
+    """Put ``audio`` in shared memory for the worker (one copy instead of pickling two)."""
+    from multiprocessing import shared_memory
+
+    a = np.ascontiguousarray(audio, dtype=np.float32)
+    shm = shared_memory.SharedMemory(create=True, size=max(1, a.nbytes))
+    np.ndarray(a.shape, dtype=np.float32, buffer=shm.buf)[:] = a
+    return shm
+
+
+def _w_embed(emb: str, threads: int, pieces: list[np.ndarray]) -> list[np.ndarray | None]:
+    import sherpa_onnx as so
+
+    key = ("emb", emb, threads)
+    if key not in _W:
+        _W[key] = so.SpeakerEmbeddingExtractor(so.SpeakerEmbeddingExtractorConfig(model=emb, num_threads=threads))
+    x = _W[key]
+    out: list[np.ndarray | None] = []
+    for piece in pieces:
+        stream = x.create_stream()
+        stream.accept_waveform(SAMPLE_RATE, piece)
+        stream.input_finished()
+        out.append(np.array(x.compute(stream), dtype=np.float32) if x.is_ready(stream) else None)
+    return out
+
+
+def _threads() -> int:
+    return max(1, min(4, (os.cpu_count() or 2) // 2))
+
+
 class SherpaDiarizer:
     name = "sherpa"
 
     def __init__(self, models_dir: Path, threshold: float = 1.0):
-        import sherpa_onnx
+        import sherpa_onnx  # noqa: F401  (fail here, not in the worker, when it is not installed)
 
         seg, emb = download_sherpa_models(models_dir)
-        self._so = sherpa_onnx
         self.threshold = threshold
-        self.threads = max(1, min(4, (os.cpu_count() or 2) // 2))
+        self.threads = _threads()
         self._seg, self._emb = str(seg), str(emb)
-        self.pipeline = sherpa_onnx.OfflineSpeakerDiarization(self._config(-1))
         self._extractor = None
 
-    def _config(self, num_clusters: int):
-        so = self._so
-        return so.OfflineSpeakerDiarizationConfig(
-            segmentation=so.OfflineSpeakerSegmentationModelConfig(
-                pyannote=so.OfflineSpeakerSegmentationPyannoteModelConfig(model=self._seg),
-                num_threads=self.threads),
-            embedding=so.SpeakerEmbeddingExtractorConfig(model=self._emb, num_threads=self.threads),
-            clustering=so.FastClusteringConfig(num_clusters=num_clusters, threshold=self.threshold),
-            min_duration_on=0.3, min_duration_off=0.5,
-        )
-
     def _run(self, audio: np.ndarray, num_clusters: int) -> list[Turn]:
-        self.pipeline.set_config(self._config(num_clusters))
-        result = self.pipeline.process(np.ascontiguousarray(audio, dtype=np.float32)).sort_by_start_time()
-        return [Turn(float(r.start), float(r.end), f"SPEAKER_{int(r.speaker):02d}") for r in result]
+        shm = _shared(audio)
+        try:
+            rows = _call(_w_diarize, self._seg, self._emb, self.threads, self.threshold, num_clusters,
+                         shm.name, int(audio.size))
+        finally:
+            shm.close()
+            shm.unlink()
+        return [Turn(a, b, f"SPEAKER_{k:02d}") for a, b, k in rows]
 
     def diarize(self, audio: np.ndarray, min_speakers: int | None = None, max_speakers: int | None = None,
                 num_speakers: int | None = None) -> list[Turn]:
@@ -116,27 +230,49 @@ class SherpaDiarizer:
     def voiceprints(self, audio: np.ndarray, turns: list[Turn], max_seconds: float = 60.0) -> dict[str, np.ndarray]:
         """One normalised embedding per label, from its longest turns (used to spot a split speaker)."""
         if self._extractor is None:
-            so = self._so
-            self._extractor = so.SpeakerEmbeddingExtractor(
-                so.SpeakerEmbeddingExtractorConfig(model=self._emb, num_threads=self.threads))
+            self._extractor = SpeakerEmbedder(emb_path=self._emb, threads=self.threads)
         out: dict[str, np.ndarray] = {}
         for label in {t.label for t in turns}:
-            mine = sorted((t for t in turns if t.label == label), key=lambda t: t.start - t.end)
-            vecs, used = [], 0.0
-            for t in mine:
-                if t.end - t.start < 1.0 or used >= max_seconds:
-                    continue
-                piece = audio[int(t.start * SAMPLE_RATE): int(t.end * SAMPLE_RATE)].astype(np.float32)
-                stream = self._extractor.create_stream()
-                stream.accept_waveform(SAMPLE_RATE, piece)
-                stream.input_finished()
-                if self._extractor.is_ready(stream):
-                    vecs.append(np.array(self._extractor.compute(stream), dtype=np.float32))
-                    used += t.end - t.start
-            if vecs:
-                v = np.mean(vecs, axis=0)
-                out[label] = v / (np.linalg.norm(v) or 1.0)
+            vec, _ = self._extractor.embed(audio, [(t.start, t.end) for t in turns if t.label == label],
+                                           max_seconds=max_seconds, min_seconds=0.0)
+            if vec is not None:
+                out[label] = vec
         return out
+
+
+class SpeakerEmbedder:
+    """Voice embedding (CAM++, the diarizer's model) of chosen stretches of audio: the voiceprint (§5.1)."""
+
+    name = "sherpa-campplus"
+
+    def __init__(self, models_dir: Path | None = None, *, emb_path: str | None = None, threads: int | None = None):
+        import sherpa_onnx  # noqa: F401
+
+        if emb_path is None:
+            emb_path = str(download_sherpa_models(models_dir)[1])
+        self.threads = threads or _threads()
+        self._emb = emb_path
+
+    def embed(self, audio: np.ndarray, spans: list[tuple[float, float]], *, max_seconds: float = 60.0,
+              min_seconds: float = 10.0, min_piece: float = 1.0) -> tuple[np.ndarray | None, float]:
+        """Mean normalised embedding of the longest ``spans`` (seconds) up to ``max_seconds``.
+
+        Returns (None, seconds) when there is less than ``min_seconds`` of usable speech."""
+        pieces, used = [], 0.0
+        for a, b in sorted(spans, key=lambda s: s[0] - s[1]):
+            if b - a < min_piece or used >= max_seconds:
+                continue
+            piece = np.ascontiguousarray(audio[int(a * SAMPLE_RATE): int(b * SAMPLE_RATE)], dtype=np.float32)
+            if piece.size < min_piece * SAMPLE_RATE:
+                continue
+            pieces.append(piece)
+            used += piece.size / SAMPLE_RATE
+        vecs = [v / (np.linalg.norm(v) or 1.0) for v in (_call(_w_embed, self._emb, self.threads, pieces)
+                                                         if pieces else []) if v is not None]
+        if not vecs or used < min_seconds:
+            return None, used
+        v = np.mean(vecs, axis=0)
+        return v / (np.linalg.norm(v) or 1.0), used
 
 
 class PyannoteDiarizer:

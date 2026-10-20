@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import queue
 import shutil
 import threading
 import time
 from typing import Callable
 
 import numpy as np
+import soxr
 
 from modwen.audio import SAMPLE_RATE
 from modwen.audio.capture import CaptureError, CaptureSource, MicSource, is_bluetooth_name, system_source
@@ -26,6 +28,13 @@ class RecorderBusy(RuntimeError):
 
 # How far a channel may lag the clock (normal delivery jitter) before the missing audio is filled with silence.
 CLOCK_SLACK = int(0.3 * SAMPLE_RATE)
+# Audio waiting for the writer thread, in seconds, before the recording shows a "computer is busy" warning
+# and live captions are skipped to catch up (the recording itself is never dropped).
+BACKLOG_WARN_SECONDS = 5.0
+# With device capture times, drift beyond this is corrected (resampler latency stays well below it).
+CAPTURE_SLACK = int(0.08 * SAMPLE_RATE)
+# A source that sends no data at all for this long has lost its device (silence still sends data).
+DEAD_SOURCE_SECONDS = 5.0
 
 
 class Session:
@@ -45,11 +54,23 @@ class Session:
         self.bookmarks: list[int] = []
         self.written = {ch: 0 for ch in writers}
         self.gap_seconds = {ch: 0.0 for ch in writers}
+        self.trimmed_seconds: dict[str, float] = {}
         self.realtime = {c.channel: getattr(c, "realtime", True) for c in sources}
+        # Audio callbacks only enqueue (channel, frames, rate, arrival time); the writer thread does the rest.
+        self.queue: queue.SimpleQueue = queue.SimpleQueue()
+        self.queued_seconds = 0.0
+        self.resamplers: dict[str, soxr.ResampleStream] = {}
+        self.writer: threading.Thread | None = None
+        self.last_frame = {c.channel: time.monotonic() for c in sources}  # any data at all, even silence
+        self.restarted_at: dict[str, float] = {}
 
     def elapsed(self) -> float:
         now = self._pause_t if self.paused else time.monotonic()
         return now - self.started - self.paused_total
+
+    def elapsed_at(self, t: float) -> float:
+        """Recording time at monotonic time ``t`` (when a block of audio arrived)."""
+        return t - self.started - self.paused_total
 
 
 class Recorder:
@@ -87,6 +108,10 @@ class Recorder:
             if free_gb < self.cfg.capture.min_free_gb:
                 raise CaptureError(f"Only {free_gb:.1f} GB free disk space; need {self.cfg.capture.min_free_gb} GB")
             sources = sources or list(self.cfg.capture.sources)
+            # Sources first: when none is available there is no meeting to create (no "failed" leftovers).
+            caps = extra_sources if extra_sources is not None else self.source_factory(mode, sources)
+            if not caps:
+                raise CaptureError("No audio sources available. Check the microphone and system-audio settings.")
             data_key, wrapped = self.keystore.new_data_key()
             meeting = self.store.create_meeting(
                 title or "Untitled meeting", wrapped_key=wrapped, mode=mode, status="recording",
@@ -95,10 +120,6 @@ class Recorder:
                 llm_profile=self.cfg.llm.active, hardware_tier=hardware_tier, timezone=self.cfg.notes.timezone,
             )
             mid = meeting["id"]
-            caps = extra_sources if extra_sources is not None else self.source_factory(mode, sources)
-            if not caps:
-                self.store.update_meeting(mid, status="failed", error="no audio sources")
-                raise CaptureError("No audio sources available")
             # In-person meetings record the mic as the "room" channel (diarized, no automatic "You").
             for c in caps:
                 if mode == "in_person" and c.channel == "mic":
@@ -112,6 +133,10 @@ class Recorder:
                                        allowed=self.cfg.stt.allowed_languages,
                                        arabic_threshold=self.cfg.stt.arabic_threshold, prompt=self.cfg.stt_prompt())
             session = Session(mid, caps, writers, live)
+            session.writer = threading.Thread(target=self._write_loop, args=(session,), name="rec-writer",
+                                              daemon=True)
+            session.writer.start()
+            self.session = session  # before the sources start, so their first frames are kept
             started: list[CaptureSource] = []
             errors = []
             for c in caps:
@@ -123,6 +148,9 @@ class Recorder:
                     log.error("Could not start %s source: %s", c.channel, exc)
                     writers.pop(c.channel, None)
             if not started:
+                self.session = None
+                session.queue.put(None)
+                session.writer.join(timeout=5)
                 self.store.update_meeting(mid, status="failed", error="; ".join(errors))
                 raise CaptureError("Could not start any audio source: " + "; ".join(errors))
             session.sources = started
@@ -135,40 +163,92 @@ class Recorder:
                 if c.channel == "mic" and is_bluetooth_name(desc):
                     session.warnings["bluetooth"] = "Bluetooth mic lowers accuracy. Use built-in or wired."
             self.store.update_meeting(mid, channels=list(writers))
-            self.session = session
             self._watchdog = threading.Thread(target=self._watch, name="rec-watchdog", daemon=True)
             self._watchdog.start()
         self.publish({"type": "recording_started", "meeting_id": mid, "title": meeting["title"]})
         return self.store.get_meeting(mid)  # type: ignore[return-value]
 
-    def _on_frames(self, channel: str, frames: np.ndarray) -> None:
+    def _on_frames(self, channel: str, frames: np.ndarray, rate: int = SAMPLE_RATE,
+                   captured_at: float | None = None) -> None:
+        """Called on audio threads: hand the frames to the writer thread and return at once."""
         s = self.session
-        if s is None or s.paused:
+        if s is None or s.paused or channel not in s.writers:
             return
+        now = time.monotonic()
+        s.last_frame[channel] = now
+        s.queue.put((channel, frames, rate, now, captured_at))
+        s.queued_seconds += len(frames) / rate
+
+    def _write_loop(self, s: Session) -> None:
+        while True:
+            item = s.queue.get()
+            if item is None:
+                return
+            channel, frames, rate, t, captured_at = item
+            s.queued_seconds = max(0.0, s.queued_seconds - len(frames) / rate)
+            try:
+                self._handle(s, channel, frames, rate, t, captured_at)
+            except Exception:  # a bad block must never stop the recording
+                log.exception("Could not write a block of %s audio", channel)
+
+    def _handle(self, s: Session, channel: str, frames: np.ndarray, rate: int, t: float,
+                captured_at: float | None = None) -> None:
+        """Downmix, resample (one continuous stream per channel: no clicks between blocks), keep the channel on
+        the clock, then write, meter and caption it.
+
+        The clock is the block's capture time when the device reports it (exact: a block that arrives late is
+        not missing audio), else its arrival time (with slack for delivery jitter)."""
         w = s.writers.get(channel)
         if w is None:
             return
+        mono = np.asarray(frames, dtype=np.float32)
+        if mono.ndim == 2:
+            mono = mono.mean(axis=1)
+        if rate != SAMPLE_RATE:
+            rs = s.resamplers.get(channel)
+            if rs is None:
+                rs = s.resamplers[channel] = soxr.ResampleStream(rate, SAMPLE_RATE, 1, dtype="float32")
+            mono = rs.resample_chunk(mono)
+        if mono.size == 0:
+            return
+        busy = s.queued_seconds > BACKLOG_WARN_SECONDS
         if s.realtime.get(channel):
-            # Keep every channel on the clock. When a device drops audio (input overflow, a stalled helper)
-            # its track would get shorter and slide earlier than the others; fill the hole with silence so the
-            # mic and system audio stay aligned (echo detection and line timing depend on it).
-            behind = int(s.elapsed() * SAMPLE_RATE) - (s.written[channel] + frames.size)
-            if behind > CLOCK_SLACK:
-                gap = behind - CLOCK_SLACK // 3
-                w.write(np.zeros(gap, dtype=np.float32))
-                if s.live:
-                    s.live.feed(channel, np.zeros(gap, dtype=np.float32))
-                s.written[channel] += gap
-                s.gap_seconds[channel] += gap / SAMPLE_RATE
-                log.info("%s fell %.2f s behind the clock; padded with silence", channel, gap / SAMPLE_RATE)
-        w.write(frames)
-        s.written[channel] += frames.size
-        lvl = rms_level(frames)
+            # Keep every channel on the clock, so the mic and system audio stay aligned (echo detection and
+            # line timing depend on it).
+            if captured_at is not None:
+                # Exact: where this block belongs vs. what is written. A hole (the device produced nothing,
+                # e.g. no sound playing, or dropped audio) is filled with silence; audio that would run ahead
+                # of the clock (a device delivering more than real time) is trimmed.
+                drift = int(s.elapsed_at(captured_at) * SAMPLE_RATE) - s.written[channel]
+                if drift > CAPTURE_SLACK:
+                    self._pad(s, channel, w, drift, busy)
+                elif drift < -CAPTURE_SLACK:
+                    cut = min(mono.size, -drift)
+                    mono = mono[cut:]
+                    s.trimmed_seconds[channel] = s.trimmed_seconds.get(channel, 0.0) + cut / SAMPLE_RATE
+                    if mono.size == 0:
+                        return
+            else:
+                behind = int(s.elapsed_at(t) * SAMPLE_RATE) - (s.written[channel] + mono.size)
+                if behind > CLOCK_SLACK:
+                    self._pad(s, channel, w, behind - CLOCK_SLACK // 3, busy)
+        w.write(mono)
+        s.written[channel] += mono.size
+        lvl = rms_level(mono)
         s.levels[channel] = round(0.6 * s.levels.get(channel, 0) + 0.4 * lvl, 3)
         if lvl > 0.15:
             s.last_sound[channel] = time.monotonic()
-        if s.live:
-            s.live.feed(channel, frames)
+        if s.live and not busy:  # behind: catch up on the recording first, captions can skip
+            s.live.feed(channel, mono)
+
+    def _pad(self, s: Session, channel: str, w, gap: int, busy: bool) -> None:
+        w.write(np.zeros(gap, dtype=np.float32))
+        if s.live and not busy:
+            s.live.feed(channel, np.zeros(gap, dtype=np.float32))
+        s.written[channel] += gap
+        s.gap_seconds[channel] += gap / SAMPLE_RATE
+        if gap > SAMPLE_RATE // 2:
+            log.info("%s: no audio for %.2f s; filled with silence", channel, gap / SAMPLE_RATE)
 
     def pause(self) -> None:
         s = self._require()
@@ -196,14 +276,25 @@ class Recorder:
     def stop(self) -> str:
         with self._lock:
             s = self._require()
-            self.session = None
+            self.session = None  # no new frames are queued from here
         for c in s.sources:
             try:
                 c.stop()
             except Exception as exc:
                 log.warning("stopping %s: %s", c.channel, exc)
+        s.queue.put(None)  # the writer finishes what was queued, then exits
+        if s.writer:
+            s.writer.join(timeout=60)
+        for ch, rs in s.resamplers.items():
+            tail = rs.resample_chunk(np.zeros(0, dtype=np.float32), last=True)
+            if tail.size and ch in s.writers:
+                s.writers[ch].write(tail)
         for w in s.writers.values():
             w.close()
+        if any(s.gap_seconds.values()) or s.trimmed_seconds:
+            log.info("Recording timeline: filled %s s, trimmed %s s",
+                     {k: round(v, 2) for k, v in s.gap_seconds.items()},
+                     {k: round(v, 2) for k, v in s.trimmed_seconds.items()})
         if s.live:
             s.live.stop()
         duration_ms = int(s.elapsed() * 1000)
@@ -212,6 +303,34 @@ class Recorder:
         self.publish({"type": "recording_stopped", "meeting_id": s.meeting_id, "duration_ms": duration_ms})
         self.on_stopped(s.meeting_id)
         return s.meeting_id
+
+    def _revive_dead_sources(self, s: Session, now: float) -> None:
+        """A source that delivers no data at all (not just silence) lost its device: reopen it, at most every
+        15 s. The gap is filled with silence by the clock padding, so the timeline stays right."""
+        for c in s.sources:
+            ch = c.channel
+            if not getattr(c, "realtime", True) or now - s.last_frame.get(ch, now) < DEAD_SOURCE_SECONDS:
+                continue
+            if getattr(c, "quiet_when_idle", False) and c.alive():
+                continue  # e.g. the macOS tap: no data just means nothing is playing
+            if now - s.restarted_at.get(ch, 0) < 15:
+                continue
+            s.restarted_at[ch] = now
+            log.warning("No audio data from %s for %.0f s; reopening the device", ch, now - s.last_frame[ch])
+            try:
+                c.restart(self._on_frames)
+                s.warnings[f"device_{ch}"] = (f"The {'microphone' if ch != 'system' else 'system audio'} device "
+                                              f"changed; recording continues on {getattr(c, 'description', 'it')}.")
+                s.last_frame[ch] = time.monotonic()
+            except Exception as exc:
+                s.warnings[f"device_{ch}"] = f"Lost the {ch} device and could not reopen it: {exc}"
+
+    def _stop_quietly(self) -> None:
+        """Watchdog stop: the user may have pressed Stop at the same moment."""
+        try:
+            self.stop()
+        except RuntimeError:
+            pass
 
     def _require(self) -> Session:
         if not self.session:
@@ -268,12 +387,22 @@ class Recorder:
                 if free_gb < self.cfg.capture.min_free_gb:
                     s.warnings["disk"] = f"Low disk space ({free_gb:.1f} GB); stopping to protect the recording."
                     self.publish({"type": "status", "meeting_id": s.meeting_id, "status": "auto_stop_disk"})
-                    self.stop()
+                    self._stop_quietly()
                     return
             except Exception:
                 pass
             if hours >= self.cfg.capture.max_hours:
                 self.publish({"type": "status", "meeting_id": s.meeting_id, "status": "auto_stop_max_hours"})
-                self.stop()
+                self._stop_quietly()
                 return
+            if not s.paused:
+                self._revive_dead_sources(s, now)
+            if s.queued_seconds > BACKLOG_WARN_SECONDS:
+                s.warnings["busy"] = "This computer is busy; live captions are paused. The recording is safe."
+            else:
+                s.warnings.pop("busy", None)
+            lost = sum(getattr(c, "overflows", 0) for c in s.sources)
+            if lost:
+                s.warnings["dropped"] = (f"The audio device dropped sound {lost} time(s); timing was kept. "
+                                         "Close heavy apps if this keeps happening.")
             self.publish({"type": "recorder", **self.status()})

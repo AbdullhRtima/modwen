@@ -1,7 +1,9 @@
 // modwen-tap: capture system audio on macOS 14.2+ with a Core Audio process tap.
 //
-// Writes interleaved Float32 PCM to stdout. The first line on stderr is "FORMAT <sampleRate> <channels>".
-// Modwen reads stdout, downmixes to mono and resamples to 16 kHz.
+// The first line on stderr is "FORMAT <sampleRate> <channels> TS1". Stdout is a stream of records:
+//   UInt32 magic "MWTS" | UInt32 byte count | UInt64 capture time (ns, mach host clock) | interleaved Float32 PCM
+// The capture time lets Modwen tell audio that was delayed (e.g. its reader was busy) from audio that was never
+// produced (nothing playing), so the system track stays aligned with the microphone.
 // Stop with SIGTERM/SIGINT; the tap and its private aggregate device are destroyed on exit.
 //
 // Build: bash modwen/native/macos/build.sh
@@ -70,14 +72,17 @@ let channels = Int(format.mChannelsPerFrame)
 let nonInterleaved = (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
 let isFloat = (format.mFormatFlags & kAudioFormatFlagIsFloat) != 0 && format.mBitsPerChannel == 32
 if !isFloat { fail("unexpected tap sample format (expected Float32)") }
-FileHandle.standardError.write("FORMAT \(Int(format.mSampleRate)) \(channels)\n".data(using: .utf8)!)
+FileHandle.standardError.write("FORMAT \(Int(format.mSampleRate)) \(channels) TS1\n".data(using: .utf8)!)
 
 let writer = DispatchQueue(label: "modwen.tap.writer")
 let stdout = FileHandle.standardOutput
 
 // 4. IO proc: copy the tap's input buffers out (interleaving if needed) and write them off the audio thread.
 var procID: AudioDeviceIOProcID?
-status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil) { _, inInputData, _, _, _ in
+let recordMagic: UInt32 = 0x5354_574D  // "MWTS" little-endian
+status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil) { _, inInputData, inInputTime, _, _ in
+    let ts = inInputTime.pointee
+    let captureNanos: UInt64 = (ts.mFlags.contains(.hostTimeValid)) ? AudioConvertHostTimeToNanos(ts.mHostTime) : 0
     let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
     var data: Data
     if nonInterleaved && buffers.count > 1 {
@@ -94,7 +99,13 @@ status = AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil) { _, inIn
             if let src = buffer.mData { data.append(src.assumingMemoryBound(to: UInt8.self), count: Int(buffer.mDataByteSize)) }
         }
     }
-    writer.async { stdout.write(data) }
+    var header = Data(capacity: 16)
+    withUnsafeBytes(of: recordMagic.littleEndian) { header.append(contentsOf: $0) }
+    withUnsafeBytes(of: UInt32(data.count).littleEndian) { header.append(contentsOf: $0) }
+    withUnsafeBytes(of: captureNanos.littleEndian) { header.append(contentsOf: $0) }
+    header.append(data)
+    let record = header
+    writer.async { stdout.write(record) }
 }
 if status != noErr { fail("AudioDeviceCreateIOProcIDWithBlock failed", status) }
 
