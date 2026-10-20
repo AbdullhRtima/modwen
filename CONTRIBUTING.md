@@ -39,3 +39,7 @@ docs/            design docs, guides and mockups
 ```
 
 By contributing, you agree that your contributions are licensed under the Apache-2.0 license.
+
+## Releasing
+
+See [docs/releasing.md](docs/releasing.md) for how a release is built, checked and published.

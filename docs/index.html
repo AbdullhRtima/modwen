@@ -2,7 +2,7 @@
 <html lang="en" dir="ltr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Modwen · مُدوَّن · Say it. See it.</title>
 <meta name="description" content="Modwen turns Arabic and English speech into meeting notes, decisions and action items, entirely on your computer. Open source, local-first, private by design.">
 <meta property="og:title" content="Modwen · مُدوَّن · Say it. See it.">
@@ -11,187 +11,317 @@
 <meta property="og:url" content="https://modwen.rtima.org/">
 <meta property="og:image" content="https://modwen.rtima.org/assets/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23f5b544'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23e9a23b'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<link rel="preload" href="assets/fonts/readex-pro-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-arabic-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-/* This page makes zero third-party requests: no web fonts, no analytics, no CDNs. */
+/* This page makes zero third-party requests: fonts are self-hosted (SIL OFL, see assets/fonts), icons are inline
+   (Lucide, ISC), no analytics, no CDNs. Same design system as the app: ink navy + amber, Readex Pro + IBM Plex. */
+@font-face { font-family: "Readex Pro"; font-weight: 500; font-display: swap; src: url(assets/fonts/readex-pro-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+@font-face { font-family: "Readex Pro"; font-weight: 600; font-display: swap; src: url(assets/fonts/readex-pro-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+@font-face { font-family: "Readex Pro"; font-weight: 500; font-display: swap; src: url(assets/fonts/readex-pro-arabic-500-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "Readex Pro"; font-weight: 600; font-display: swap; src: url(assets/fonts/readex-pro-arabic-600-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 400; font-display: swap; src: url(assets/fonts/ibm-plex-sans-arabic-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 500; font-display: swap; src: url(assets/fonts/ibm-plex-sans-arabic-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 600; font-display: swap; src: url(assets/fonts/ibm-plex-sans-arabic-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F, U+20AC, U+2122; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 400; font-display: swap; src: url(assets/fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 500; font-display: swap; src: url(assets/fonts/ibm-plex-sans-arabic-arabic-500-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 600; font-display: swap; src: url(assets/fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url(assets/fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+
 :root {
-  --bg: #070a18; --bg2: #0d1430; --panel: #121a38; --panel2: #18214a; --line: rgba(255,255,255,.09);
-  --text: #eef1fa; --muted: #9aa6c7; --faint: #6b779c;
-  --blue: #5b8cff; --violet: #8b7bff; --gold: #f5b544; --coral: #ff8a5c; --green: #3fbf6b;
-  --font: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --arabic: "SF Arabic", "Geeza Pro", "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color-scheme: dark;
+  --ink: #0d1430; --ink-fg: #ffffff; --amber: #e9a23b; --amber-soft: #fbefd9; --amber-text: #8a5a0b;
+  --bg: #f5f6f9; --bg-2: #eceef4; --surface: #ffffff; --surface-2: #f8f9fc; --surface-3: #eef0f5;
+  --border: #e1e4ec; --border-strong: #c9cedb;
+  --text: #141a2e; --text-2: #535b72; --text-3: #8890a5;
+  --accent: #2f4cc7; --accent-soft: #e8ecfb;
+  --rec: #d63a32; --ok: #1d7a4b; --ok-soft: #e1f3e9;
+  --sp1: #2f4cc7; --sp2: #0e8a7a; --sp4: #7a3fc2;
+  --code-bg: #0d1430; --code-fg: #d9def0; --code-dim: #7d87a8;
+  --shadow: 0 1px 2px rgba(13,20,48,.06), 0 24px 60px rgba(13,20,48,.12);
+  --display: "Readex Pro", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font: "IBM Plex Sans Arabic", "Readex Pro", system-ui, -apple-system, "Segoe UI", "Geeza Pro", Tahoma, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
 }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --ink: #e9ecf6; --ink-fg: #0c1124; --amber: #f0b153; --amber-soft: #3a2c14; --amber-text: #f0b153;
+  --bg: #0c1124; --bg-2: #0f1630; --surface: #131a32; --surface-2: #10172d; --surface-3: #1a2240;
+  --border: #232b47; --border-strong: #323c5e;
+  --text: #e8ebf5; --text-2: #a8b0c8; --text-3: #7480a0;
+  --accent: #8ea3ff; --accent-soft: #1d2650;
+  --rec: #ff6b61; --ok: #5cc98f; --ok-soft: #10301f;
+  --sp1: #8ea3ff; --sp2: #4fd1bf; --sp4: #c4a0ff;
+  --code-bg: #080c1c; --code-fg: #d9def0; --code-dim: #6d7799;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 24px 60px rgba(0,0,0,.45);
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --ink: #e9ecf6; --ink-fg: #0c1124; --amber: #f0b153; --amber-soft: #3a2c14; --amber-text: #f0b153;
+  --bg: #0c1124; --bg-2: #0f1630; --surface: #131a32; --surface-2: #10172d; --surface-3: #1a2240;
+  --border: #232b47; --border-strong: #323c5e;
+  --text: #e8ebf5; --text-2: #a8b0c8; --text-3: #7480a0;
+  --accent: #8ea3ff; --accent-soft: #1d2650;
+  --rec: #ff6b61; --ok: #5cc98f; --ok-soft: #10301f;
+  --sp1: #8ea3ff; --sp2: #4fd1bf; --sp4: #c4a0ff;
+  --code-bg: #080c1c; --code-fg: #d9def0; --code-dim: #6d7799;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 24px 60px rgba(0,0,0,.45);
+  color-scheme: dark; }
+
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 var(--font); overflow-x: hidden; }
-html[dir="rtl"] body { font-family: var(--arabic), var(--font); }
-.ar { font-family: var(--arabic); }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 17px/1.65 var(--font); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 600; text-wrap: balance; }
 a { color: inherit; }
-.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 24px; }
-.sky { position: fixed; inset: 0; z-index: -1; background:
-  radial-gradient(900px 600px at 15% 10%, rgba(91,140,255,.20), transparent 60%),
-  radial-gradient(800px 600px at 90% 30%, rgba(245,181,68,.10), transparent 60%),
-  radial-gradient(1000px 700px at 50% 110%, rgba(139,123,255,.14), transparent 60%), var(--bg); }
-.sky::after { content: ""; position: absolute; inset: 0; opacity: .5;
-  background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px); background-size: 28px 28px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.ic { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ic.fill { fill: currentColor; }
+[dir="rtl"] .flip { transform: scaleX(-1); }
+.wrap { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+.mono { font-family: var(--mono); }
 
 /* nav */
-nav { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(14px); background: rgba(7,10,24,.6); border-bottom: 1px solid var(--line); }
-nav .wrap { display: flex; align-items: center; gap: 22px; height: 64px; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 19px; text-decoration: none; letter-spacing: -.3px; }
-.brand .mark { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg, #1b2a66, #0d1430); display: grid; place-items: center; border: 1px solid var(--line); }
-.brand .ar { color: var(--gold); font-weight: 700; }
-nav .links { display: flex; gap: 20px; margin-inline-start: auto; font-size: 14.5px; color: var(--muted); }
+nav { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+nav .wrap { display: flex; align-items: center; gap: 18px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.mark { width: 30px; height: 30px; border-radius: 9px; background: var(--ink); display: flex; align-items: center; justify-content: center; gap: 2px; flex: none; }
+.mark i { display: block; width: 3px; background: var(--amber); border-radius: 2px; }
+.brand b { font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: -.01em; }
+.brand small { color: var(--text-3); font-size: 14px; }
+nav .links { display: flex; gap: 22px; margin-inline-start: auto; font-size: 14.5px; color: var(--text-2); }
 nav .links a { text-decoration: none; } nav .links a:hover { color: var(--text); }
-.lang { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; font-size: 13px; }
-.lang button { background: none; border: 0; color: var(--muted); padding: 6px 12px; cursor: pointer; font: inherit; }
-.lang button.on { background: rgba(245,181,68,.16); color: var(--gold); font-weight: 700; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 12px; font-weight: 650; font-size: 15.5px; text-decoration: none; border: 1px solid var(--line); background: rgba(255,255,255,.04); cursor: pointer; color: var(--text); transition: transform .15s, background .15s; }
-.btn:hover { transform: translateY(-1px); background: rgba(255,255,255,.08); }
-.btn.gold { background: linear-gradient(135deg, var(--gold), var(--coral)); color: #1b1203; border: 0; box-shadow: 0 10px 30px rgba(245,181,68,.25); }
-.btn.small { padding: 8px 14px; font-size: 14px; border-radius: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
+.seg button { background: none; border: 0; color: var(--text-2); padding: 6px 11px; cursor: pointer; font: 500 13px/1.2 var(--font); display: inline-flex; align-items: center; }
+.seg button.on { background: var(--surface-3); color: var(--text); font-weight: 600; }
+.icon-btn { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); cursor: pointer; }
+.icon-btn:hover { color: var(--text); }
+.btn { display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border-radius: 11px; font: 600 15.5px/1.2 var(--font); text-decoration: none; border: 1px solid var(--border-strong); background: var(--surface); cursor: pointer; color: var(--text); transition: transform .15s, box-shadow .15s; }
+.btn:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.btn.primary { background: var(--ink); color: var(--ink-fg); border-color: var(--ink); }
+.btn.small { padding: 8px 13px; font-size: 14px; border-radius: 9px; }
 
 /* hero */
-.hero { padding: 72px 0 40px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
-.eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; color: var(--gold); border: 1px solid rgba(245,181,68,.35); background: rgba(245,181,68,.08); padding: 6px 12px; border-radius: 999px; font-weight: 600; }
-h1 { font-size: clamp(46px, 7vw, 86px); line-height: .98; margin: 18px 0 10px; letter-spacing: -2.5px; font-weight: 850; }
-html[dir="rtl"] h1 { letter-spacing: 0; line-height: 1.15; }
-h1 .grad { background: linear-gradient(100deg, var(--blue), var(--violet) 45%, var(--gold) 80%, var(--coral)); -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 200% 100%; animation: shimmer 8s ease-in-out infinite; }
-@keyframes shimmer { 50% { background-position: 100% 0; } }
-.sub-ar { font-family: var(--arabic); color: var(--muted); font-size: 26px; margin: 0 0 18px; }
-html[dir="rtl"] .sub-ar { font-family: var(--font); font-size: 22px; }
-.lead { color: var(--muted); font-size: 19px; max-width: 560px; margin: 0 0 28px; }
-.ctas { display: flex; gap: 12px; flex-wrap: wrap; }
-.trust { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 22px; color: var(--faint); font-size: 14px; }
-.trust span::before { content: "✓ "; color: var(--green); font-weight: 800; }
+.hero { padding: 76px 0 24px; text-align: center; position: relative; }
+.hero::before { content: ""; position: absolute; top: -64px; left: 50%; width: 100vw; transform: translateX(-50%); height: 620px; z-index: -1; pointer-events: none;
+  background: radial-gradient(640px 360px at 50% 0%, color-mix(in srgb, var(--amber) 22%, transparent), transparent 70%),
+              radial-gradient(900px 500px at 50% 10%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%); }
+.eyebrow { display: inline-flex; gap: 8px; align-items: center; font-size: 13.5px; font-weight: 500; color: var(--ok); background: var(--ok-soft); padding: 6px 13px; border-radius: 999px; }
+.eyebrow .ic { width: 15px; height: 15px; }
+h1 { font-size: clamp(44px, 6.6vw, 80px); line-height: 1.02; margin: 20px 0 8px; letter-spacing: -.03em; }
+[dir="rtl"] h1 { letter-spacing: 0; line-height: 1.2; }
+h1 .hl { color: var(--amber); }
+.sub-ar { font-family: var(--display); color: var(--text-3); font-size: 24px; margin: 0 0 18px; font-weight: 500; }
+.lead { color: var(--text-2); font-size: 19px; max-width: 640px; margin: 0 auto 28px; }
+.ctas { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.trust { display: flex; gap: 8px 22px; flex-wrap: wrap; justify-content: center; margin-top: 22px; color: var(--text-3); font-size: 14px; }
+.trust span { display: inline-flex; gap: 6px; align-items: center; }
+.trust .ic { width: 15px; height: 15px; color: var(--ok); }
 
-/* demo window */
-.demo { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); overflow: hidden; position: relative; }
-.demo .bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
-.demo .bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
-.rec { margin-inline-start: auto; display: inline-flex; gap: 6px; align-items: center; color: #ff6b6b; font-weight: 700; font-family: var(--mono); font-size: 12.5px; }
-.rec::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #ff6b6b; animation: blink 1.2s infinite; }
-@keyframes blink { 50% { opacity: .2; } }
-.wave { display: flex; align-items: center; gap: 3px; height: 54px; padding: 0 18px; border-bottom: 1px solid var(--line); }
-.wave b { flex: 1; max-width: 6px; border-radius: 3px; background: linear-gradient(var(--blue), var(--violet)); height: 20%; transition: height .12s; }
-.wave.idle b { height: 10% !important; opacity: .5; }
-.split { display: grid; grid-template-columns: 1fr 1fr; min-height: 330px; }
-.lines { padding: 14px 16px; border-inline-end: 1px solid var(--line); font-size: 14.5px; }
-.line { display: grid; grid-template-columns: 58px 1fr; gap: 2px 10px; padding: 6px 8px; border-radius: 10px; margin: 0 -8px 2px; opacity: 0; transform: translateY(6px); transition: all .35s; }
-.line.show { opacity: 1; transform: none; }
-.line.hl { background: rgba(91,140,255,.14); }
-.line .who { font-weight: 700; font-size: 12.5px; }
-.line .t { grid-column: 2; unicode-bidi: plaintext; }
-.line .ts { font-family: var(--mono); font-size: 11px; color: var(--faint); direction: ltr; }
-.caret::after { content: "▍"; color: var(--gold); animation: blink 1s infinite; }
-.notes { padding: 14px 16px; font-size: 14px; }
-.notes h5 { margin: 10px 0 6px; font-size: 11px; letter-spacing: 1.6px; color: var(--faint); text-transform: uppercase; }
+/* app window demo: a faithful miniature of the real meeting page */
+.win { margin: 52px auto 0; max-width: 1080px; text-align: start; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+.win-bar { display: flex; align-items: center; gap: 7px; padding: 11px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 12.5px; color: var(--text-3); }
+.win-bar > i { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); }
+.win-bar .url { margin-inline-start: 10px; font-family: var(--mono); font-size: 11.5px; direction: ltr; }
+.win-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 440px; }
+.w-side { border-inline-end: 1px solid var(--border); background: var(--surface-2); padding: 14px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.w-side .brand b { font-size: 15px; } .w-side .mark { width: 26px; height: 26px; border-radius: 8px; }
+.w-rec { display: flex; gap: 7px; align-items: center; justify-content: center; background: var(--rec); color: #fff; border-radius: 9px; padding: 8px; font-weight: 600; font-size: 13px; margin: 6px 0 4px; }
+.w-rec .ic { width: 15px; height: 15px; }
+.w-group { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); font-weight: 600; margin-top: 6px; }
+[dir="rtl"] .w-group { letter-spacing: 0; }
+.w-item { padding: 7px 9px; border-radius: 8px; color: var(--text-2); line-height: 1.35; }
+.w-item small { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); direction: ltr; text-align: start; }
+[dir="rtl"] .w-item small { text-align: end; }
+.w-item.on { background: var(--amber-soft); color: var(--text); font-weight: 600; }
+.w-main { min-width: 0; display: flex; flex-direction: column; }
+.w-head { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.w-head h4 { margin: 0; font-size: 19px; }
+.w-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-3); margin-inline-start: auto; }
+.pill-rec { display: inline-flex; gap: 6px; align-items: center; color: var(--rec); font: 500 12px var(--mono); background: color-mix(in srgb, var(--rec) 10%, transparent); padding: 3px 9px; border-radius: 999px; direction: ltr; }
+.pill-rec::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--rec); animation: blink 1.2s infinite; }
+.pill-rec.done { color: var(--ok); background: var(--ok-soft); } .pill-rec.done::before { background: var(--ok); animation: none; }
+@keyframes blink { 50% { opacity: .25; } }
+.chip { font: 500 11px/1.4 var(--mono); padding: 2px 7px; border-radius: 6px; background: var(--surface-3); color: var(--text-2); }
+.split { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); flex: 1; }
+.notes { padding: 16px 20px; font-size: 14px; border-inline-end: 1px solid var(--border); }
+.notes h5 { margin: 14px 0 6px; font: 600 11px/1 var(--font); letter-spacing: .08em; color: var(--text-3); text-transform: uppercase; }
+[dir="rtl"] .notes h5 { letter-spacing: 0; }
 .notes h5:first-child { margin-top: 0; }
-.item { padding: 7px 10px; border-radius: 10px; background: rgba(255,255,255,.04); margin-bottom: 6px; opacity: 0; transform: scale(.97); transition: all .4s; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.item { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 9px; border-inline-start: 3px solid var(--amber); background: var(--surface-2); margin-bottom: 6px;
+  opacity: 0; transform: translateY(6px); transition: opacity .4s, transform .4s; }
 .item.show { opacity: 1; transform: none; }
-.chip { font-family: var(--mono); font-size: 11px; color: #a9c1ff; background: rgba(91,140,255,.18); padding: 2px 7px; border-radius: 6px; cursor: pointer; white-space: nowrap; direction: ltr; }
-.due { font-size: 12.5px; color: var(--gold); white-space: nowrap; }
-.due s { color: var(--faint); text-decoration: none; }
-.owner { font-weight: 700; color: #b9a6ff; }
-.demo .foot { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--green); }
-.demo .foot button { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; }
+.item.act { border-inline-start-color: var(--accent); }
+.av { width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-size: 10.5px; font-weight: 600; flex: none; vertical-align: -5px; margin-inline-end: 6px; }
+.ev { display: inline-flex; gap: 3px; align-items: center; font: 500 11px/1.4 var(--mono); color: var(--amber-text); background: var(--amber-soft); padding: 2px 7px; border-radius: 6px; cursor: pointer; white-space: nowrap; direction: ltr; border: 0; }
+.ev .ic { width: 11px; height: 11px; }
+.due { font-size: 12.5px; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.due .said { color: var(--text-3); font-size: 11.5px; }
+.due b { color: var(--amber-text); font-weight: 600; font-family: var(--mono); font-size: 12px; direction: ltr; }
+.tr { display: flex; flex-direction: column; min-width: 0; }
+.wave { display: flex; align-items: center; gap: 3px; height: 44px; padding: 0 18px; border-bottom: 1px solid var(--border); direction: ltr; }
+.wave b { flex: 1; max-width: 5px; border-radius: 3px; background: var(--amber); height: 20%; transition: height .12s; }
+.wave.idle b { height: 8% !important; opacity: .4; }
+.lines { padding: 12px 18px; font-size: 14px; }
+.line { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 0 10px; padding: 6px 8px; border-radius: 8px; margin: 0 -8px 2px; opacity: 0; transform: translateY(6px); transition: opacity .35s, transform .35s, background .3s; }
+.line.show { opacity: 1; transform: none; }
+.line.hl { background: var(--amber-soft); }
+.line .who { font-weight: 600; font-size: 12.5px; }
+.line .t { grid-column: 2; unicode-bidi: plaintext; color: var(--text); }
+.line .ts { font-family: var(--mono); font-size: 11px; color: var(--text-3); direction: ltr; padding-top: 2px; grid-row: span 2; }
+.caret::after { content: ""; display: inline-block; width: 2px; height: 1em; vertical-align: -2px; margin-inline-start: 2px; background: var(--amber); animation: blink 1s infinite; }
+.w-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--ok); background: var(--surface-2); flex-wrap: wrap; }
+.w-foot span { display: inline-flex; gap: 6px; align-items: center; }
+.w-foot .ic { width: 14px; height: 14px; }
+.w-foot button { display: inline-flex; gap: 6px; align-items: center; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); border-radius: 8px; padding: 5px 10px; cursor: pointer; font: 500 12.5px var(--font); }
 
 /* marquee */
-.marquee { overflow: hidden; border-block: 1px solid var(--line); margin: 40px 0; padding: 16px 0; mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
-.marquee .track { display: flex; gap: 48px; width: max-content; animation: slide 40s linear infinite; font-size: 22px; color: var(--faint); white-space: nowrap; }
-.marquee .track span:nth-child(3n) { color: var(--gold); } .marquee .track span:nth-child(3n+1) { color: #a9c1ff; }
+.marquee { overflow: hidden; border-block: 1px solid var(--border); margin: 64px 0 0; padding: 16px 0; -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent); }
+.marquee .track { display: flex; gap: 44px; width: max-content; animation: slide 46s linear infinite; font: 500 21px/1.3 var(--display); color: var(--text-3); white-space: nowrap; }
+.marquee .track span:nth-child(3n) { color: var(--amber-text); } .marquee .track span:nth-child(3n+1) { color: var(--text-2); }
 @keyframes slide { to { transform: translateX(-50%); } }
-html[dir="rtl"] .marquee .track { animation-name: slide-rtl; } @keyframes slide-rtl { to { transform: translateX(50%); } }
+[dir="rtl"] .marquee .track { animation-name: slide-rtl; } @keyframes slide-rtl { to { transform: translateX(50%); } }
 
 /* sections */
-section { padding: 70px 0; }
-.kicker { color: var(--gold); font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase; }
-html[dir="rtl"] .kicker { letter-spacing: 0; }
-h2 { font-size: clamp(32px, 4.5vw, 52px); line-height: 1.08; margin: 10px 0 16px; letter-spacing: -1.2px; }
-html[dir="rtl"] h2 { letter-spacing: 0; line-height: 1.3; }
-.sect-lead { color: var(--muted); font-size: 19px; max-width: 700px; }
+section { padding: 88px 0; }
+section.alt { background: var(--bg-2); border-block: 1px solid var(--border); }
+.kicker { color: var(--amber-text); font-weight: 600; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+[dir="rtl"] .kicker { letter-spacing: 0; }
+h2 { font-size: clamp(30px, 4.2vw, 46px); line-height: 1.12; margin: 10px 0 14px; letter-spacing: -.02em; }
+[dir="rtl"] h2 { letter-spacing: 0; line-height: 1.35; }
+.sect-lead { color: var(--text-2); font-size: 18.5px; max-width: 64ch; margin: 0; }
 
-/* privacy diagram */
-.privacy { display: grid; grid-template-columns: 1fr 1.1fr; gap: 44px; align-items: center; }
-.machine { position: relative; border: 2px dashed rgba(63,191,107,.5); border-radius: 26px; padding: 26px 22px 22px; background: rgba(63,191,107,.04); }
-.machine > .label { position: absolute; top: -14px; inset-inline-start: 22px; background: var(--bg); color: var(--green); font-weight: 700; font-size: 14px; padding: 0 10px; }
-.pipe { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; align-items: stretch; }
-.node { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 10px; text-align: center; font-size: 13.5px; position: relative; }
-.node .ico { font-size: 26px; display: block; margin-bottom: 4px; }
-.node small { color: var(--faint); display: block; font-size: 11.5px; }
-.node:not(:last-child)::after { content: ""; position: absolute; top: 50%; inset-inline-end: -10px; width: 10px; height: 2px; background: linear-gradient(90deg, var(--blue), var(--gold)); }
-.packet { position: absolute; top: calc(50% + 6px); width: 8px; height: 8px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 12px var(--gold); animation: travel 3.2s linear infinite; inset-inline-start: 8%; }
-@keyframes travel { from { inset-inline-start: 8%; } to { inset-inline-start: 90%; } }
-.cloud { display: flex; align-items: center; gap: 14px; margin-top: 26px; justify-content: center; color: var(--faint); }
-.cloud .x { position: relative; font-size: 34px; filter: grayscale(1); opacity: .7; }
-.cloud .x::after { content: ""; position: absolute; left: -6px; right: -6px; top: 50%; height: 3px; background: #ff6b6b; transform: rotate(-20deg); border-radius: 2px; }
-.facts { display: grid; gap: 12px; margin-top: 22px; }
-.fact { display: flex; gap: 12px; align-items: flex-start; }
-.fact b { color: var(--text); }
-.fact .dot { flex: none; width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: rgba(63,191,107,.15); color: var(--green); font-weight: 800; font-size: 14px; }
+/* privacy */
+.privacy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; align-items: center; }
+.facts { display: grid; gap: 14px; margin-top: 26px; }
+.fact { display: flex; gap: 12px; align-items: flex-start; color: var(--text-2); font-size: 16px; }
+.fact b { color: var(--text); font-weight: 600; }
+.fact .dot { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--ok-soft); color: var(--ok); margin-top: 1px; }
+.fact .dot .ic { width: 15px; height: 15px; stroke-width: 2.4; }
+.machine { position: relative; border: 1.5px dashed color-mix(in srgb, var(--ok) 55%, transparent); border-radius: 22px; padding: 30px 20px 22px; background: color-mix(in srgb, var(--ok) 4%, var(--surface)); }
+.machine > .label { position: absolute; top: -13px; inset-inline-start: 20px; background: var(--bg); color: var(--ok); font-weight: 600; font-size: 14px; padding: 0 10px; display: inline-flex; gap: 7px; align-items: center; }
+.alt .machine > .label { background: var(--bg-2); }
+.pipe { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; position: relative; }
+.node { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 8px 14px; text-align: center; font-size: 13.5px; font-weight: 500; position: relative; }
+.node .nic { width: 40px; height: 40px; margin: 0 auto 8px; border-radius: 11px; display: grid; place-items: center; background: var(--amber-soft); color: var(--amber-text); }
+.node .nic .ic { width: 20px; height: 20px; }
+.node small { color: var(--text-3); display: block; font-size: 11.5px; font-weight: 400; margin-top: 2px; }
+.node:not(:last-child)::after { content: ""; position: absolute; top: 36px; inset-inline-end: -12px; width: 12px; height: 2px; background: var(--amber); }
+.packet { position: absolute; top: 33px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 4px color-mix(in srgb, var(--amber) 25%, transparent); animation: travel 3.4s linear infinite; inset-inline-start: 8%; }
+@keyframes travel { from { inset-inline-start: 10%; } to { inset-inline-start: 88%; } }
+.cloud { display: flex; align-items: center; gap: 10px; margin-top: 24px; justify-content: center; color: var(--text-3); font-size: 15px; }
+.cloud .ic { width: 22px; height: 22px; color: var(--rec); }
 
 /* features */
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 34px; }
-.card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015)); border: 1px solid var(--line); border-radius: 20px; padding: 22px; transition: transform .2s, border-color .2s; }
-.card:hover { transform: translateY(-3px); border-color: rgba(245,181,68,.35); }
-.card h3 { margin: 12px 0 6px; font-size: 19px; }
-.card p { margin: 0; color: var(--muted); font-size: 15.5px; }
-.visual { height: 92px; border-radius: 14px; background: rgba(0,0,0,.25); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; font-size: 14px; overflow: hidden; }
-.pill { padding: 4px 10px; border-radius: 999px; font-size: 13px; border: 1px solid var(--line); background: rgba(255,255,255,.05); white-space: nowrap; }
-.pill.g { color: var(--gold); border-color: rgba(245,181,68,.35); } .pill.b { color: #a9c1ff; border-color: rgba(91,140,255,.35); }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 40px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; transition: transform .2s, box-shadow .2s; }
+.card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.card h3 { margin: 16px 0 6px; font-size: 18px; }
+.card p { margin: 0; color: var(--text-2); font-size: 15px; line-height: 1.6; }
+.visual { height: 96px; row-gap: 6px; align-content: center; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; font-size: 14px; overflow: hidden; flex-wrap: wrap; }
+.tag { padding: 4px 10px; border-radius: 8px; font-size: 13px; border: 1px solid var(--border); background: var(--surface); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.tag.a { color: var(--amber-text); background: var(--amber-soft); border-color: transparent; }
+.tag .ic { width: 14px; height: 14px; }
+.arrow { color: var(--text-3); width: 14px; height: 14px; }
+.notif { display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; box-shadow: var(--shadow); }
+.notif .nic { width: 32px; height: 32px; border-radius: 9px; background: var(--ink); color: var(--amber); display: grid; place-items: center; }
+.notif small { display: block; color: var(--text-3); font-size: 12px; }
+
+/* what's included */
+.inc-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; }
+.inc-count { display: flex; gap: 10px; flex-wrap: wrap; }
+.inc-count > span { display: inline-flex; gap: 7px; align-items: center; font-size: 14px; font-weight: 500; padding: 7px 13px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
+.inc-count b { font-family: var(--display); font-size: 16px; }
+.inc-count .ic { width: 16px; height: 16px; }
+.table-wrap { margin-top: 32px; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface); }
+.inc { width: 100%; border-collapse: collapse; font-size: 15px; }
+.inc th, .inc td { padding: 13px 20px; text-align: start; vertical-align: middle; }
+.inc thead th { background: var(--surface-2); border-bottom: 1px solid var(--border); font: 600 15px/1.3 var(--display); }
+.inc thead th small { display: block; font: 400 13px/1.4 var(--font); color: var(--text-3); margin-top: 2px; }
+.inc thead th.plan { width: 230px; text-align: center; background: color-mix(in srgb, var(--amber) 9%, var(--surface-2)); }
+.inc tbody td.st { text-align: center; background: color-mix(in srgb, var(--amber) 4%, var(--surface)); }
+.inc tr.grp td { background: var(--surface-2); font: 600 12px/1 var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--text-3); padding-block: 12px; border-top: 1px solid var(--border); }
+[dir="rtl"] .inc tr.grp td { letter-spacing: 0; }
+.inc tbody tr:not(.grp) + tr:not(.grp) td { border-top: 1px solid var(--border); }
+.inc .fname { font-weight: 500; }
+.inc .fname small { display: block; color: var(--text-3); font-weight: 400; font-size: 13px; margin-top: 1px; }
+.yes { color: var(--ok); display: inline-flex; gap: 6px; align-items: center; font-size: 13.5px; font-weight: 500; }
+.yes .ic { width: 22px; height: 22px; fill: var(--ok); stroke: var(--surface); stroke-width: 2.2; }
+.soon { display: inline-flex; gap: 5px; align-items: center; font-size: 13px; color: var(--amber-text); background: var(--amber-soft); padding: 3px 10px; border-radius: 999px; font-weight: 500; }
+.soon .ic { width: 14px; height: 14px; }
+.inc-note { margin: 16px 2px 0; color: var(--text-3); font-size: 14px; max-width: 72ch; }
+@media (max-width: 680px) {
+  .inc th, .inc td { padding: 11px 14px; }
+  .inc thead th.plan { width: 112px; }
+  .yes span { display: none; }
+}
 
 /* voice -> slide */
-.vision { display: grid; grid-template-columns: 1fr 1.2fr; gap: 40px; align-items: center; }
-.command { display: inline-flex; gap: 10px; align-items: center; padding: 14px 18px; border-radius: 18px; background: var(--panel2); border: 1px solid var(--line); font-size: 18px; margin: 6px 0; }
-.command .mic { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, var(--gold), var(--coral)); color: #1b1203; }
-.slide { aspect-ratio: 16/9; border-radius: 20px; background: linear-gradient(160deg, #141c3d, #0b1129); border: 1px solid rgba(245,181,68,.35); box-shadow: 0 30px 70px rgba(0,0,0,.5); padding: 24px 26px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
-.slide h4 { margin: 0; font-size: 22px; } .slide .meta { color: var(--faint); font-size: 13px; }
-.chart { flex: none; height: 64%; display: flex; align-items: flex-end; gap: 10px; margin-top: 16px; border-bottom: 1px solid var(--line); padding-bottom: 2px; direction: ltr; }
-.chart div { flex: 1; border-radius: 6px 6px 2px 2px; background: linear-gradient(var(--gold), var(--coral)); height: 0; transition: height .9s cubic-bezier(.2,.8,.2,1); }
-.slide .badge { position: absolute; top: 18px; inset-inline-end: 18px; font-size: 12px; color: var(--gold); border: 1px solid rgba(245,181,68,.4); border-radius: 999px; padding: 3px 10px; }
+.vision { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 48px; align-items: center; }
+.command { display: inline-flex; gap: 12px; align-items: center; padding: 10px 18px 10px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); font-size: 17px; margin-top: 12px; box-shadow: var(--shadow); }
+[dir="rtl"] .command { padding: 10px 10px 10px 18px; }
+.command .mic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--amber); flex: none; }
+.slide { aspect-ratio: 16/9; max-width: 100%; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); padding: 24px 26px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+.slide h4 { margin: 0; font-size: 22px; } .slide .meta { color: var(--text-3); font-size: 13px; }
+.chart { flex: 1; display: flex; align-items: flex-end; gap: 8px; margin-top: 16px; border-bottom: 1px solid var(--border); padding-bottom: 2px; direction: ltr; }
+.chart div { flex: 1; border-radius: 5px 5px 2px 2px; background: var(--amber); height: 0; transition: height .9s cubic-bezier(.2,.8,.2,1); }
+.chart div:last-child { background: var(--ink); }
+.slide .badge { position: absolute; top: 18px; inset-inline-end: 18px; font-size: 12px; color: var(--amber-text); background: var(--amber-soft); border-radius: 999px; padding: 3px 10px; display: inline-flex; gap: 5px; align-items: center; }
+.slide .badge .ic { width: 13px; height: 13px; }
 
 /* steps + install */
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 30px; counter-reset: s; }
-.step { border: 1px solid var(--line); border-radius: 20px; padding: 22px; background: rgba(255,255,255,.025); position: relative; }
-.step::before { counter-increment: s; content: counter(s); position: absolute; top: -16px; inset-inline-start: 20px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; background: linear-gradient(135deg, var(--gold), var(--coral)); color: #1b1203; }
-.step h3 { margin: 6px 0 6px; } .step p { margin: 0; color: var(--muted); font-size: 15.5px; }
-.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 28px; }
-.tabs button { background: none; border: 0; color: var(--muted); padding: 10px 18px; cursor: pointer; font: inherit; font-size: 15px; }
-.tabs button.on { background: rgba(91,140,255,.16); color: #cfdcff; font-weight: 700; }
-pre { background: #050816; border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; overflow-x: auto; font: 14px/1.7 var(--mono); color: #cfd6ee; direction: ltr; text-align: left; }
-pre .c { color: var(--faint); } pre .k { color: var(--gold); }
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 40px; counter-reset: s; }
+.step { border: 1px solid var(--border); border-radius: 16px; padding: 22px; background: var(--surface); }
+.step::before { counter-increment: s; content: counter(s); width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font: 600 15px var(--display); background: var(--ink); color: var(--amber); }
+.step h3 { margin: 14px 0 6px; font-size: 18px; } .step p { margin: 0; color: var(--text-2); font-size: 15px; }
+.tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 32px; background: var(--surface); }
+.tabs button { background: none; border: 0; color: var(--text-2); padding: 9px 18px; cursor: pointer; font: 500 14.5px var(--font); }
+.tabs button.on { background: var(--surface-3); color: var(--text); font-weight: 600; }
+pre { background: var(--code-bg); border-radius: 14px; padding: 18px 20px; overflow-x: auto; font: 14px/1.75 var(--mono); color: var(--code-fg); direction: ltr; text-align: left; margin: 12px 0 0; }
+pre .c { color: var(--code-dim); } pre .k { color: #f0b153; }
 
 /* open source */
-.oss { display: grid; grid-template-columns: 1.2fr 1fr; gap: 30px; align-items: center; background: linear-gradient(135deg, rgba(91,140,255,.12), rgba(245,181,68,.08)); border: 1px solid var(--line); border-radius: 28px; padding: 40px; }
-.oss ul { margin: 0; padding-inline-start: 20px; color: var(--muted); } .oss li { margin-bottom: 6px; }
+.oss { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: center; background: var(--ink); color: var(--ink-fg); border-radius: 22px; padding: 44px; }
+.oss .kicker { color: var(--amber); }
+.oss h2 { color: var(--ink-fg); }
+.oss ul { margin: 0; padding-inline-start: 20px; opacity: .8; } .oss li { margin-bottom: 6px; }
+.oss .btn { border-color: color-mix(in srgb, var(--ink-fg) 25%, transparent); background: transparent; color: var(--ink-fg); }
+.oss .btn.amber { background: var(--amber); border-color: var(--amber); color: #1b1203; }
 
 /* faq */
-details { border-bottom: 1px solid var(--line); padding: 16px 0; }
-summary { cursor: pointer; font-weight: 650; font-size: 18px; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
-summary::after { content: "+"; color: var(--gold); font-size: 22px; line-height: 1; }
-details[open] summary::after { content: "–"; }
-details p { color: var(--muted); margin: 10px 0 0; }
+details { border-bottom: 1px solid var(--border); padding: 18px 0; }
+summary { cursor: pointer; font: 600 18px/1.4 var(--display); list-style: none; display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: ""; flex: none; width: 10px; height: 10px; border-inline-end: 2px solid var(--text-3); border-bottom: 2px solid var(--text-3); transform: rotate(45deg); transition: transform .2s; margin-top: -4px; }
+details[open] summary::after { transform: rotate(225deg); margin-top: 4px; }
+details p { color: var(--text-2); margin: 10px 0 0; max-width: 68ch; }
 
-footer { border-top: 1px solid var(--line); padding: 40px 0 60px; color: var(--faint); font-size: 14px; }
+footer { border-top: 1px solid var(--border); padding: 40px 0 56px; color: var(--text-3); font-size: 14px; }
 footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; align-items: center; }
-.big-ar { font-family: var(--arabic); font-size: 64px; line-height: 1; background: linear-gradient(120deg, var(--gold), var(--coral)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+footer a { text-decoration: none; } footer a:hover { color: var(--text); }
+.big-ar { font: 600 56px/1 var(--display); color: var(--amber); }
 
-.reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s, transform .7s; }
+.reveal { opacity: 0; transform: translateY(16px); transition: opacity .7s, transform .7s; }
 .reveal.in { opacity: 1; transform: none; }
 
-@media (max-width: 960px) {
-  .hero, .privacy, .vision, .oss { grid-template-columns: 1fr; }
-  .grid, .steps { grid-template-columns: 1fr 1fr; }
+@media (max-width: 1000px) {
+  .privacy, .vision, .oss { grid-template-columns: minmax(0, 1fr); }
+  .grid, .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   nav .links { display: none; }
+  .win-body { grid-template-columns: minmax(0, 1fr); }
+  .w-side { display: none; }
 }
-@media (max-width: 640px) {
-  .grid, .steps, .split { grid-template-columns: 1fr; }
-  .lines { border-inline-end: 0; border-bottom: 1px solid var(--line); }
-  .pipe { grid-template-columns: 1fr 1fr; }
-  .node:nth-child(2)::after { display: none; }
-  .oss { padding: 26px; }
+@media (max-width: 680px) {
+  body { font-size: 16px; }
+  .hero { padding-top: 48px; }
+  .grid, .steps, .split { grid-template-columns: minmax(0, 1fr); }
+  .notes { border-inline-end: 0; border-bottom: 1px solid var(--border); }
+  .pipe { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .node:nth-child(2)::after, .packet { display: none; }
+  .oss { padding: 28px 22px; }
+  section { padding: 64px 0; }
+  nav .gh span { display: none; }
+  .w-meta { margin-inline-start: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -200,25 +330,55 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
 </style>
 </head>
 <body>
-<div class="sky" aria-hidden="true"></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<!-- Lucide icons (ISC licence, https://lucide.dev), inlined so the page loads nothing from elsewhere -->
+<symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="i-rotate-cw" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.520 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+<symbol id="i-laptop" viewBox="0 0 24 24"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/></symbol>
+<symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></symbol>
+<symbol id="i-audio-lines" viewBox="0 0 24 24"><path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/></symbol>
+<symbol id="i-cpu" viewBox="0 0 24 24"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
+<symbol id="i-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+<symbol id="i-cloud-off" viewBox="0 0 24 24"><path d="M10.94 5.274A7 7 0 0 1 15.710 10h1.79a4.5 4.5 0 0 1 4.222 6.057"/><path d="M18.796 18.81A4.5 4.5 0 0 1 17.5 19H9A7 7 0 0 1 5.79 5.78"/><path d="m2 2 20 20"/></symbol>
+<symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.160 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.160z"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol>
+<symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
+<symbol id="i-calendar-clock" viewBox="0 0 24 24"><path d="M16 14v2.2l1.6 1"/><path d="M16 2v3"/><path d="M21 7.338V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2h2.338"/><path d="M3 9h5.859"/><path d="M8 2v3"/><circle cx="16" cy="16" r="6"/></symbol>
+<symbol id="i-arrow-up-right" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
+<symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></symbol>
+<symbol id="i-users-round" viewBox="0 0 24 24"><path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></symbol>
+<symbol id="i-captions" viewBox="0 0 24 24"><rect width="18" height="14" x="3" y="5" rx="2" ry="2"/><path d="M7 15h4M15 15h2M7 11h2M13 11h4"/></symbol>
+<symbol id="i-circle-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"/><path d="M20 2v4"/><path d="M22 4h-4"/><circle cx="4" cy="20" r="2"/></symbol>
+</svg>
 
 <nav>
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Modwen home">
-      <span class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20"><g fill="#f5b544"><rect x="2" y="7" width="2.6" height="6" rx="1.3"/><rect x="6.4" y="4" width="2.6" height="12" rx="1.3"/><rect x="10.8" y="1.5" width="2.6" height="17" rx="1.3"/><rect x="15.2" y="5.5" width="2.6" height="9" rx="1.3"/></g></svg></span>
-      Modwen <span class="ar">مُدوَّن</span>
+      <span class="mark" aria-hidden="true"><i style="height:8px"></i><i style="height:14px"></i><i style="height:18px"></i><i style="height:11px"></i></span>
+      <b>Modwen</b> <small>مُدوَّن</small>
     </a>
     <div class="links">
       <a href="#demo" data-i18n="nav.demo">Demo</a>
       <a href="#privacy" data-i18n="nav.privacy">Privacy</a>
       <a href="#features" data-i18n="nav.features">Features</a>
+      <a href="#included" data-i18n="nav.included">What's included</a>
       <a href="#next" data-i18n="nav.next">What's next</a>
       <a href="#start" data-i18n="nav.start">Get started</a>
     </div>
-    <div class="lang" role="group" aria-label="Language">
-      <button data-lang="en" class="on">EN</button><button data-lang="ar" class="ar">عربي</button>
+    <div class="seg lang" role="group" aria-label="Language">
+      <button data-lang="en" class="on">EN</button><button data-lang="ar">عربي</button>
     </div>
-    <a class="btn small" data-repo href="#" target="_blank" rel="noopener">★ GitHub</a>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light / dark"><svg class="ic" id="theme-ic"><use href="#i-moon"/></svg></button>
+    <a class="btn small gh" data-repo href="#" target="_blank" rel="noopener"><svg class="ic"><use href="#i-star"/></svg><span>GitHub</span></a>
   </div>
 </nav>
 
@@ -226,37 +386,58 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
   <div class="wrap">
     <!-- HERO -->
     <div class="hero">
-      <div>
-        <span class="eyebrow" data-i18n="hero.eyebrow">🔒 Open source · runs 100% on your computer</span>
-        <h1><span data-i18n="hero.h1a">Say it.</span><br><span class="grad" data-i18n="hero.h1b">See it.</span></h1>
-        <p class="sub-ar" data-i18n="hero.sub">تكلّم… والباقي مُدوَّن</p>
-        <p class="lead" data-i18n="hero.lead">Modwen listens to your meetings in Arabic, English, or both in the same sentence, and turns them into notes, decisions and action items with real deadlines. No cloud. No account. Your voice never leaves your machine.</p>
-        <div class="ctas">
-          <a class="btn gold" data-repo="/releases/latest" href="#start" data-i18n="hero.download">⇩ Download for macOS &amp; Windows</a>
-          <a class="btn" href="#demo" data-i18n="hero.watch">▶ Watch it work</a>
-        </div>
-        <div class="trust"><span data-i18n="hero.t1">Gulf · Levantine · Egyptian · MSA</span><span data-i18n="hero.t2">Works with Meet, Teams &amp; in-person</span><span data-i18n="hero.t3">Apache-2.0</span></div>
+      <span class="eyebrow"><svg class="ic"><use href="#i-lock"/></svg><span data-i18n="hero.eyebrow">Open source · runs 100% on your computer</span></span>
+      <h1><span data-i18n="hero.h1a">Say it.</span> <span class="hl" data-i18n="hero.h1b">See it.</span></h1>
+      <p class="sub-ar" data-i18n="hero.sub">تكلّم… والباقي مُدوَّن</p>
+      <p class="lead" data-i18n="hero.lead">Modwen listens to your meetings in Arabic, English, or both in the same sentence, and turns them into notes, decisions and action items with real deadlines. No cloud. No account. Your voice never leaves your machine.</p>
+      <div class="ctas">
+        <a class="btn primary" data-repo="/releases/latest" href="#start"><svg class="ic"><use href="#i-download"/></svg><span data-i18n="hero.download">Download for macOS &amp; Windows</span></a>
+        <a class="btn" href="#demo"><svg class="ic fill"><use href="#i-play"/></svg><span data-i18n="hero.watch">Watch it work</span></a>
+      </div>
+      <div class="trust">
+        <span><svg class="ic"><use href="#i-check"/></svg><span data-i18n="hero.t1">Gulf · Levantine · Egyptian · MSA</span></span>
+        <span><svg class="ic"><use href="#i-check"/></svg><span data-i18n="hero.t2">Works with Meet, Teams &amp; in-person</span></span>
+        <span><svg class="ic"><use href="#i-check"/></svg><span data-i18n="hero.t3">Apache-2.0</span></span>
       </div>
 
-      <!-- LIVE DEMO -->
-      <div class="demo" id="demo" aria-label="Animated demo of Modwen turning a bilingual meeting into notes">
-        <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>
-          <span style="margin-inline-start:8px" data-i18n="demo.title">Sprint sync · Google Meet</span>
-          <span class="rec" id="clock">REC 00:00</span></div>
-        <div class="wave idle" id="wave" aria-hidden="true"></div>
-        <div class="split">
-          <div class="lines" id="lines"></div>
-          <div class="notes">
-            <h5 data-i18n="demo.decisions">Decisions</h5>
-            <div class="item" id="n-dec"><span data-i18n="demo.dec1">✓ Ship the MVP on Thursday</span><span class="chip" data-seg="2">↗ 00:12</span></div>
-            <h5 data-i18n="demo.actions">Action items</h5>
-            <div class="item" id="n-a1"><span><span class="owner">Mohammad</span> · <span data-i18n="demo.a1">deliver the MVP</span></span><span class="due" id="due1"><s>بكرة</s></span></div>
-            <div class="item" id="n-a2"><span><span class="owner" style="color:#7fd6c4">Lina</span> · <span data-i18n="demo.a2">finish QA</span></span><span class="due" id="due2"><s>Wednesday</s></span></div>
-            <h5 data-i18n="demo.questions">Open questions</h5>
-            <div class="item" id="n-q"><span data-i18n="demo.q1">Who updates the client?</span><span class="chip" data-seg="5">↗ 00:31</span></div>
+      <!-- LIVE DEMO: a miniature of the real meeting page -->
+      <div class="win" id="demo" aria-label="Animated demo of Modwen turning a bilingual meeting into notes">
+        <div class="win-bar"><i></i><i></i><i></i><span class="url">127.0.0.1 · Modwen</span></div>
+        <div class="win-body">
+          <aside class="w-side" aria-hidden="true">
+            <span class="brand"><span class="mark"><i style="height:7px"></i><i style="height:12px"></i><i style="height:16px"></i><i style="height:10px"></i></span><b>Modwen</b></span>
+            <span class="w-rec"><svg class="ic"><use href="#i-mic"/></svg><span data-i18n="demo.record">Record a meeting</span></span>
+            <span class="w-group" data-i18n="demo.today">Today</span>
+            <span class="w-item on"><span data-i18n="demo.title">Sprint sync · Google Meet</span><small>10:00 · EN AR</small></span>
+            <span class="w-item"><span data-i18n="demo.m2">Client demo prep</span><small>09:15 · 24 min</small></span>
+            <span class="w-group" data-i18n="demo.yesterday">Yesterday</span>
+            <span class="w-item"><span class="ar" dir="rtl">اجتماع التخطيط الأسبوعي</span><small>16:30 · 52 min</small></span>
+            <span class="w-item"><span dir="ltr">1:1 with Lina</span><small>11:00 · 18 min</small></span>
+          </aside>
+          <div class="w-main">
+            <div class="w-head">
+              <h4 data-i18n="demo.title">Sprint sync · Google Meet</h4>
+              <div class="w-meta"><span class="chip">EN</span><span class="chip">AR</span><span class="pill-rec" id="clock">REC 00:00</span></div>
+            </div>
+            <div class="split">
+              <div class="notes">
+                <h5 data-i18n="demo.decisions">Decisions</h5>
+                <div class="item" id="n-dec"><span data-i18n="demo.dec1">Ship the MVP on Thursday</span><button class="ev" data-seg="2"><svg class="ic"><use href="#i-arrow-up-right"/></svg>00:12</button></div>
+                <h5 data-i18n="demo.actions">Action items</h5>
+                <div class="item act" id="n-a1"><span><span class="av" style="background:var(--sp4)">M</span><span data-i18n="demo.a1">deliver the MVP</span></span><span class="due" id="due1"></span></div>
+                <div class="item act" id="n-a2"><span><span class="av" style="background:var(--sp2)">L</span><span data-i18n="demo.a2">finish QA</span></span><span class="due" id="due2"></span></div>
+                <h5 data-i18n="demo.questions">Open questions</h5>
+                <div class="item" id="n-q"><span data-i18n="demo.q1">Who updates the client?</span><button class="ev" data-seg="5"><svg class="ic"><use href="#i-arrow-up-right"/></svg>00:31</button></div>
+              </div>
+              <div class="tr">
+                <div class="wave idle" id="wave" aria-hidden="true"></div>
+                <div class="lines" id="lines"></div>
+              </div>
+            </div>
+            <div class="w-foot"><span><svg class="ic"><use href="#i-lock"/></svg><span data-i18n="demo.local">Processed locally: Whisper + Qwen on this laptop</span></span>
+              <button id="replay" type="button"><svg class="ic"><use href="#i-rotate-cw"/></svg><span data-i18n="demo.replay">Replay</span></button></div>
           </div>
         </div>
-        <div class="foot"><span data-i18n="demo.local">🔒 Processed locally: Whisper + Qwen on this laptop</span><button id="replay" data-i18n="demo.replay">↻ Replay</button></div>
       </div>
     </div>
   </div>
@@ -271,30 +452,30 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
         <h2 data-i18n="priv.h2">Everything happens inside your machine.</h2>
         <p class="sect-lead" data-i18n="priv.lead">Recording, transcription, speaker detection and the AI that writes your notes all run on your own computer. Modwen refuses to talk to any server that isn't localhost. That rule is in the code, not in a policy.</p>
         <div class="facts">
-          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f1"><b>No cloud, no account, no telemetry.</b> Nothing to sign up for, nothing phoning home.</span></div>
-          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f2"><b>Encrypted recordings.</b> A separate AES-256 key for every meeting; delete the meeting and the key is gone.</span></div>
-          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f3"><b>Consent built in.</b> A ready-made notice in Arabic and English, every time you press Start.</span></div>
-          <div class="fact"><span class="dot">✓</span><span data-i18n="priv.f4"><b>Even this page</b> loads no fonts, trackers or scripts from anywhere else.</span></div>
+          <div class="fact"><span class="dot"><svg class="ic"><use href="#i-check"/></svg></span><span data-i18n="priv.f1"><b>No cloud, no account, no telemetry.</b> Nothing to sign up for, nothing phoning home.</span></div>
+          <div class="fact"><span class="dot"><svg class="ic"><use href="#i-check"/></svg></span><span data-i18n="priv.f2"><b>Encrypted recordings.</b> A separate AES-256 key for every meeting; delete the meeting and the key is gone.</span></div>
+          <div class="fact"><span class="dot"><svg class="ic"><use href="#i-check"/></svg></span><span data-i18n="priv.f3"><b>Consent built in.</b> A ready-made notice in Arabic and English, every time you press Start.</span></div>
+          <div class="fact"><span class="dot"><svg class="ic"><use href="#i-check"/></svg></span><span data-i18n="priv.f4"><b>Even this page</b> loads nothing from anywhere else: its fonts and icons ship with it, and there are no trackers.</span></div>
         </div>
       </div>
       <div>
         <div class="machine">
-          <span class="label" data-i18n="priv.machine">💻 Your computer</span>
+          <span class="label"><svg class="ic"><use href="#i-laptop"/></svg><span data-i18n="priv.machine">Your computer</span></span>
           <div class="pipe">
-            <div class="node"><span class="ico">🎙</span><span data-i18n="priv.n1">Your meeting</span><small>mic + system audio</small></div>
-            <div class="node"><span class="ico">〰️</span>Whisper<small data-i18n="priv.n2">speech → text</small></div>
-            <div class="node"><span class="ico">🧠</span>Qwen<small data-i18n="priv.n3">local AI model</small></div>
-            <div class="node"><span class="ico">📝</span><span data-i18n="priv.n4">Your notes</span><small data-i18n="priv.n4s">stored on your computer</small></div>
+            <div class="node"><span class="nic"><svg class="ic"><use href="#i-mic"/></svg></span><span data-i18n="priv.n1">Your meeting</span><small data-i18n="priv.n1s">mic + system audio</small></div>
+            <div class="node"><span class="nic"><svg class="ic"><use href="#i-audio-lines"/></svg></span>Whisper<small data-i18n="priv.n2">speech → text</small></div>
+            <div class="node"><span class="nic"><svg class="ic"><use href="#i-cpu"/></svg></span>Qwen<small data-i18n="priv.n3">local AI model</small></div>
+            <div class="node"><span class="nic"><svg class="ic"><use href="#i-file-text"/></svg></span><span data-i18n="priv.n4">Your notes</span><small data-i18n="priv.n4s">stored on your computer</small></div>
+            <span class="packet" aria-hidden="true"></span>
           </div>
-          <span class="packet" aria-hidden="true"></span>
         </div>
-        <div class="cloud"><span class="x" aria-hidden="true">☁️</span><span data-i18n="priv.cloud">The cloud never gets a single word.</span></div>
+        <div class="cloud"><svg class="ic"><use href="#i-cloud-off"/></svg><span data-i18n="priv.cloud">The cloud never gets a single word.</span></div>
       </div>
     </div>
   </section>
 
   <!-- FEATURES -->
-  <section id="features">
+  <section id="features" class="alt">
     <div class="wrap">
       <div class="reveal">
         <div class="kicker" data-i18n="feat.kicker">Built for how we actually talk</div>
@@ -302,19 +483,45 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
         <p class="sect-lead" data-i18n="feat.lead">Most meeting tools break when a sentence starts in Arabic and ends in English. Modwen was designed for exactly that.</p>
       </div>
       <div class="grid">
-        <div class="card reveal"><div class="visual ar" style="direction:rtl">«خلاص اتفقنا، بكرة تسليم الـ <span style="color:#a9c1ff;font-family:var(--font)">MVP</span>»</div>
+        <div class="card reveal"><div class="visual" dir="rtl" style="font-family:var(--display);font-size:16px">«خلاص اتفقنا، بكرة تسليم الـ <span style="color:var(--accent)">MVP</span>»</div>
           <h3 data-i18n="feat.c1h">Code-switching, natively</h3><p data-i18n="feat.c1p">Whisper large-v3 with a per-sentence language rule keeps English terms in English and Arabic in Arabic: Gulf, Levantine, Egyptian and MSA.</p></div>
-        <div class="card reveal"><div class="visual"><span class="pill g ar">بكرة</span>→<span class="pill">Oct 18</span><span class="pill g">Wednesday</span>→<span class="pill">Oct 21</span></div>
+        <div class="card reveal"><div class="visual" dir="ltr"><span class="tag a">بكرة</span><svg class="ic arrow"><use href="#i-arrow-right"/></svg><span class="tag mono"><svg class="ic"><use href="#i-calendar-clock"/></svg>Oct 18</span>
+          <span style="flex-basis:100%;height:0"></span><span class="tag a">Wednesday</span><svg class="ic arrow"><use href="#i-arrow-right"/></svg><span class="tag mono"><svg class="ic"><use href="#i-calendar-clock"/></svg>Oct 21</span></div>
           <h3 data-i18n="feat.c2h">Deadlines it really understands</h3><p data-i18n="feat.c2p">"بكرة", "الخميس الجاي", "by end of day": resolved to real dates in your timezone. Invented deadlines are caught and dropped.</p></div>
-        <div class="card reveal"><div class="visual"><span>Ship on Thursday</span><span class="chip">↗ 01:15</span></div>
+        <div class="card reveal"><div class="visual"><span data-i18n="feat.c3v">Ship on Thursday</span><span class="ev"><svg class="ic"><use href="#i-arrow-up-right"/></svg>01:15</span></div>
           <h3 data-i18n="feat.c3h">Notes that cite their source</h3><p data-i18n="feat.c3p">Every decision and action item links to the exact moment it was said. Click it, and the transcript jumps there and plays the audio.</p></div>
-        <div class="card reveal"><div class="visual"><span class="pill b">llama.cpp</span><span class="pill b">Ollama</span><span class="pill b">LM Studio</span><span class="pill b">vLLM</span></div>
+        <div class="card reveal"><div class="visual" dir="ltr"><span class="tag"><svg class="ic"><use href="#i-plug"/></svg>llama.cpp</span><span class="tag">Ollama</span><span class="tag">LM Studio</span><span class="tag">vLLM</span></div>
           <h3 data-i18n="feat.c4h">Your AI, your choice</h3><p data-i18n="feat.c4p">Let Modwen download and run Qwen for you with one click, or point it at any local OpenAI-compatible server you already use.</p></div>
-        <div class="card reveal"><div class="visual"><span class="pill">Google Meet</span><span class="pill">Teams</span><span class="pill" data-i18n="feat.inperson">In-person</span></div>
+        <div class="card reveal"><div class="visual"><span class="tag">Google Meet</span><span class="tag">Teams</span><span class="tag"><svg class="ic"><use href="#i-users-round"/></svg><span data-i18n="feat.inperson">In-person</span></span></div>
           <h3 data-i18n="feat.c5h">Any meeting, one click</h3><p data-i18n="feat.c5p">It captures your mic and the meeting audio on macOS and Windows, with live captions while you talk, and is ready for 2-hour meetings.</p></div>
-        <div class="card reveal"><div class="visual"><span style="font-size:26px">🔔</span><span><b data-i18n="feat.ready">Notes ready</b><br><span style="color:var(--muted);font-size:13px">3 decisions · 5 action items</span></span></div>
+        <div class="card reveal"><div class="visual"><div class="notif"><span class="nic"><svg class="ic"><use href="#i-bell"/></svg></span><span><b data-i18n="feat.ready">Notes ready</b><small data-i18n="feat.readys">3 decisions · 5 action items</small></span></div></div>
           <h3 data-i18n="feat.c6h">Stop. Get notified. Done.</h3><p data-i18n="feat.c6p">Press Stop and keep working. A notification tells you when the summary, decisions, owners and open questions are ready.</p></div>
       </div>
+    </div>
+  </section>
+
+  <!-- WHAT'S INCLUDED -->
+  <section id="included">
+    <div class="wrap">
+      <div class="inc-head reveal">
+        <div>
+          <div class="kicker" data-i18n="inc.kicker">What's included</div>
+          <h2 data-i18n="inc.h2">Everything, free and open source.</h2>
+          <p class="sect-lead" data-i18n="inc.lead">No trial, no account, no feature locked behind a plan. This is what Modwen does today, and what is coming next.</p>
+        </div>
+        <div class="inc-count" aria-live="polite">
+          <span><svg class="ic" style="color:var(--ok)"><use href="#i-circle-check"/></svg><b id="n-yes">0</b><span data-i18n="inc.today">available today</span></span>
+          <span><svg class="ic" style="color:var(--amber-text)"><use href="#i-clock"/></svg><b id="n-soon">0</b><span data-i18n="inc.next">coming soon</span></span>
+        </div>
+      </div>
+      <div class="table-wrap reveal">
+        <table class="inc">
+          <thead><tr><th data-i18n="inc.feature">Feature</th>
+            <th class="plan"><span data-i18n="inc.plan">Open source</span><small data-i18n="inc.planp">Free · Apache-2.0</small></th></tr></thead>
+          <tbody id="inc-rows"></tbody>
+        </table>
+      </div>
+      <p class="inc-note reveal" data-i18n="inc.note">Paid plans for teams may come later. Everything on this list stays in the free, open-source version.</p>
     </div>
   </section>
 
@@ -325,11 +532,11 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
         <div class="kicker" data-i18n="next.kicker">Coming next</div>
         <h2 data-i18n="next.h2">Voice in. Anything out.</h2>
         <p class="sect-lead" data-i18n="next.lead">Meetings are just the start. Next, Modwen turns what you say into what you need, live: slides, charts, documents.</p>
-        <div class="command"><span class="mic">🎙</span><span id="cmd">“Show me the gold price this year”</span></div><br>
-        <div class="command ar" style="direction:rtl"><span class="mic">🎙</span><span>«اعرض لي سعر الذهب لهذه السنة»</span></div>
+        <div class="command"><span class="mic"><svg class="ic"><use href="#i-mic"/></svg></span><span id="cmd">“Show me the gold price this year”</span></div><br>
+        <div class="command" dir="rtl"><span class="mic"><svg class="ic"><use href="#i-mic"/></svg></span><span>«اعرض لي سعر الذهب لهذه السنة»</span></div>
       </div>
       <div class="slide" id="slide">
-        <span class="badge" data-i18n="next.badge">generated live</span>
+        <span class="badge"><svg class="ic"><use href="#i-sparkles"/></svg><span data-i18n="next.badge">generated live</span></span>
         <h4 data-i18n="next.slideh">Gold, this year</h4>
         <div class="meta" data-i18n="next.slidem">monthly average · illustrative data</div>
         <div class="chart" id="chart"></div>
@@ -338,7 +545,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
   </section>
 
   <!-- START -->
-  <section id="start">
+  <section id="start" class="alt">
     <div class="wrap">
       <div class="reveal">
         <div class="kicker" data-i18n="start.kicker">Get started</div>
@@ -353,7 +560,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
         <button class="on" data-os="mac">macOS</button><button data-os="win">Windows</button><button data-os="dev" data-i18n="start.dev">From source</button>
       </div>
       <pre id="os-mac"><span class="c"># 1. download modwen-&lt;version&gt;.zip from Releases, unzip</span>
-<span class="c"># 2. first time only: right-click → Open</span>
+<span class="c"># 2. first time only, if macOS blocks it: System Settings → Privacy &amp; Security → Open Anyway</span>
 <span class="k">open</span> Modwen.command
 <span class="c"># the setup wizard opens in your browser: choose "Download Qwen for me"</span>
 <span class="c"># or connect your own local server, e.g. http://localhost:11434/v1 (Ollama)</span></pre>
@@ -382,8 +589,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
           </ul>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start">
-          <a class="btn gold" data-repo href="#" target="_blank" rel="noopener" data-i18n="oss.star">★ Star on GitHub</a>
-          <a class="btn" data-repo="/blob/main/CONTRIBUTING.md" href="#" target="_blank" rel="noopener" data-i18n="oss.contrib">Read the contributing guide →</a>
+          <a class="btn amber" data-repo href="#" target="_blank" rel="noopener"><svg class="ic"><use href="#i-star"/></svg><span data-i18n="oss.star">Star on GitHub</span></a>
+          <a class="btn" data-repo="/blob/main/CONTRIBUTING.md" href="#" target="_blank" rel="noopener"><span data-i18n="oss.contrib">Read the contributing guide</span><svg class="ic flip"><use href="#i-arrow-right"/></svg></a>
         </div>
       </div>
     </div>
@@ -404,8 +611,8 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
 
 <footer>
   <div class="wrap">
-    <div><span class="big-ar">مُدوَّن</span><div style="margin-top:8px" data-i18n="foot.tag">Say it. See it. Local-first voice-to-notes.</div></div>
-    <div style="display:flex;gap:18px;flex-wrap:wrap">
+    <div><span class="big-ar">مُدوَّن</span><div style="margin-top:10px" data-i18n="foot.tag">Say it. See it. Local-first voice-to-notes.</div></div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap">
       <a data-repo href="#" target="_blank" rel="noopener">GitHub</a>
       <a data-repo="/blob/main/docs/install.md" href="#" target="_blank" rel="noopener" data-i18n="foot.install">Install guide</a>
       <a data-repo="/blob/main/LICENSE" href="#" target="_blank" rel="noopener">Apache-2.0</a>
@@ -419,33 +626,52 @@ const REPO = "https://github.com/AbdullhRtima/modwen";
 document.querySelectorAll("[data-repo]").forEach((a) => (a.href = REPO + (a.getAttribute("data-repo") || "")));
 document.querySelectorAll("[data-repo-text]").forEach((s) => (s.textContent = REPO));
 
+// ---------- theme: follows the system until you choose ----------
+const themeBtn = document.getElementById("theme");
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+function paintTheme() { document.querySelector("#theme-ic use").setAttribute("href", isDark() ? "#i-sun" : "#i-moon"); }
+try { const t = localStorage.getItem("modwen-theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) { /* storage unavailable */ }
+themeBtn.addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("modwen-theme", next); } catch (e) { /* storage unavailable */ }
+  paintTheme();
+});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paintTheme);
+paintTheme();
+
 // ---------- i18n ----------
 const AR = {
-  "nav.demo": "عرض حي", "nav.privacy": "الخصوصية", "nav.features": "المزايا", "nav.next": "القادم", "nav.start": "ابدأ",
-  "hero.eyebrow": "🔒 مفتوح المصدر · يعمل بالكامل على جهازك",
+  "nav.demo": "عرض حي", "nav.included": "ما المتاح", "nav.privacy": "الخصوصية", "nav.features": "المزايا", "nav.next": "القادم", "nav.start": "ابدأ",
+  "hero.eyebrow": "مفتوح المصدر · يعمل بالكامل على جهازك",
   "hero.h1a": "تكلّم.", "hero.h1b": "والباقي مُدوَّن.", "hero.sub": "<span dir=\"ltr\">Say it. See it.</span>",
   "hero.lead": "يستمع مُدوَّن لاجتماعاتك بالعربية أو الإنجليزية أو بالاثنتين في نفس الجملة، ويحوّلها إلى ملاحظات وقرارات ومهام بمواعيد حقيقية. بلا سحابة، بلا حساب. صوتك لا يغادر جهازك أبداً.",
-  "hero.download": "⇩ حمّل لماك وويندوز", "hero.watch": "▶ شاهده يعمل",
+  "hero.download": "حمّل لماك وويندوز", "hero.watch": "شاهده يعمل",
   "hero.t1": "خليجي · شامي · مصري · فصحى", "hero.t2": "يعمل مع Meet وTeams والاجتماعات الحضورية", "hero.t3": "Apache-2.0",
-  "demo.title": "اجتماع الفريق · Google Meet", "demo.decisions": "القرارات", "demo.dec1": "✓ إطلاق الـ MVP يوم الخميس",
+  "demo.record": "سجّل اجتماعاً", "demo.today": "اليوم", "demo.yesterday": "أمس", "demo.m2": "التحضير لعرض العميل",
+  "demo.title": "اجتماع الفريق · Google Meet", "demo.decisions": "القرارات", "demo.dec1": "إطلاق الـ MVP يوم الخميس",
   "demo.actions": "المهام", "demo.a1": "تسليم الـ MVP", "demo.a2": "إنهاء اختبارات الجودة", "demo.questions": "أسئلة مفتوحة",
-  "demo.q1": "من سيبلّغ العميل؟", "demo.local": "🔒 تمت المعالجة محلياً: Whisper وQwen على هذا الجهاز", "demo.replay": "↻ إعادة",
+  "demo.q1": "من سيبلّغ العميل؟", "demo.local": "تمت المعالجة محلياً: Whisper وQwen على هذا الجهاز", "demo.replay": "إعادة",
   "priv.kicker": "الخصوصية في التصميم", "priv.h2": "كل شيء يحدث داخل جهازك.",
   "priv.lead": "التسجيل والتفريغ وتمييز المتحدثين والذكاء الاصطناعي الذي يكتب ملاحظاتك، كلها تعمل على جهازك. مُدوَّن يرفض الاتصال بأي خادم غير localhost، وهذه قاعدة في الكود وليست وعداً في سياسة.",
   "priv.f1": "<b>بلا سحابة، بلا حساب، بلا تتبّع.</b> لا تسجيل، ولا شيء يتصل بالخارج.",
   "priv.f2": "<b>تسجيلات مشفّرة.</b> مفتاح AES-256 مستقل لكل اجتماع، احذف الاجتماع ويختفي المفتاح.",
   "priv.f3": "<b>الموافقة مدمجة.</b> تنبيه جاهز بالعربية والإنجليزية في كل مرة تضغط فيها ابدأ.",
-  "priv.f4": "<b>حتى هذه الصفحة</b> لا تحمّل خطوطاً أو أدوات تتبّع أو سكربتات من أي مكان آخر.",
-  "priv.machine": "💻 جهازك", "priv.n1": "اجتماعك", "priv.n2": "كلام ← نص", "priv.n3": "نموذج ذكاء محلي", "priv.n4": "ملاحظاتك", "priv.n4s": "محفوظة على جهازك",
+  "priv.f4": "<b>حتى هذه الصفحة</b> لا تحمّل شيئاً من أي مكان آخر: خطوطها وأيقوناتها معها، ولا أدوات تتبّع.",
+  "priv.machine": "جهازك", "priv.n1": "اجتماعك", "priv.n1s": "الميكروفون + صوت النظام", "priv.n2": "كلام ← نص", "priv.n3": "نموذج ذكاء محلي", "priv.n4": "ملاحظاتك", "priv.n4s": "محفوظة على جهازك",
   "priv.cloud": "السحابة لا تحصل على كلمة واحدة.",
   "feat.kicker": "مصمَّم لطريقة كلامنا الحقيقية", "feat.h2": "عربي، إنجليزي، وكل ما بينهما.",
   "feat.lead": "معظم أدوات الاجتماعات تتعطل عندما تبدأ الجملة بالعربية وتنتهي بالإنجليزية. مُدوَّن صُمّم لهذا بالضبط.",
   "feat.c1h": "التبديل بين اللغتين بشكل طبيعي", "feat.c1p": "Whisper large-v3 مع قاعدة لغة لكل جملة تُبقي المصطلحات الإنجليزية بالإنجليزية والعربية بالعربية: خليجي، شامي، مصري، وفصحى.",
   "feat.c2h": "يفهم المواعيد فعلاً", "feat.c2p": "«بكرة»، «الخميس الجاي»، «by end of day»: تتحول إلى تواريخ حقيقية بتوقيتك. والمواعيد المخترعة تُكتشف وتُحذف.",
-  "feat.c3h": "ملاحظات تذكر مصدرها", "feat.c3p": "كل قرار ومهمة مرتبطة باللحظة التي قيلت فيها. اضغط فينتقل النص إليها ويشغّل الصوت.",
+  "feat.c3v": "الإطلاق يوم الخميس", "feat.c3h": "ملاحظات تذكر مصدرها", "feat.c3p": "كل قرار ومهمة مرتبطة باللحظة التي قيلت فيها. اضغط فينتقل النص إليها ويشغّل الصوت.",
   "feat.c4h": "نموذجك، اختيارك", "feat.c4p": "دع مُدوَّن يحمّل Qwen ويشغّله بضغطة واحدة، أو اربطه بأي خادم محلي متوافق مع OpenAI تستخدمه.",
   "feat.inperson": "حضوري", "feat.c5h": "أي اجتماع، بضغطة واحدة", "feat.c5p": "يلتقط صوتك وصوت الاجتماع على ماك وويندوز، مع نص مباشر أثناء الحديث، وجاهز لاجتماعات الساعتين.",
-  "feat.ready": "الملاحظات جاهزة", "feat.c6h": "أوقف. استلم إشعاراً. انتهى.", "feat.c6p": "اضغط إيقاف وتابع عملك. إشعار يخبرك عندما يجهز الملخص والقرارات والمسؤولون والأسئلة المفتوحة.",
+  "feat.ready": "الملاحظات جاهزة", "feat.readys": "3 قرارات · 5 مهام", "feat.c6h": "أوقف. استلم إشعاراً. انتهى.", "feat.c6p": "اضغط إيقاف وتابع عملك. إشعار يخبرك عندما يجهز الملخص والقرارات والمسؤولون والأسئلة المفتوحة.",
+  "inc.kicker": "ما المتاح", "inc.h2": "كل شيء، مجاني ومفتوح المصدر.",
+  "inc.lead": "بلا فترة تجربة، بلا حساب، ولا ميزة مقفلة خلف خطة. هذا ما يفعله مُدوَّن اليوم، وما هو قادم.",
+  "inc.today": "متاح اليوم", "inc.next": "قريباً", "inc.feature": "الميزة", "inc.plan": "مفتوح المصدر", "inc.planp": "مجاني · Apache-2.0",
+  "inc.note": "قد تأتي لاحقاً خطط مدفوعة للفرق. كل ما في هذه القائمة يبقى في النسخة المجانية مفتوحة المصدر.",
   "next.kicker": "القادم", "next.h2": "صوت يدخل. أي شيء يخرج.",
   "next.lead": "الاجتماعات مجرد البداية. بعدها يحوّل مُدوَّن ما تقوله إلى ما تحتاجه، مباشرة: شرائح، رسوم بيانية، مستندات.",
   "next.badge": "يُولَّد مباشرة", "next.slideh": "الذهب هذه السنة", "next.slidem": "متوسط شهري · بيانات توضيحية",
@@ -454,7 +680,7 @@ const AR = {
   "start.s3h": "تكلّم", "start.s3p": "اضغط ابدأ في اجتماعك القادم. اضغط إيقاف. اقرأ ملاحظاتك.", "start.dev": "من المصدر",
   "oss.kicker": "مفتوح المصدر · Apache-2.0", "oss.h2": "ساعد مُدوَّن على فهم كل صوت عربي.",
   "oss.l1": "سجّل عينة قصيرة بلهجتك (بموافقة): خليجي، شامي، مصري، مغاربي.", "oss.l2": "جرّبه على ويندوز ولينكس وأخبرنا بما يتعطل.", "oss.l3": "ابنِ معنا طبقة الصوت ← الشرائح.",
-  "oss.star": "★ ادعمه على GitHub", "oss.contrib": "اقرأ دليل المساهمة ←",
+  "oss.star": "ادعمه على GitHub", "oss.contrib": "اقرأ دليل المساهمة",
   "faq.h2": "أسئلة", "faq.q1": "هل يبقى كل شيء فعلاً بدون إنترنت؟", "faq.a1": "نعم. بعد تحميل النماذج مرة واحدة يعمل مُدوَّن والإنترنت مقطوع. خوادم الذكاء يجب أن تكون localhost وأي شيء آخر يُرفض في الكود.",
   "faq.q2": "ما الجهاز الذي أحتاجه؟", "faq.a2": "16 غيغابايت ذاكرة كحد أدنى. الأفضل: ماك بمعالج Apple وذاكرة 32 غيغابايت، أو حاسوب ويندوز ببطاقة NVIDIA ‏(12 غيغابايت أو أكثر). مُدوَّن يكتشف جهازك ويختار النماذج المناسبة.",
   "faq.q3": "ما مدى جودة العربية؟", "faq.a3": "التفريغ يستخدم Whisper large-v3 الذي يتعامل جيداً مع الفصحى، وبشكل متزايد مع اللهجات الخليجية والشامية والمصرية، بما فيها الكلمات الإنجليزية داخل الجمل العربية. الملخصات أفضل مع Qwen3-8B أو أكبر.",
@@ -476,44 +702,121 @@ function setLang(l) {
   });
   document.querySelectorAll(".lang button").forEach((b) => b.classList.toggle("on", b.dataset.lang === l));
   try { localStorage.setItem("modwen-lang", l); } catch (e) { /* storage unavailable */ }
+  renderIncluded();
   runDemo();
 }
 document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => setLang(b.dataset.lang)));
+
+// ---------- what's included (true to the code today; "soon" items come from docs/planning/03-roadmap.md) ----------
+const Y = 1, S = 0;
+const FEATURES = [
+  ["Recording & transcription", "التسجيل والتفريغ", [
+    [Y, "Records your mic and the meeting audio", "يسجّل الميكروفون وصوت الاجتماع", "Google Meet, Teams, Zoom or in the room", "Google Meet وTeams وZoom أو حضورياً"],
+    [Y, "Live captions while you talk", "نص مباشر أثناء الحديث", "", ""],
+    [Y, "Arabic and English in the same sentence", "العربية والإنجليزية في نفس الجملة", "Gulf, Levantine, Egyptian and MSA", "خليجي، شامي، مصري، وفصحى"],
+    [Y, "Import recordings", "استيراد التسجيلات", "WAV, FLAC, MP3, OGG, AIFF", "WAV وFLAC وMP3 وOGG وAIFF"],
+    [Y, "GPU acceleration", "تسريع بكرت الشاشة", "Apple Silicon (MLX) and NVIDIA (CUDA)", "Apple Silicon ‏(MLX) وNVIDIA ‏(CUDA)"],
+    [Y, "Glossary for names and product terms", "مسرد للأسماء والمصطلحات", "", ""],
+    [S, "Video import (MP4, MOV, M4A and more)", "استيراد الفيديو (MP4 وMOV وM4A وغيرها)", "", ""],
+  ]],
+  ["Speakers", "المتحدثون", [
+    [Y, "Speaker identification", "تمييز المتحدثين", "Who said what, after the meeting", "من قال ماذا، بعد الاجتماع"],
+    [Y, "Rename, merge and re-detect speakers", "إعادة تسمية المتحدثين ودمجهم وإعادة اكتشافهم", "", ""],
+    [Y, "Voice profiles", "بصمات الصوت", "Recognises people in later meetings, with their consent", "يتعرّف على الأشخاص لاحقاً، بموافقتهم"],
+    [Y, "People list: rename once, every meeting follows", "قائمة الأشخاص: غيّر الاسم مرة وتتغير كل الاجتماعات", "", ""],
+    [S, "Live speaker names during the meeting", "أسماء المتحدثين مباشرة أثناء الاجتماع", "", ""],
+  ]],
+  ["AI notes", "ملاحظات الذكاء الاصطناعي", [
+    [Y, "Local AI, set up in one click", "ذكاء محلي، بضغطة واحدة", "Qwen on llama.cpp, on your computer", "Qwen على llama.cpp، على جهازك"],
+    [Y, "Bring your own local model", "استخدم نموذجك المحلي", "Ollama, LM Studio, llama.cpp, vLLM", "Ollama وLM Studio وllama.cpp وvLLM"],
+    [Y, "Summary in English, Arabic or both", "ملخص بالإنجليزية أو العربية أو كليهما", "", ""],
+    [Y, "Decisions, action items, owners and open questions", "القرارات والمهام والمسؤولون والأسئلة المفتوحة", "", ""],
+    [Y, "Real deadlines from “بكرة” or “next Thursday”", "مواعيد حقيقية من «بكرة» أو «الخميس الجاي»", "", ""],
+    [Y, "Every point links to the moment it was said", "كل نقطة مرتبطة بلحظة قولها", "", ""],
+    [Y, "Regenerate notes, keeping your edits", "إعادة توليد الملاحظات مع الحفاظ على تعديلاتك", "", ""],
+    [S, "Templates: stand-up, 1:1, sales, interview, custom", "قوالب: اجتماع يومي، 1:1، مبيعات، مقابلة، مخصص", "", ""],
+    [S, "Chat with your meetings", "تحدّث مع اجتماعاتك", "Local answers with links to the source", "إجابات محلية مع روابط للمصدر"],
+  ]],
+  ["Work with your notes", "العمل على ملاحظاتك", [
+    [Y, "Edit notes and transcript in place", "عدّل الملاحظات والنص مباشرة", "", ""],
+    [Y, "Search the transcript, play from any line", "ابحث في النص وشغّل من أي سطر", "", ""],
+    [Y, "Copy or export as Markdown", "نسخ أو تصدير Markdown", "", ""],
+    [Y, "“Notes ready” notification", "إشعار «الملاحظات جاهزة»", "", ""],
+    [Y, "Use it from other devices on your network", "استخدمه من أجهزة أخرى على شبكتك", "", ""],
+    [Y, "Command-line tools", "أدوات سطر الأوامر", "", ""],
+    [S, "PDF and DOCX export with correct Arabic", "تصدير PDF وDOCX بعربية صحيحة", "", ""],
+    [S, "Auto-detect meetings, start and stop for you", "اكتشاف الاجتماعات تلقائياً، وبدء وإيقاف التسجيل", "", ""],
+    [S, "Calendar: titles and attendee names", "التقويم: العناوين وأسماء الحضور", "", ""],
+    [S, "Search and replace across all meetings", "بحث واستبدال في كل الاجتماعات", "", ""],
+    [S, "Local MCP server and webhooks", "خادم MCP محلي وwebhooks", "", ""],
+  ]],
+  ["Privacy", "الخصوصية", [
+    [Y, "Works fully offline after the first download", "يعمل دون إنترنت بالكامل بعد التنزيل الأول", "", ""],
+    [Y, "Cloud AI blocked in code", "الذكاء السحابي ممنوع في الكود", "Only localhost endpoints are accepted", "تُقبل العناوين المحلية فقط"],
+    [Y, "Encrypted recordings, a key per meeting", "تسجيلات مشفّرة، مفتاح لكل اجتماع", "", ""],
+    [Y, "Automatic clean-up of old data", "حذف تلقائي للبيانات القديمة", "", ""],
+    [Y, "Consent notice in Arabic and English", "تنبيه موافقة بالعربية والإنجليزية", "", ""],
+    [S, "Encrypted notes database", "قاعدة ملاحظات مشفّرة", "", ""],
+  ]],
+  ["Platforms", "الأنظمة", [
+    [Y, "macOS and Windows", "ماك وويندوز", "Runs in your browser, served from your computer", "يعمل في متصفحك، من جهازك"],
+    [S, "Desktop app with installers and updates", "تطبيق سطح مكتب مع مثبّت وتحديثات", "", ""],
+    [S, "Linux", "لينكس", "", ""],
+  ]],
+];
+function renderIncluded() {
+  const ar = lang === "ar";
+  let yes = 0, soon = 0;
+  document.getElementById("inc-rows").innerHTML = FEATURES.map(([gEn, gAr, rows]) =>
+    `<tr class="grp"><td colspan="2">${ar ? gAr : gEn}</td></tr>` + rows.map(([ok, en, arT, sEn, sAr]) => {
+      ok ? yes++ : soon++;
+      const sub = ar ? sAr : sEn;
+      const st = ok ? `<span class="yes"><svg class="ic"><use href="#i-circle-check"/></svg><span>${ar ? "متاح" : "Included"}</span></span>`
+        : `<span class="soon"><svg class="ic"><use href="#i-clock"/></svg>${ar ? "قريباً" : "Soon"}</span>`;
+      return `<tr><td class="fname" dir="auto">${ar ? arT : en}${sub ? `<small>${sub}</small>` : ""}</td><td class="st">${st}</td></tr>`;
+    }).join("")).join("");
+  document.getElementById("n-yes").textContent = yes;
+  document.getElementById("n-soon").textContent = soon;
+}
 
 // ---------- marquee ----------
 const words = ["بكرة عنا تسليم", "Thursday", "roadmap", "الخميس الجاي", "action items", "خلاص اتفقنا", "MVP", "شو الأخبار؟",
   "by end of day", "إن شاء الله", "QA", "Gulf · Levantine · Egyptian · MSA", "يعطيكم العافية", "decisions", "stand-up"];
 const track = document.getElementById("marquee");
-track.innerHTML = [...words, ...words].map((w) => `<span${/[؀-ۿ]/.test(w) ? ' class="ar"' : ""}>${w}</span>`).join("");
+track.innerHTML = [...words, ...words].map((w) => `<span>${w}</span>`).join("");
 
 // ---------- live demo ----------
 const SCRIPT = [
-  { who: "You", c: "#5b8cff", ts: "00:03", t: "Okay team, quick stand-up. شو الأخبار؟" },
-  { who: "Lina", c: "#7fd6c4", ts: "00:07", t: "الـ checklist جاهزة، فاضل بس الـ QA." },
-  { who: "You", c: "#5b8cff", ts: "00:12", t: "خلاص اتفقنا، we ship the MVP on Thursday." },
-  { who: "Mohammad", c: "#b9a6ff", ts: "00:18", t: "تمام، أنا بسلّم الـ MVP بكرة إن شاء الله." },
-  { who: "Lina", c: "#7fd6c4", ts: "00:24", t: "And I'll finish QA before Wednesday." },
-  { who: "You", c: "#5b8cff", ts: "00:31", t: "Who updates the client? مين بيكلمهم؟" },
+  { who: "You", c: "var(--sp1)", ts: "00:03", t: "Okay team, quick stand-up. شو الأخبار؟" },
+  { who: "Lina", c: "var(--sp2)", ts: "00:07", t: "الـ checklist جاهزة، فاضل بس الـ QA." },
+  { who: "You", c: "var(--sp1)", ts: "00:12", t: "خلاص اتفقنا، we ship the MVP on Thursday." },
+  { who: "Mohammad", c: "var(--sp4)", ts: "00:18", t: "تمام، أنا بسلّم الـ MVP بكرة إن شاء الله." },
+  { who: "Lina", c: "var(--sp2)", ts: "00:24", t: "And I'll finish QA before Wednesday." },
+  { who: "You", c: "var(--sp1)", ts: "00:31", t: "Who updates the client? مين بيكلمهم؟" },
 ];
+const WHO_AR = { You: "أنت", Lina: "لينا", Mohammad: "محمد" };
 const wave = document.getElementById("wave");
 wave.innerHTML = Array.from({ length: 48 }, () => "<b></b>").join("");
 const bars = [...wave.children];
+const clock = document.getElementById("clock");
 let timers = [], waveTimer = null, clockTimer = null;
 function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
+function said(word, date) { return `<span class="said">${word}</span>` + (date ? `<b>${date}</b>` : ""); }
 function reset() {
   timers.forEach(clearTimeout); timers = [];
   clearInterval(waveTimer); clearInterval(clockTimer);
   document.getElementById("lines").innerHTML = "";
   document.querySelectorAll(".notes .item").forEach((i) => i.classList.remove("show"));
-  document.getElementById("due1").innerHTML = "<s>بكرة</s>";
-  document.getElementById("due2").innerHTML = "<s>Wednesday</s>";
+  document.getElementById("due1").innerHTML = said("بكرة");
+  document.getElementById("due2").innerHTML = said("Wednesday");
   wave.classList.add("idle");
+  clock.classList.remove("done");
 }
 function typeLine(i, done) {
   const s = SCRIPT[i];
   const el = document.createElement("div");
   el.className = "line"; el.dataset.seg = i;
-  el.innerHTML = `<span class="ts">${s.ts}</span><span class="who" style="color:${s.c}">${s.who}</span><span class="t caret" dir="auto"></span>`;
+  el.innerHTML = `<span class="ts">${s.ts}</span><span class="who" style="color:${s.c}">${lang === "ar" ? WHO_AR[s.who] : s.who}</span><span class="t caret" dir="auto"></span>`;
   document.getElementById("lines").appendChild(el);
   later(() => el.classList.add("show"), 30);
   const t = el.querySelector(".t");
@@ -529,21 +832,25 @@ function runDemo() {
   reset();
   wave.classList.remove("idle");
   waveTimer = setInterval(() => bars.forEach((b, i) => (b.style.height = (12 + Math.abs(Math.sin(Date.now() / 300 + i * .55)) * 70 * Math.random() + 8) + "%")), 120);
-  let sec = 0; const clock = document.getElementById("clock");
+  let sec = 0;
+  clock.textContent = "REC 00:00";
   clockTimer = setInterval(() => { sec++; clock.textContent = "REC 00:" + String(sec % 60).padStart(2, "0"); }, 900);
   let t = 300;
   SCRIPT.forEach((s, i) => { later(() => typeLine(i), t); t += s.t.length * 26 + 900; });
   show("n-dec", 3900);
   show("n-a1", 6200);
-  later(() => (document.getElementById("due1").innerHTML = "<s>بكرة</s> → Oct 18"), 7200);
+  later(() => (document.getElementById("due1").innerHTML = said("بكرة", "Oct 18")), 7200);
   show("n-a2", 8400);
-  later(() => (document.getElementById("due2").innerHTML = "<s>Wed</s> → Oct 21"), 9200);
+  later(() => (document.getElementById("due2").innerHTML = said("Wed", "Oct 21")), 9200);
   show("n-q", 10600);
-  later(() => { clearInterval(waveTimer); wave.classList.add("idle"); clearInterval(clockTimer); }, t + 400);
+  later(() => {
+    clearInterval(waveTimer); wave.classList.add("idle"); clearInterval(clockTimer);
+    clock.classList.add("done"); clock.textContent = lang === "ar" ? "الملاحظات جاهزة" : "Notes ready";
+  }, t + 400);
   later(runDemo, t + 6000);
 }
 document.getElementById("replay").addEventListener("click", runDemo);
-document.querySelectorAll(".chip[data-seg]").forEach((c) => c.addEventListener("click", () => {
+document.querySelectorAll(".ev[data-seg]").forEach((c) => c.addEventListener("click", () => {
   document.querySelectorAll(".line").forEach((l) => l.classList.toggle("hl", l.dataset.seg === c.dataset.seg));
 }));
 

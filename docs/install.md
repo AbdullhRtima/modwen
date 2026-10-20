@@ -10,7 +10,7 @@ Download `modwen-<version>.zip` from the project's Releases page and unzip it an
 
 | macOS | Windows |
 |---|---|
-| Double-click **`Modwen.command`**. The first time, macOS may block it: **right-click → Open → Open**. | Double-click **`Modwen.bat`**. If SmartScreen appears: **More info → Run anyway**. |
+| Double-click **`Modwen.command`**. The first time, macOS may block it: open **System Settings → Privacy & Security** and click **Open Anyway** (on macOS 14 and older, right-click → Open also works). | Double-click **`Modwen.bat`**. If SmartScreen appears: **More info → Run anyway**. |
 
 The first start takes a few minutes. The launcher installs `uv`, a small tool that gives Modwen its own private Python, and sets up Modwen's environment. Nothing else on your system changes. Later starts take seconds.
 
@@ -53,7 +53,7 @@ It contains the database, encrypted recordings and downloaded models. Delete tha
 
 | Problem | Fix |
 |---|---|
-| macOS: "cannot be opened because the developer cannot be verified" | Right-click `Modwen.command` → Open → Open (only needed once) |
+| macOS: "cannot be opened because the developer cannot be verified" | System Settings → Privacy & Security → **Open Anyway**, right after the blocked attempt (only needed once; on macOS 14 and older, right-click → Open also works) |
 | The browser shows "needs the session link" | Use **Open Modwen** in the tray, or the link printed in the launcher window |
 | The "Others" meter never moves | macOS: System Settings → Privacy & Security → *Screen & System Audio Recording* → allow the app that runs Modwen (Terminal). Windows: make sure the meeting plays on your default speakers or headset. |
 | "AI model offline" | Settings → AI model → *Start* (managed), or start your own server and press *Test* |

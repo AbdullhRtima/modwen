@@ -38,7 +38,7 @@
 ## Install (macOS and Windows)
 
 1. Download `modwen-<version>.zip` from Releases and unzip it.
-2. Double-click **`Modwen.command`** (macOS; the first time, right-click → Open) or **`Modwen.bat`** (Windows).
+2. Double-click **`Modwen.command`** (macOS; if it's blocked the first time: System Settings → Privacy & Security → Open Anyway) or **`Modwen.bat`** (Windows).
 3. The setup wizard opens in your browser:
    - It tests your audio and picks models for your hardware.
    - It downloads the speech models.
