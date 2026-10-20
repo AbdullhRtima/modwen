@@ -1,18 +1,24 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, setup, SetupStatus } from "../api";
 import type { Ctx } from "../App";
+import { I } from "../components/icons";
 import JobProgress, { useJob } from "../components/JobProgress";
+import { Key, useI18n } from "../i18n";
 
 type Tab = "general" | "audio" | "transcription" | "ai" | "notifications" | "privacy" | "about";
-const TABS: [Tab, string][] = [["general", "General"], ["audio", "Audio"], ["transcription", "Transcription"],
-  ["ai", "AI model"], ["notifications", "Notifications"], ["privacy", "Privacy"], ["about", "About"]];
+const TABS: [Tab, string, string, (p: { size?: number }) => JSX.Element][] = [
+  ["general", "General", "عام", I.settings], ["audio", "Audio", "الصوت", I.record],
+  ["transcription", "Transcription", "التفريغ", I.live], ["ai", "AI model", "نموذج الذكاء الاصطناعي", I.chip],
+  ["notifications", "Notifications", "الإشعارات", I.bell], ["privacy", "Privacy", "الخصوصية", I.privacy],
+  ["about", "About", "حول", I.info]];
 
 type Profiles = Awaited<ReturnType<typeof api.profiles>>;
 type TestResult = Awaited<ReturnType<typeof api.testLlm>>;
 
 export default function Settings({ ctx }: { ctx: Ctx }) {
-  const initial = (location.hash.split("/")[2] as Tab) || "ai";
-  const [tab, setTab] = useState<Tab>(TABS.some(([t]) => t === initial) ? initial : "ai");
+  const { t, lang } = useI18n();
+  const initial = (location.hash.split("/")[2] as Tab) || "general";
+  const [tab, setTab] = useState<Tab>(TABS.some(([x]) => x === initial) ? initial : "general");
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [st, setSt] = useState<SetupStatus | null>(null);
   const reload = () => {
@@ -28,9 +34,9 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
     try {
       const r = await setup.saveSettings(patch);
       setSettings(r.settings);
-      ctx.toast("Saved");
+      ctx.toast(t("saved"));
     } catch (e) {
-      alert((e as Error).message);
+      ctx.fail(e);
     }
   };
   const go = (t: Tab) => {
@@ -40,11 +46,15 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
 
   return (
     <>
-      <div className="page-head"><h1>Settings</h1>
-        <span className="faint" style={{ fontSize: 12 }}>Saved to {st?.config_path ?? "config.yaml"}</span></div>
-      <div className="tabs">
-        {TABS.map(([t, label]) => <button key={t} className={tab === t ? "on" : ""} onClick={() => go(t)}>{label}</button>)}
-      </div>
+      <div className="page-head"><h1>{t("settings")}</h1>
+        <span className="faint" style={{ fontSize: 12 }} dir="ltr">{st?.config_path ?? "config.yaml"}</span></div>
+      <div className="settings-wrap">
+      <nav className="tabs" aria-label={t("settings")}>
+        {TABS.map(([x, en, ar, Icon]) => <button key={x} className={tab === x ? "on" : ""} onClick={() => go(x)}>
+          <Icon size={16} />{lang === "ar" ? ar : en}</button>)}
+      </nav>
+      <div style={{ minWidth: 0 }}>
+      {!(settings && st) && <p className="muted">{t("loading")}</p>}
       {settings && st && (
         <>
           {tab === "general" && <General settings={settings} save={save} ctx={ctx} />}
@@ -56,6 +66,23 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
           {tab === "about" && <About st={st} ctx={ctx} />}
         </>
       )}
+      </div>
+      </div>
+    </>
+  );
+}
+
+function Appearance() {
+  const { t, lang, setLang, theme, setTheme } = useI18n();
+  const themes: [string, Key, (p: { size?: number }) => JSX.Element][] = [["system", "system", I.system], ["light", "light", I.sun], ["dark", "dark", I.moon]];
+  return (
+    <>
+      <div className="field"><label>{t("interfaceLang")}</label>
+        <div className="seg"><button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>English</button>
+          <button className={lang === "ar" ? "on" : ""} onClick={() => setLang("ar")}>العربية</button></div></div>
+      <div className="field"><label>{t("theme")}</label>
+        <div className="seg">{themes.map(([v, k, Icon]) => <button key={v} className={theme === v ? "on" : ""}
+          onClick={() => setTheme(v as "system" | "light" | "dark")}><Icon size={14} />{t(k)}</button>)}</div></div>
     </>
   );
 }
@@ -67,28 +94,44 @@ function Select({ value, options, onChange }: { value: string; options: [string,
     {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
 }
 
+/** A settings card with a heading, so every tab reads the same way. */
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="card set-card">
+      <div className="set-head"><h2>{title}</h2>{hint && <p className="faint">{hint}</p>}</div>
+      {children}
+    </section>
+  );
+}
+
 function General({ settings, save, ctx }: SP & { ctx: Ctx }) {
+  const { tr } = useI18n();
   const tzs = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
   const sysTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
-    <div className="card" style={{ maxWidth: 680 }}>
-      <div className="field"><label>Summary language</label>
-        <Select value={String(settings["notes.summary_language"])} onChange={(v) => save({ "notes.summary_language": v })}
-          options={[["en", "English (default)"], ["ar", "Arabic"], ["both", "English + Arabic"]]} /></div>
-      <div className="field"><label>Long meetings</label>
-        <Select value={String(settings["notes.chunk_minutes"])} onChange={(v) => save({ "notes.chunk_minutes": Number(v) })}
-          options={[["10", "Split every 10 min"], ["15", "Split every 15 min"], ["20", "Split every 20 min"], ["30", "Split every 30 min"]]} /></div>
-      <div className="field"><label>Timezone (deadlines)</label>
-        <Select value={String(settings["notes.timezone"])} onChange={(v) => save({ "notes.timezone": v })}
-          options={[["system", `System (${sysTz})`], ...tzs.map((t) => [t, t] as [string, string])]} /></div>
-      <div className="field"><label>Setup</label>
-        <div><button className="btn" onClick={() => ctx.go("#/welcome")}>Run the setup wizard again</button></div></div>
+    <div className="set-stack">
+      <Section title={tr("Appearance", "المظهر")}><Appearance /></Section>
+      <Section title={tr("Notes", "الملاحظات")}>
+        <div className="field"><label>{tr("Summary language", "لغة الملخص")}</label>
+          <Select value={String(settings["notes.summary_language"])} onChange={(v) => save({ "notes.summary_language": v })}
+            options={[["en", tr("English (default)", "الإنجليزية (افتراضي)")], ["ar", tr("Arabic", "العربية")], ["both", tr("English + Arabic", "الإنجليزية + العربية")]]} /></div>
+        <div className="field"><label>{tr("Long meetings", "الاجتماعات الطويلة")}</label>
+          <Select value={String(settings["notes.chunk_minutes"])} onChange={(v) => save({ "notes.chunk_minutes": Number(v) })}
+            options={["10", "15", "20", "30"].map((n) => [n, tr(`Split every ${n} min`, `تقسيم كل ${n} دقيقة`)] as [string, string])} /></div>
+        <div className="field"><label>{tr("Timezone (deadlines)", "المنطقة الزمنية (المواعيد)")}</label>
+          <Select value={String(settings["notes.timezone"])} onChange={(v) => save({ "notes.timezone": v })}
+            options={[["system", `${tr("System", "النظام")} (${sysTz})`], ...tzs.map((t) => [t, t] as [string, string])]} /></div>
+      </Section>
       <Network ctx={ctx} save={save} />
+      <Section title={tr("Setup", "الإعداد")} hint={tr("Check permissions, speech models and the AI model again.", "تحقّق مجدداً من الأذونات ونماذج الكلام ونموذج الذكاء الاصطناعي.")}>
+        <div><button className="btn" onClick={() => ctx.go("#/welcome")}><I.regenerate size={15} />{tr("Run the setup wizard again", "شغّل معالج الإعداد مجدداً")}</button></div>
+      </Section>
     </div>
   );
 }
 
 function Network({ ctx, save }: { ctx: Ctx; save: (p: Record<string, unknown>) => void }) {
+  const { tr } = useI18n();
   const [net, setNet] = useState<Awaited<ReturnType<typeof setup.network>> | null>(null);
   const load = () => setup.network().then(setNet).catch(() => undefined);
   useEffect(() => {
@@ -96,106 +139,140 @@ function Network({ ctx, save }: { ctx: Ctx; save: (p: Record<string, unknown>) =
   }, []);
   if (!net) return null;
   return (
-    <div className="field" style={{ alignItems: "start" }}><label>Other devices</label>
-      <div>
-        <label className="check"><input type="checkbox" checked={net.lan_access_setting}
-          onChange={async (e) => { await save({ "app.lan_access": e.target.checked }); load(); }} />
-          Allow access from other devices on this network</label>
-        <div className="faint" style={{ fontSize: 12, marginTop: 4 }}>Anyone with the link below can use Modwen. The
-          connection is plain HTTP, so use trusted networks only (home / office). Recording still uses this computer's mic.</div>
-        {net.restart_needed && <div className="banner warn" style={{ marginTop: 8 }}>Restart Modwen to apply
-          ({net.lan_access_setting ? "turn on" : "turn off"} network access).</div>}
-        {net.lan_active && net.urls.map((u) => (
-          <div key={u} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8 }}>
-            <code style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 380 }}>{u.split("?")[0]}</code>
-            <button className="btn sm" onClick={() => navigator.clipboard.writeText(u).then(() => ctx.toast("Link copied"))}>Copy link</button>
-          </div>
-        ))}
-      </div>
+    <Section title={tr("Other devices", "الأجهزة الأخرى")}
+      hint={tr("Anyone with the link below can use Modwen. The connection is plain HTTP, so use trusted networks only (home / office). Recording still uses this computer's mic.",
+        "أي شخص لديه الرابط أدناه يمكنه استخدام مُدوَّن. الاتصال HTTP عادي، لذا استخدم الشبكات الموثوقة فقط (المنزل / المكتب). التسجيل يبقى من ميكروفون هذا الجهاز.")}>
+      <label className="check"><input type="checkbox" checked={net.lan_access_setting}
+        onChange={async (e) => { await save({ "app.lan_access": e.target.checked }); load(); }} />
+        <I.network size={15} />{tr("Allow access from other devices on this network", "اسمح بالوصول من الأجهزة الأخرى على هذه الشبكة")}</label>
+      {net.restart_needed && <div className="banner warn" style={{ marginTop: 10 }}><I.warn />{net.lan_access_setting
+        ? tr("Restart Modwen to turn on network access.", "أعد تشغيل مُدوَّن لتفعيل الوصول عبر الشبكة.")
+        : tr("Restart Modwen to turn off network access.", "أعد تشغيل مُدوَّن لإيقاف الوصول عبر الشبكة.")}</div>}
+      {net.lan_active && net.urls.map((u) => (
+        <div key={u} className="url-row">
+          <code dir="ltr">{u.split("?")[0]}</code>
+          <button className="btn sm" onClick={() => navigator.clipboard.writeText(u).then(() => ctx.toast(tr("Link copied", "تم نسخ الرابط")))}>
+            <I.copy size={14} />{tr("Copy link", "انسخ الرابط")}</button>
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+/** A 3-second level test, shared by Settings → Audio and the setup wizard. */
+export function AudioTest({ big = false }: { big?: boolean }) {
+  const { tr } = useI18n();
+  const [res, setRes] = useState<Awaited<ReturnType<typeof setup.audioTest>> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      setRes(await setup.audioTest());
+    } finally {
+      setBusy(false);
+    }
+  };
+  const lv = (k: string) => Math.round((res?.levels[k] ?? 0) * 100);
+  return (
+    <div className="audio-test">
+      <button className={`btn ${big ? "primary" : ""}`} disabled={busy} onClick={run}>
+        {busy ? <I.spin size={15} className="spin-anim" /> : <I.record size={15} />}
+        {busy ? tr("Listening for 3 seconds…", "يستمع لمدة 3 ثوانٍ…") : tr("Test audio (3 seconds)", "اختبر الصوت (3 ثوانٍ)")}</button>
+      {res && (
+        <div className="levels">
+          {["mic", "system"].map((k) => (
+            <div key={k} className="level">
+              <span className="lname">{k === "mic" ? tr("Microphone (you)", "الميكروفون (أنت)") : tr("Meeting audio (others)", "صوت الاجتماع (الآخرون)")}</span>
+              {res.errors[k] ? <span className="lstate bad"><I.fail size={14} />{res.errors[k]}</span> : <>
+                <span className="progress"><i style={{ width: `${lv(k)}%` }} /></span>
+                {lv(k) > 15 ? <span className="lstate ok"><I.ok size={14} />{tr("Hearing sound", "يُسمع الصوت")}</span>
+                  : <span className="lstate warn"><I.warn size={14} />{tr("No sound: talk or play audio and test again", "لا صوت: تحدّث أو شغّل صوتاً واختبر مجدداً")}</span>}
+              </>}
+              {res.sources[k] ? <span className="faint lsrc" dir="auto">{res.sources[k]}</span> : null}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 function Audio({ settings, save, st }: SP & { st: SetupStatus }) {
+  const { tr } = useI18n();
   const [devices, setDevices] = useState<{ index: number; name: string; default: boolean }[]>([]);
-  const [test, setTest] = useState<Awaited<ReturnType<typeof setup.audioTest>> | null>(null);
-  const [busy, setBusy] = useState(false);
   useEffect(() => {
     api.devices().then((d) => setDevices(d.inputs));
   }, []);
-  const lv = (k: string) => Math.round((test?.levels[k] ?? 0) * 100);
-  const runTest = async () => {
-    setBusy(true);
-    try {
-      setTest(await setup.audioTest());
-    } finally {
-      setBusy(false);
-    }
-  };
+  const auto = tr("Automatic", "تلقائي");
   return (
-    <div className="card" style={{ maxWidth: 680 }}>
-      <div className="field"><label>Microphone</label>
-        <Select value={settings["capture.mic_device"] == null ? "" : String(settings["capture.mic_device"])}
-          onChange={(v) => save({ "capture.mic_device": v || null })}
-          options={[["", "System default"], ...devices.map((d) => [d.name, d.name + (d.default ? " (default)" : "")] as [string, string])]} /></div>
-      <div className="field"><label>Meeting audio</label>
-        <Select value={String(settings["capture.system_backend"])} onChange={(v) => save({ "capture.system_backend": v })}
-          options={[["auto", st.hardware.os === "Windows" ? "Automatic (WASAPI loopback)" : st.hardware.os === "macOS" ? "Automatic (Core Audio tap)" : "Automatic"],
-            ["device", "A loopback input device (e.g. BlackHole)"], ["none", "Off (mic only)"]]} /></div>
-      {settings["capture.system_backend"] === "device" && (
-        <div className="field"><label>Loopback device</label>
-          <Select value={String(settings["capture.system_device"] ?? "")} onChange={(v) => save({ "capture.system_device": v || null })}
-            options={[["", "Choose…"], ...devices.map((d) => [d.name, d.name] as [string, string])]} /></div>
-      )}
-      <div className="field"><label>Test</label>
-        <div>
-          <button className="btn" disabled={busy} onClick={runTest}>{busy ? "Listening 3 s…" : "🎙 Test 3 seconds"}</button>
-          {test && ["mic", "system"].map((k) => (
-            <div key={k} style={{ marginTop: 8, fontSize: 12.5 }}>{k === "mic" ? "Mic" : "Meeting audio"}:{" "}
-              {test.errors[k] ? <span style={{ color: "var(--rec)" }}>✕ {test.errors[k]}</span>
-                : <><span className="progress" style={{ display: "inline-block", width: 160, verticalAlign: "middle" }}><i style={{ width: `${lv(k)}%` }} /></span> {lv(k) > 15 ? "✓" : "silent"}</>}
-            </div>
-          ))}
-        </div></div>
+    <div className="set-stack">
+      <Section title={tr("Sources", "المصادر")}>
+        <div className="field"><label>{tr("Microphone", "الميكروفون")}</label>
+          <Select value={settings["capture.mic_device"] == null ? "" : String(settings["capture.mic_device"])}
+            onChange={(v) => save({ "capture.mic_device": v || null })}
+            options={[["", tr("System default", "افتراضي النظام")], ...devices.map((d) => [d.name, d.name + (d.default ? ` (${tr("default", "افتراضي")})` : "")] as [string, string])]} /></div>
+        <div className="field"><label>{tr("Meeting audio", "صوت الاجتماع")}</label>
+          <Select value={String(settings["capture.system_backend"])} onChange={(v) => save({ "capture.system_backend": v })}
+            options={[["auto", st.hardware.os === "Windows" ? `${auto} (WASAPI loopback)` : st.hardware.os === "macOS" ? `${auto} (Core Audio tap)` : auto],
+              ["device", tr("A loopback input device (e.g. BlackHole)", "جهاز إدخال loopback (مثل BlackHole)")], ["none", tr("Off (mic only)", "إيقاف (الميكروفون فقط)")]]} /></div>
+        {settings["capture.system_backend"] === "device" && (
+          <div className="field"><label>{tr("Loopback device", "جهاز loopback")}</label>
+            <Select value={String(settings["capture.system_device"] ?? "")} onChange={(v) => save({ "capture.system_device": v || null })}
+              options={[["", tr("Choose…", "اختر…")], ...devices.map((d) => [d.name, d.name] as [string, string])]} /></div>
+        )}
+      </Section>
+      <Section title={tr("Test", "اختبار")} hint={tr("Talk and play any video while it listens.", "تحدّث وشغّل أي فيديو أثناء الاستماع.")}><AudioTest /></Section>
     </div>
   );
 }
 
 function Transcription({ settings, save, st, ctx }: SP & { st: SetupStatus; ctx: Ctx }) {
+  const { tr } = useI18n();
   const [glossary, setGlossary] = useState(((settings["stt.glossary"] as string[]) ?? []).join(", "));
   const [job, setJob] = useJob(ctx, st.jobs.find((j) => j.kind === "whisper" && j.status === "running") ?? null);
   const models = ["auto", "large-v3", "large-v3-turbo", "medium", "small", "base"];
+  const auto = (m: string) => `${tr("Automatic", "تلقائي")} (${m})`;
   return (
-    <div className="card" style={{ maxWidth: 680 }}>
-      <div className="field"><label>Meeting language</label>
-        <Select value={String(settings["stt.meeting_language"])} onChange={(v) => save({ "stt.meeting_language": v })}
-          options={[["auto", "Auto (Arabic + English)"], ["en", "English only"], ["ar", "Arabic only"]]} /></div>
-      <div className="field"><label>Final transcript</label>
-        <Select value={String(settings["stt.final.model"])} onChange={(v) => save({ "stt.final.model": v })}
-          options={models.map((m) => [m, m === "auto" ? `Automatic (${st.plan.final_model})` : m] as [string, string])} /></div>
-      <div className="field"><label>Live captions</label>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Select value={String(settings["stt.live.provider"])} onChange={(v) => save({ "stt.live.provider": v })}
-            options={[["local_whisper", "On"], ["none", "Off"]]} />
-          <Select value={String(settings["stt.live.model"])} onChange={(v) => save({ "stt.live.model": v })}
-            options={models.map((m) => [m, m === "auto" ? `Automatic (${st.plan.live_model})` : m] as [string, string])} />
-        </div></div>
-      <div className="field"><label>Glossary</label>
-        <div><textarea className="input" rows={2} value={glossary} onChange={(e) => setGlossary(e.target.value)}
-          placeholder="Names and terms you use: Lina, لينا, MVP, roadmap"
-          onBlur={() => save({ "stt.glossary": glossary.split(",").map((x) => x.trim()).filter(Boolean) })} />
-          <div className="faint" style={{ fontSize: 12 }}>Helps Whisper spell names and product terms. Keep it short.</div></div></div>
-      <div className="field"><label>Models on disk</label>
-        <div>{st.whisper.models.map((m) => <span key={m.name + m.role} className={`badge ${m.present ? "ok" : "warn"}`} style={{ marginInlineEnd: 6 }}>
-          {m.role}: {m.name} {m.present ? "✓" : "missing"}</span>)}
-          {st.whisper.models.some((m) => !m.present) && <div><button className="btn sm" style={{ marginTop: 6 }}
-            onClick={async () => setJob((await setup.downloadWhisper()).job)}>⇩ Download</button></div>}
-          <JobProgress job={job} /></div></div>
+    <div className="set-stack">
+      <Section title={tr("Speech to text", "تحويل الكلام إلى نص")}>
+        <div className="field"><label>{tr("Meeting language", "لغة الاجتماع")}</label>
+          <Select value={String(settings["stt.meeting_language"])} onChange={(v) => save({ "stt.meeting_language": v })}
+            options={[["auto", tr("Auto (Arabic + English)", "تلقائي (العربية + الإنجليزية)")], ["en", tr("English only", "الإنجليزية فقط")], ["ar", tr("Arabic only", "العربية فقط")]]} /></div>
+        <div className="field"><label>{tr("Final transcript", "النص النهائي")}</label>
+          <Select value={String(settings["stt.final.model"])} onChange={(v) => save({ "stt.final.model": v })}
+            options={models.map((m) => [m, m === "auto" ? auto(st.plan.final_model) : m] as [string, string])} /></div>
+        <div className="field"><label>{tr("Live captions", "الترجمة المباشرة")}</label>
+          <div className="row-wrap">
+            <Select value={String(settings["stt.live.provider"])} onChange={(v) => save({ "stt.live.provider": v })}
+              options={[["local_whisper", tr("On", "تشغيل")], ["none", tr("Off", "إيقاف")]]} />
+            <Select value={String(settings["stt.live.model"])} onChange={(v) => save({ "stt.live.model": v })}
+              options={models.map((m) => [m, m === "auto" ? auto(st.plan.live_model) : m] as [string, string])} />
+          </div></div>
+        <div className="field" style={{ alignItems: "start" }}><label>{tr("Glossary", "المسرد")}</label>
+          <div><textarea className="input" rows={2} value={glossary} onChange={(e) => setGlossary(e.target.value)} dir="auto"
+            placeholder={tr("Names and terms you use: Lina, لينا, MVP, roadmap", "أسماء ومصطلحات تستخدمها: لينا، Lina، MVP، خطة")}
+            onBlur={() => save({ "stt.glossary": glossary.split(/[,،]/).map((x) => x.trim()).filter(Boolean) })} />
+            <div className="faint" style={{ fontSize: 12, marginTop: 4 }}>{tr("Helps Whisper spell names and product terms. Keep it short.", "يساعد Whisper على كتابة الأسماء والمصطلحات. اجعله قصيراً.")}</div></div></div>
+      </Section>
+      <Section title={tr("Models on disk", "النماذج على الجهاز")} hint={tr("Downloaded once, then everything works offline.", "تُنزَّل مرة واحدة، ثم يعمل كل شيء دون اتصال.")}>
+        <div className="model-list">
+          {st.whisper.models.map((m) => (
+            <div key={m.name + m.role} className="model-row">
+              <span><b className="mono">{m.name}</b> <span className="faint">· {m.role === "live" ? tr("live", "مباشر") : m.role === "final" ? tr("final", "نهائي") : m.role}</span></span>
+              {m.present ? <span className="badge ok"><I.check size={13} />{tr("ready", "جاهز")}</span> : <span className="badge warn"><I.warn size={13} />{tr("missing", "غير موجود")}</span>}
+            </div>
+          ))}
+        </div>
+        {st.whisper.models.some((m) => !m.present) && <button className="btn primary sm" style={{ marginTop: 10 }}
+          onClick={async () => setJob((await setup.downloadWhisper()).job)}><I.download size={14} />{tr("Download", "تنزيل")}</button>}
+        <JobProgress job={job} />
+      </Section>
     </div>
   );
 }
 
 function AIModel({ ctx, st, reload }: { ctx: Ctx; st: SetupStatus; reload: () => void }) {
+  const { t, tr } = useI18n();
   const [profiles, setProfiles] = useState<Profiles | null>(null);
   const [tests, setTests] = useState<Record<string, TestResult | "running">>({});
   const [editing, setEditing] = useState<string | null>(null);
@@ -221,85 +298,90 @@ function AIModel({ ctx, st, reload }: { ctx: Ctx; st: SetupStatus; reload: () =>
     load();
     reload();
     ctx.refreshStatus();
-    ctx.toast(`Active AI model: ${name}`);
+    ctx.toast(tr(`Active AI model: ${name}`, `نموذج الذكاء الاصطناعي النشط: ${name}`));
   };
-  const startManaged = () => setup.startManaged().then(() => { reload(); load(); }).catch((e) => alert((e as Error).message));
-  if (!profiles) return <p className="muted">Loading…</p>;
+  const startManaged = () => setup.startManaged().then(() => { reload(); load(); }).catch(ctx.fail);
+  if (!profiles) return <p className="muted">{t("loading")}</p>;
   const active = profiles.profiles[profiles.active];
 
   return (
-    <>
-      <div className="field" style={{ gridTemplateColumns: "130px minmax(0,320px) auto" }}>
-        <label>Active profile</label>
-        <select className="select" value={profiles.active} onChange={(e) => activate(e.target.value)}>
-          {Object.keys(profiles.profiles).map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <span className={`badge ${st.llm.online ? "ok" : ""}`}><span className="dot" />
-          {st.llm.online ? `online · ${active?.model} · ${Math.round((active?.context_window ?? 0) / 1024)}k context` : "offline"}</span>
-      </div>
+    <div className="set-stack">
+      <Section title={tr("Active model", "النموذج النشط")}>
+        <div className="row-wrap">
+          <select className="select" style={{ maxWidth: 320 }} value={profiles.active} onChange={(e) => activate(e.target.value)}>
+            {Object.keys(profiles.profiles).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span className={`badge ${st.llm.online ? "ok" : ""}`}><span className="dot" />
+            {st.llm.online ? <span dir="ltr">{tr("online", "متصل")} · {active?.model} · {Math.round((active?.context_window ?? 0) / 1024)}k</span> : tr("offline", "غير متصل")}</span>
+        </div>
+      </Section>
 
-      <div className="card" style={{ marginBottom: 14 }}>
-        <b>Modwen-managed AI model</b> <span className="faint" style={{ fontSize: 12.5 }}>· Modwen downloads and runs llama.cpp + Qwen for you</span>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+      <Section title={tr("Modwen-managed AI model", "نموذج يديره مُدوَّن")}
+        hint={tr("Modwen downloads and runs llama.cpp + Qwen for you, on this computer only.", "يُنزّل مُدوَّن llama.cpp + Qwen ويشغّلهما لك، على هذا الجهاز فقط.")}>
+        <div className="row-wrap">
           <select className="select" style={{ maxWidth: 360 }} value={choice} onChange={(e) => setChoice(e.target.value)}>
-            {st.llm.choices.map((c) => <option key={c.id} value={c.id}>{c.id}{c.id === st.llm.recommended ? " (recommended)" : ""} · {c.size_gb} GB</option>)}
+            {st.llm.choices.map((c) => <option key={c.id} value={c.id}>{c.id}{c.id === st.llm.recommended ? ` (${tr("recommended", "موصى به")})` : ""} · {c.size_gb} GB</option>)}
           </select>
           {m.binary_installed && m.model_installed && m.model_choice === choice ? (
             <>
-              <span className={`badge ${m.running ? "ok" : ""}`}>{m.running ? "● running" : "installed"}</span>
-              {m.running ? <button className="btn sm" onClick={() => setup.stopManaged().then(reload)}>Stop</button>
-                : <button className="btn sm" onClick={startManaged}>Start</button>}
-              {profiles.active !== "managed_qwen" && profiles.profiles["managed_qwen"] && <button className="btn sm" onClick={() => activate("managed_qwen")}>Use</button>}
+              <span className={`badge ${m.running ? "ok" : ""}`}>{m.running ? <><span className="dot pulse" />{tr("running", "يعمل")}</> : tr("installed", "مثبّت")}</span>
+              {m.running ? <button className="btn sm" onClick={() => setup.stopManaged().then(reload)}><I.stop size={12} fill="currentColor" />{tr("Stop", "إيقاف")}</button>
+                : <button className="btn sm" onClick={startManaged}><I.play size={13} fill="currentColor" />{tr("Start", "تشغيل")}</button>}
+              {profiles.active !== "managed_qwen" && profiles.profiles["managed_qwen"] && <button className="btn sm" onClick={() => activate("managed_qwen")}>{tr("Use", "استخدم")}</button>}
             </>
           ) : (
             <button className="btn primary sm" disabled={lJob?.status === "running"}
-              onClick={async () => setLJob((await setup.installManaged(choice)).job)}>⇩ Download and start</button>
+              onClick={async () => setLJob((await setup.installManaged(choice)).job)}><I.download size={14} />{tr("Download and start", "تنزيل وتشغيل")}</button>
           )}
         </div>
-        {m.port_busy_external && !m.running && <div className="banner warn" style={{ marginTop: 8 }}>Port {m.port} is used by another server.</div>}
+        {m.port_busy_external && !m.running && <div className="banner warn" style={{ marginTop: 10 }}><I.warn />{tr(`Port ${m.port} is used by another server.`, `المنفذ ${m.port} مستخدم من خادم آخر.`)}</div>}
         <JobProgress job={lJob} />
-      </div>
+      </Section>
 
-      <div className="section-title">Profiles</div>
-      <div style={{ overflowX: "auto" }}>
-        <table className="ptable">
-          <thead><tr><th>Name</th><th>Endpoint</th><th>Model</th><th>Context</th><th /></tr></thead>
-          <tbody>
-            {Object.entries(profiles.profiles).map(([name, p]) => (
-              <Fragment key={name}>
-                <tr>
-                  <td><b>{name}</b> {profiles.active === name ? <span className="badge acc">active</span>
-                    : profiles.fallback.includes(name) ? <span className="badge">fallback</span> : null}</td>
-                  <td><code>{p.base_url}</code></td><td>{p.model}</td><td>{p.context_window.toLocaleString()}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button className="btn sm" onClick={() => setEditing(editing === name ? null : name)}>Edit</button>{" "}
-                    <button className="btn sm" disabled={tests[name] === "running"} onClick={() => runTest(name)}>
-                      {tests[name] === "running" ? "Testing…" : "Test"}</button>{" "}
-                    {profiles.active !== name && <button className="btn sm" onClick={() => activate(name)}>Use</button>}{" "}
-                    {profiles.active !== name && <button className="btn sm ghost" title="Delete profile" onClick={() => setup.deleteProfile(name).then(load)}>✕</button>}
-                  </td>
-                </tr>
-                {editing === name && <tr><td colSpan={5}><ProfileForm name={name} p={p} onDone={() => { setEditing(null); load(); reload(); }} /></td></tr>}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {editing === "__new"
-        ? <div className="card" style={{ marginTop: 10 }}><ProfileForm name="" onDone={() => { setEditing(null); load(); }} /></div>
-        : <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setEditing("__new")}>+ Add local profile <span className="faint">(localhost / 127.0.0.1 only)</span></button>}
-      {Object.entries(tests).map(([name, t]) => t !== "running" && (
-        <div key={name} className={`banner ${t.ok ? "info" : "err"}`} style={{ marginTop: 10, display: "block" }}>
-          <b>{name}:</b> {t.ok ? <>✓ replied in {t.seconds}s<div dir="auto" style={{ whiteSpace: "pre-wrap", marginTop: 6, color: "var(--text)" }}>{t.reply}</div></>
-            : <>✕ {t.error}</>}
+      <Section title={tr("Profiles", "الملفات الشخصية")} hint={tr("Changes are written to config.yaml. Non-localhost URLs are rejected: Modwen is local-only.",
+        "تُكتب التغييرات في config.yaml. تُرفض العناوين غير المحلية: مُدوَّن محلي فقط.")}>
+        <div style={{ overflowX: "auto" }}>
+          <table className="ptable">
+            <thead><tr><th>{tr("Name", "الاسم")}</th><th>{tr("Endpoint", "العنوان")}</th><th>{tr("Model", "النموذج")}</th><th>{tr("Context", "السياق")}</th><th /></tr></thead>
+            <tbody>
+              {Object.entries(profiles.profiles).map(([name, p]) => (
+                <Fragment key={name}>
+                  <tr>
+                    <td><b>{name}</b> {profiles.active === name ? <span className="badge acc">{tr("active", "نشط")}</span>
+                      : profiles.fallback.includes(name) ? <span className="badge">{tr("fallback", "احتياطي")}</span> : null}</td>
+                    <td><code dir="ltr">{p.base_url}</code></td><td dir="ltr">{p.model}</td><td dir="ltr">{p.context_window.toLocaleString()}</td>
+                    <td><div className="tbl-acts">
+                      <button className="btn sm ghost" title={t("edit")} aria-label={t("edit")} onClick={() => setEditing(editing === name ? null : name)}><I.edit size={14} /></button>
+                      <button className="btn sm" disabled={tests[name] === "running"} onClick={() => runTest(name)}>
+                        {tests[name] === "running" ? <I.spin size={14} className="spin-anim" /> : null}{tests[name] === "running" ? tr("Testing…", "جارٍ الاختبار…") : tr("Test", "اختبار")}</button>
+                      {profiles.active !== name && <button className="btn sm" onClick={() => activate(name)}>{tr("Use", "استخدم")}</button>}
+                      {profiles.active !== name && <button className="btn sm ghost" title={tr("Delete profile", "احذف الملف")} aria-label={tr("Delete profile", "احذف الملف")}
+                        onClick={() => setup.deleteProfile(name).then(load)}><I.trash size={14} /></button>}
+                    </div></td>
+                  </tr>
+                  {editing === name && <tr><td colSpan={5}><ProfileForm name={name} p={p} onDone={() => { setEditing(null); load(); reload(); }} /></td></tr>}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ))}
-      <p className="faint" style={{ fontSize: 12, marginTop: 12 }}>Changes are written to config.yaml. Non-localhost URLs are rejected: Modwen is local-only.</p>
-    </>
+        {editing === "__new"
+          ? <div className="card" style={{ marginTop: 10 }}><ProfileForm name="" onDone={() => { setEditing(null); load(); }} /></div>
+          : <button className="btn ghost sm" style={{ marginTop: 8 }} onClick={() => setEditing("__new")}><I.plus size={14} />{tr("Add local profile", "أضف ملفاً محلياً")}
+            <span className="faint">(localhost / 127.0.0.1)</span></button>}
+        {Object.entries(tests).map(([name, r]) => r !== "running" && (
+          <div key={name} className={`banner ${r.ok ? "info" : "err"}`} style={{ marginTop: 10, display: "block" }}>
+            <span className="mi">{r.ok ? <I.ok /> : <I.fail />}<b>{name}:</b> {r.ok ? tr(`replied in ${r.seconds}s`, `ردّ خلال ${r.seconds} ث`) : r.error}</span>
+            {r.ok && <div dir="auto" style={{ whiteSpace: "pre-wrap", marginTop: 6, color: "var(--text)" }}>{r.reply}</div>}
+          </div>
+        ))}
+      </Section>
+    </div>
   );
 }
 
 function ProfileForm({ name, p, onDone }: { name: string; p?: Profiles["profiles"][string]; onDone: () => void }) {
+  const { t, tr } = useI18n();
   const [f, setF] = useState({ name, base_url: p?.base_url ?? "http://localhost:11434/v1", model: p?.model ?? "",
     context_window: p?.context_window ?? 16384, temperature: p?.temperature ?? 0.3,
     structured_output: p?.structured_output ?? "json_schema", thinking: false, api_key: "" });
@@ -308,7 +390,7 @@ function ProfileForm({ name, p, onDone }: { name: string; p?: Profiles["profiles
   const submit = async () => {
     setErr(null);
     const key = (f.name || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_");
-    if (!key || !f.model) return setErr("Name and model are required");
+    if (!key || !f.model) return setErr(tr("Name and model are required", "الاسم والنموذج مطلوبان"));
     try {
       await setup.saveProfile(key, { base_url: f.base_url, model: f.model, api_key: f.api_key || undefined,
         context_window: Number(f.context_window), temperature: Number(f.temperature),
@@ -321,86 +403,103 @@ function ProfileForm({ name, p, onDone }: { name: string; p?: Profiles["profiles
   return (
     <div className="grid2">
       <div>
-        {!name && <div className="field"><label>Name</label><input className="input" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="lm_studio" /></div>}
-        <div className="field"><label>Endpoint</label><input className="input" value={f.base_url} onChange={(e) => set("base_url", e.target.value)} /></div>
-        <div className="field"><label>Model</label><input className="input" value={f.model} onChange={(e) => set("model", e.target.value)} placeholder="qwen3:8b" /></div>
-        <div className="field"><label>API key</label><input className="input" value={f.api_key} onChange={(e) => set("api_key", e.target.value)} placeholder="(unchanged / not needed)" /></div>
+        {!name && <div className="field"><label>{tr("Name", "الاسم")}</label><input className="input" dir="ltr" value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="lm_studio" /></div>}
+        <div className="field"><label>{tr("Endpoint", "العنوان")}</label><input className="input" dir="ltr" value={f.base_url} onChange={(e) => set("base_url", e.target.value)} /></div>
+        <div className="field"><label>{tr("Model", "النموذج")}</label><input className="input" dir="ltr" value={f.model} onChange={(e) => set("model", e.target.value)} placeholder="qwen3:8b" /></div>
+        <div className="field"><label>{tr("API key", "مفتاح API")}</label><input className="input" dir="ltr" value={f.api_key} onChange={(e) => set("api_key", e.target.value)}
+          placeholder={tr("(unchanged / not needed)", "(بدون تغيير / غير مطلوب)")} /></div>
       </div>
       <div>
-        <div className="field"><label>Context</label><input className="input" type="number" value={f.context_window} onChange={(e) => set("context_window", e.target.value)} /></div>
-        <div className="field"><label>Temperature</label><input className="input" type="number" step="0.1" value={f.temperature} onChange={(e) => set("temperature", e.target.value)} /></div>
-        <div className="field"><label>Structured output</label>
+        <div className="field"><label>{tr("Context", "السياق")}</label><input className="input" type="number" value={f.context_window} onChange={(e) => set("context_window", e.target.value)} /></div>
+        <div className="field"><label>{tr("Temperature", "درجة الحرارة")}</label><input className="input" type="number" step="0.1" value={f.temperature} onChange={(e) => set("temperature", e.target.value)} /></div>
+        <div className="field"><label>{tr("Structured output", "المخرجات المنظّمة")}</label>
           <Select value={f.structured_output} onChange={(v) => set("structured_output", v)}
             options={[["json_schema", "json_schema"], ["json_object", "json_object"], ["prompt_only", "prompt_only"]]} /></div>
-        <div className="field"><label>Thinking</label>
+        <div className="field"><label>{tr("Thinking", "التفكير")}</label>
           <Select value={f.thinking ? "on" : "off"} onChange={(v) => set("thinking", v === "on")}
-            options={[["off", "Off (faster, recommended)"], ["on", "On"]]} /></div>
+            options={[["off", tr("Off (faster, recommended)", "إيقاف (أسرع، موصى به)")], ["on", tr("On", "تشغيل")]]} /></div>
       </div>
-      <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center" }}>
-        <button className="btn primary" onClick={submit}>Save</button><button className="btn" onClick={onDone}>Cancel</button>
-        {err && <span className="banner err" style={{ margin: 0 }}>{err}</span>}
+      <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="btn primary" onClick={submit}>{t("save")}</button><button className="btn" onClick={onDone}>{t("cancel")}</button>
+        {err && <span className="banner err" style={{ margin: 0 }}><I.fail />{err}</span>}
       </div>
     </div>
   );
 }
 
 function Notifications({ settings, save }: SP) {
+  const { tr } = useI18n();
+  const [sent, setSent] = useState(false);
   return (
-    <div className="card" style={{ maxWidth: 680 }}>
-      <label className="check"><input type="checkbox" checked={Boolean(settings["notify.desktop"])}
-        onChange={(e) => save({ "notify.desktop": e.target.checked })} />"Notes ready" notification when the AI model finishes</label>
-      <label className="check" style={{ marginTop: 8 }}><input type="checkbox" checked={Boolean(settings["notify.sound"])}
-        onChange={(e) => save({ "notify.sound": e.target.checked })} />Play a sound</label>
-      <button className="btn" style={{ marginTop: 12 }} onClick={() => setup.notifyTest()}>🔔 Send test notification</button>
-    </div>
+    <Section title={tr("Notifications", "الإشعارات")} hint={tr("Turn off Focus / Do Not Disturb if the test doesn't appear.", "أوقف وضع التركيز / عدم الإزعاج إذا لم يظهر الاختبار.")}>
+      <div className="check-list">
+        <label className="check"><input type="checkbox" checked={Boolean(settings["notify.desktop"])}
+          onChange={(e) => save({ "notify.desktop": e.target.checked })} />{tr("“Notes ready” notification when the AI model finishes", "إشعار “الملاحظات جاهزة” عند انتهاء النموذج")}</label>
+        <label className="check"><input type="checkbox" checked={Boolean(settings["notify.sound"])}
+          onChange={(e) => save({ "notify.sound": e.target.checked })} />{tr("Play a sound", "شغّل صوتاً")}</label>
+      </div>
+      <div className="row-wrap" style={{ marginTop: 14 }}>
+        <button className="btn" onClick={() => setup.notifyTest().then(() => setSent(true))}><I.bell size={15} />{tr("Send test notification", "أرسل إشعاراً تجريبياً")}</button>
+        {sent && <span className="muted mi"><I.check size={14} />{tr("Sent", "أُرسل")}</span>}
+      </div>
+    </Section>
   );
 }
 
 function Privacy({ settings, save }: SP) {
+  const { tr } = useI18n();
+  const days = (k: string) => String(settings[`privacy.retention.${k}_days`] || "∞");
+  const points: [JSX.Element, string][] = [
+    [<I.lock size={16} />, tr("Meeting audio and transcripts never leave this computer. Non-localhost AI endpoints are refused in code.",
+      "صوت الاجتماعات ونصوصها لا تغادر هذا الجهاز أبداً. العناوين غير المحلية مرفوضة في الكود.")],
+    [<I.privacy size={16} />, tr("Audio is stored encrypted (AES-256-GCM, a separate key per meeting). Deleting a meeting destroys its key.",
+      "يُخزَّن الصوت مشفّراً (AES-256-GCM، مفتاح مستقل لكل اجتماع). حذف الاجتماع يُتلف مفتاحه.")],
+    [<I.download size={16} />, tr("Downloads happen only when you press a Download button (speech models, llama.cpp, Qwen). No telemetry.",
+      "لا تحدث التنزيلات إلا عند ضغطك زر التنزيل (نماذج الكلام، llama.cpp، Qwen). لا قياس عن بُعد.")],
+    [<I.voice size={16} />, tr("Voiceprints are kept only for people you chose to remember (with their consent), encrypted, until you delete them.",
+      "تُحفظ بصمات الصوت فقط لمن اخترت تذكّرهم (بموافقتهم)، مشفّرة، حتى تحذفها.")],
+    [<I.trash size={16} />, tr(`Old data is deleted automatically: audio after ${days("audio")} days, transcripts after ${days("transcript")}, notes after ${days("notes")} (0 = keep forever). Pinned meetings are always kept.`,
+      `تُحذف البيانات القديمة تلقائياً: الصوت بعد ${days("audio")} يوماً، النصوص بعد ${days("transcript")}، الملاحظات بعد ${days("notes")} (0 = الاحتفاظ دائماً). الاجتماعات المثبّتة تبقى دائماً.`)],
+  ];
   return (
-    <div className="card" style={{ maxWidth: 680 }}>
-      <label className="check"><input type="checkbox" checked={Boolean(settings["diarization.remember_my_voice"])}
-        onChange={(e) => save({ "diarization.remember_my_voice": e.target.checked })} />Remember my voice</label>
-      <p className="faint" style={{ fontSize: 12.5, margin: "4px 0 14px 24px" }}>Keeps a voiceprint of you, taken from your
-        microphone in online meetings, so Modwen can tell which voice is you in in-person meetings. Delete it any time on
-        the People page.</p>
-      <p className="lock" style={{ fontSize: 14 }}>🔒 Local only, always</p>
-      <ul className="muted">
-        <li>Meeting audio and transcripts never leave this computer. Non-localhost AI endpoints are refused in code.</li>
-        <li>Audio is stored encrypted (AES-256-GCM, a separate key per meeting). Deleting a meeting destroys its key.</li>
-        <li>Downloads happen only when you press a Download button (speech models, llama.cpp, Qwen). No telemetry.</li>
-        <li>Voiceprints are kept only for people you chose to remember (with their consent), encrypted, until you delete them.</li>
-        <li>Old data is deleted automatically: audio after {String(settings["privacy.retention.audio_days"] || "∞")} days,
-          transcripts after {String(settings["privacy.retention.transcript_days"] || "∞")}, notes after
-          {" "}{String(settings["privacy.retention.notes_days"] || "∞")} (0 = keep forever). Pinned meetings are always kept.</li>
-      </ul>
+    <div className="set-stack">
+      <Section title={tr("Your voice", "صوتك")}>
+        <label className="check"><input type="checkbox" checked={Boolean(settings["diarization.remember_my_voice"])}
+          onChange={(e) => save({ "diarization.remember_my_voice": e.target.checked })} />{tr("Remember my voice", "تذكّر صوتي")}</label>
+        <p className="faint" style={{ fontSize: 12.5, margin: "6px 0 0", paddingInlineStart: 24 }}>{tr(
+          "Keeps a voiceprint of you, taken from your microphone in online meetings, so Modwen can tell which voice is you in in-person meetings. Delete it any time on the People page.",
+          "يحتفظ ببصمة صوتك من الميكروفون في الاجتماعات عبر الإنترنت، ليعرف مُدوَّن صوتك في الاجتماعات الحضورية. احذفها متى شئت من صفحة الأشخاص.")}</p>
+      </Section>
+      <Section title={tr("Local only, always", "محلي فقط، دائماً")}>
+        <ul className="promise">{points.map(([icon, text], i) => <li key={i}><span className="pi">{icon}</span><span>{text}</span></li>)}</ul>
+      </Section>
     </div>
   );
 }
 
 function About({ st, ctx }: { st: SetupStatus; ctx: Ctx }) {
+  const { tr } = useI18n();
   return (
-    <div className="grid2">
-      <div className="card">
-        <b>Tier {st.plan.tier}</b>: {st.plan.label}
-        <dl className="kv" style={{ marginTop: 10 }}>
-          <dt>Speech-to-text</dt><dd>{st.whisper.backend} · final {st.plan.final_model} · live {st.plan.live_model}</dd>
-          <dt>Recommended AI model</dt><dd>{st.plan.llm_model} ({st.plan.llm_context} context)</dd>
-          <dt>2-hour meeting</dt><dd>about {st.plan.est_2h_minutes[0]}–{st.plan.est_2h_minutes[1]} min after Stop</dd>
+    <div className="set-stack">
+      <Section title={`${tr("Tier", "الفئة")} ${st.plan.tier}: ${st.plan.label}`}>
+        <dl className="kv">
+          <dt>{tr("Speech-to-text", "تحويل الكلام")}</dt><dd dir="ltr">{st.whisper.backend} · final {st.plan.final_model} · live {st.plan.live_model}</dd>
+          <dt>{tr("Recommended AI model", "النموذج الموصى به")}</dt><dd dir="ltr">{st.plan.llm_model} ({st.plan.llm_context} context)</dd>
+          <dt>{tr("2-hour meeting", "اجتماع ساعتين")}</dt><dd>{tr(`about ${st.plan.est_2h_minutes[0]}–${st.plan.est_2h_minutes[1]} min after Stop`,
+            `حوالي ${st.plan.est_2h_minutes[0]}–${st.plan.est_2h_minutes[1]} دقيقة بعد الإيقاف`)}</dd>
         </dl>
-      </div>
-      <div className="card">
-        <b>Run your own llama.cpp instead</b>
-        <div className="codeblock" style={{ marginTop: 8 }}>{st.plan.llama_server_command}</div>
+      </Section>
+      <Section title={tr("Run your own llama.cpp instead", "شغّل llama.cpp بنفسك")}>
+        <div className="codeblock">{st.plan.llama_server_command}</div>
         <button className="btn sm" style={{ marginTop: 8 }} onClick={() =>
-          navigator.clipboard.writeText(st.plan.llama_server_command).then(() => ctx.toast("Command copied"))}>Copy command</button>
-      </div>
-      <div className="card">
-        <b>Machine</b>
-        <dl className="kv" style={{ marginTop: 10 }}>
-          {Object.entries(st.hardware).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{String(v)}</dd></Fragment>)}
+          navigator.clipboard.writeText(st.plan.llama_server_command).then(() => ctx.toast(tr("Command copied", "تم نسخ الأمر")))}>
+          <I.copy size={14} />{tr("Copy command", "انسخ الأمر")}</button>
+      </Section>
+      <Section title={tr("This computer", "هذا الجهاز")}>
+        <dl className="kv">
+          {Object.entries(st.hardware).map(([k, v]) => <Fragment key={k}><dt className="mono">{k}</dt><dd dir="ltr">{String(v)}</dd></Fragment>)}
         </dl>
-      </div>
+      </Section>
     </div>
   );
 }

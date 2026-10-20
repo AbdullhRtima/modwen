@@ -9,6 +9,9 @@ import RecordingBar from "./components/RecordingBar";
 import Pill from "./pages/Pill";
 import People from "./pages/People";
 import Welcome from "./pages/Welcome";
+import Sidebar from "./components/Sidebar";
+import { I } from "./components/icons";
+import { useI18n } from "./i18n";
 
 export type Ctx = {
   recorder: RecorderStatus;
@@ -34,6 +37,9 @@ function useHash(): string {
 
 export default function App() {
   const hash = useHash();
+  const { t } = useI18n();
+  const [menu, setMenu] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [recorder, setRecorder] = useState<RecorderStatus>({ recording: false });
   const [tier, setTier] = useState("?");
   const [llmActive, setLlmActive] = useState("");
@@ -50,8 +56,8 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToastMsg(null), kind === "error" ? 6000 : 2200);
   }, []);
   const fail = useCallback((err: unknown) => {
-    toast(err instanceof Error && err.message ? err.message : "Something went wrong", "error");
-  }, [toast]);
+    toast(err instanceof Error && err.message ? err.message : t("wrong"), "error");
+  }, [toast, t]);
   const go = useCallback((h: string) => {
     location.hash = h;
   }, []);
@@ -64,6 +70,7 @@ export default function App() {
         setTier(s.tier);
         setLlmActive(s.llm_active);
         setAuthError(false);
+        setOffline(false);
         if (!s.setup_complete && !firstRunChecked.current && !location.hash.startsWith("#/pill")) {
           firstRunChecked.current = true;
           if (!location.hash.startsWith("#/welcome")) location.hash = "#/welcome";
@@ -72,6 +79,7 @@ export default function App() {
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) setAuthError(true);
+        else if (!(e instanceof ApiError)) setOffline(true);  // the server didn't answer at all
       });
   }, []);
 
@@ -94,20 +102,13 @@ export default function App() {
   const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, toast, fail, go, refreshStatus };
   const path = hash.replace(/^#/, "") || "/";
   let page = <Home ctx={ctx} />;
-  let nav = "meetings";
-  if (path.startsWith("/start")) page = <Start ctx={ctx} />;
+  let narrow = false;
+  if (path.startsWith("/start")) { page = <Start ctx={ctx} />; narrow = true; }
   else if (path.startsWith("/live")) page = <Live ctx={ctx} />;
-  else if (path.startsWith("/meetings/")) page = <Review ctx={ctx} id={path.split("/")[2]} />;
-  else if (path.startsWith("/settings")) {
-    page = <Settings ctx={ctx} />;
-    nav = "settings";
-  } else if (path.startsWith("/people")) {
-    page = <People ctx={ctx} />;
-    nav = "people";
-  } else if (path.startsWith("/welcome")) {
-    page = <Welcome ctx={ctx} />;
-    nav = "";
-  }
+  else if (path.startsWith("/meetings/")) page = <Review key={path.split("/")[2]} ctx={ctx} id={path.split("/")[2]} />;
+  else if (path.startsWith("/settings")) page = <Settings ctx={ctx} />;
+  else if (path.startsWith("/people")) page = <People ctx={ctx} />;
+  else if (path.startsWith("/welcome")) { page = <Welcome ctx={ctx} />; narrow = true; }
 
   if (path.startsWith("/pill") && !authError) {
     return <Pill ctx={ctx} />;
@@ -115,32 +116,28 @@ export default function App() {
 
   if (authError) {
     return (
-      <div className="main" style={{ maxWidth: 640, margin: "60px auto" }}>
-        <h1>Modwen</h1>
-        <div className="banner err">This page needs the session link. Open Modwen from the tray icon, or use the
-          link printed by <code>modwen serve</code> (it ends with <code>?token=…</code>).</div>
+      <div className="page narrow" style={{ paddingTop: 80 }}>
+        <h1 className="page-title">Modwen · مُدوَّن</h1>
+        <div className="banner err" style={{ marginTop: 16 }}>{t("needsLink")}</div>
       </div>
     );
   }
 
+  const closeMenu = () => setMenu(false);
   return (
-    <div className="app">
-      <aside className="side">
-        <div className="brand"><span className="logo">م</span>Modwen</div>
-        <button className="btn danger" style={{ justifyContent: "center", marginBottom: 10 }}
-          disabled={recorder.recording} onClick={() => go("#/start")}>● Start meeting</button>
-        <a className={`nav ${nav === "meetings" ? "on" : ""}`} href="#/">▤ Meetings</a>
-        <a className={`nav ${nav === "people" ? "on" : ""}`} href="#/people">☺ People</a>
-        <a className={`nav ${nav === "settings" ? "on" : ""}`} href="#/settings">⚙ Settings</a>
-        <span className="spacer" />
-        <div className="status">🔒 Local only<br />Tier {tier} · {llmActive}</div>
-      </aside>
+    <div className={`app ${menu ? "menu" : ""}`}>
+      <Sidebar ctx={ctx} path={path} onNavigate={closeMenu} />
       <main className="main">
-        {recorder.recording && !path.startsWith("/live") && <RecordingBar ctx={ctx} compact />}
-        {page}
+        <div className="topbar">
+          <button className="btn ghost" aria-label={t("meetings")} onClick={() => setMenu(true)}><I.menu size={18} /></button>
+          <b style={{ fontFamily: "var(--display)" }}>Modwen</b>
+        </div>
+        {offline && <div className="conn" role="status">{t("offline")}</div>}
+        <div className={`page ${narrow ? "narrow" : ""}`}>{page}</div>
       </main>
+      {recorder.recording && <RecordingBar ctx={ctx} onLive={path.startsWith("/live")} />}
       {toastMsg && <div className={`toast ${toastMsg.kind}`} role={toastMsg.kind === "error" ? "alert" : "status"}>
-        {toastMsg.kind === "error" ? "⚠" : "✓"} {toastMsg.msg}</div>}
+        {toastMsg.kind === "error" ? <I.warn /> : <I.check />} {toastMsg.msg}</div>}
     </div>
   );
 }

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { api, fmtTs } from "../api";
 import type { Ctx } from "../App";
+import { useI18n } from "../i18n";
+import { I } from "../components/icons";
 
 // Compact floating recording pill, opened in its own small browser window (#/pill).
 // In v1 (Tauri) the same page becomes an always-on-top native window.
 export default function Pill({ ctx }: { ctx: Ctx }) {
+  const { t } = useI18n();
   const r = ctx.recorder;
   const [elapsed, setElapsed] = useState(r.elapsed_ms ?? 0);
 
@@ -35,43 +38,40 @@ export default function Pill({ ctx }: { ctx: Ctx }) {
   if (!r.recording) {
     return (
       <div className="pill-page">
-        <div className="pill">
-          <span className="muted">Not recording.</span>
+        <div className="pill"><div className="pill-row">
+          <span>{t("notRecording")}</span>
           <span style={{ flex: 1 }} />
-          <button className="btn sm" onClick={() => openMain("#/start")}>● Start…</button>
-          <button className="btn sm ghost" onClick={() => window.close()}>✕</button>
-        </div>
+          <button className="pb" onClick={() => openMain("#/start")}><I.record size={14} />{t("record")}</button>
+          <button className="pb" aria-label="Close" onClick={() => window.close()}><I.close size={14} /></button>
+        </div></div>
       </div>
     );
   }
 
   const levels = r.levels ?? {};
   const warnings = Object.values(r.warnings ?? {});
-  const meter = (label: string, key: string, cls = "") =>
-    key in levels ? (
-      <span className={`meter ${cls}`}>{label}<span className="bar"><i style={{ width: `${levels[key] * 100}%` }} /></span></span>
-    ) : null;
+  const meter = (label: string, key: string) =>
+    key in levels ? <span className="meter">{label}<span className="bar"><i style={{ width: `${levels[key] * 100}%` }} /></span></span> : null;
 
   return (
     <div className="pill-page">
-      <div className={`pill ${warnings.length ? "warn" : ""}`}>
+      <div className="pill">
         <div className="pill-row">
-          <span className="badge rec"><span className={`dot ${r.paused ? "" : "pulse"}`} />{r.paused ? "PAUSED" : "REC"}</span>
+          <span className={`dot ${r.paused ? "" : "pulse"}`} style={{ color: "var(--rec)" }} />
+          <span>{r.paused ? t("paused") : t("rec")}</span>
           <span className="timer">{fmtTs(elapsed)}</span>
-          {meter("You", "mic")}
-          {meter("Others", "system", "others")}
-          {meter("Room", "room")}
+          <span className="meters">{meter(t("you"), "mic")}{meter(t("call"), "system")}{meter(t("room"), "room")}</span>
         </div>
         <div className="pill-row">
-          {warnings.length ? <span className="badge warn" title={warnings.join(" · ")}>⚠ {warnings[0]}</span>
-            : <span className="lock">🔒 Local only</span>}
+          {warnings.length ? <span className="badge warn" title={warnings.join(" · ")}><I.warn size={13} />{warnings[0]}</span>
+            : <span style={{ fontSize: 12, opacity: .8, display: "inline-flex", gap: 5, alignItems: "center" }}><I.lock size={12} />{t("localOnly")}</span>}
           <span style={{ flex: 1 }} />
-          <button className="btn sm" title="Mark moment" onClick={() => api.mark()}>★</button>
+          <button className="pb" title={t("mark")} aria-label={t("mark")} onClick={() => api.mark()}><I.mark size={14} /></button>
           {r.paused
-            ? <button className="btn sm" title="Resume" onClick={() => api.resume().then(ctx.refreshStatus)}>▶</button>
-            : <button className="btn sm" title="Pause" onClick={() => api.pause().then(ctx.refreshStatus)}>❚❚</button>}
-          <button className="btn danger sm" onClick={stop}>■ Stop</button>
-          <button className="btn sm" title="Open the live transcript" onClick={() => openMain("#/live")}>⤢</button>
+            ? <button className="pb" title={t("resume")} aria-label={t("resume")} onClick={() => api.resume().then(ctx.refreshStatus)}><I.play size={14} /></button>
+            : <button className="pb" title={t("pause")} aria-label={t("pause")} onClick={() => api.pause().then(ctx.refreshStatus)}><I.pause size={14} /></button>}
+          <button className="pb stop" onClick={stop}><I.stop size={12} fill="currentColor" />{t("stop")}</button>
+          <button className="pb" title={t("openLive")} aria-label={t("openLive")} onClick={() => openMain("#/live")}><I.live size={14} /></button>
         </div>
       </div>
     </div>

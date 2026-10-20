@@ -41,7 +41,7 @@ export type VoiceResult = { saved: boolean; seconds: number; reason?: string } |
 
 export type Segment = { id: string; seq: number; speaker_id: string; channel: string; start_ms: number;
   end_ms: number; text: string; language: string; confidence: number; overlap: number; edited: number;
-  speaker_name: string | null; uncertain?: number };
+  speaker_name: string | null; speaker_is_self?: number; uncertain?: number };
 
 export type Point = { id: string; text: string; original_text: string; evidence_segment_ids: string[];
   confidence: number };
