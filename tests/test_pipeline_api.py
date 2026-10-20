@@ -545,3 +545,21 @@ def _wait_any(services, mid, timeout=30):
         if m["status"] in ("ready", "failed"):
             return m
     raise AssertionError("timeout")
+
+
+def test_meeting_list_changes_are_announced(cfg, fake_llm):
+    """Open windows refresh their meeting list from these events (a deleted meeting must leave the sidebar)."""
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    mid = import_audio(s, speechy([(2.0, 2.5)]), title="Gone soon")["id"]
+    assert _wait(s, mid)["status"] == "ready"
+    c = TestClient(create_app(s, token="t"))
+    c.cookies.set("mw_token", "t")
+    changes = lambda: [(e["meeting_id"], e["change"]) for e in s.bus.recent if e["type"] == "meetings_changed"]
+    assert (mid, "imported") in changes()
+    c.get(f"/api/meetings/{mid}")
+    assert (mid, "opened") in changes()
+    assert c.delete(f"/api/meetings/{mid}").json() == {"deleted": mid}
+    assert changes()[-1] == (mid, "deleted")
+    assert all(m["id"] != mid for m in c.get("/api/meetings").json()["meetings"])

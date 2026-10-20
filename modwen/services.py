@@ -302,6 +302,10 @@ class Services:
             self._pending[meeting_id] = self._pending.get(meeting_id, 0) + 1
         self.jobs.put((self.JOB_PRIORITY.get(kind, 3), next(self._job_seq), kind, meeting_id, kw))
 
+    def meetings_changed(self, mid: str, change: str) -> None:
+        """Tell every open window that the meeting list changed (deleted, opened, pinned, imported...)."""
+        self.bus.publish({"type": "meetings_changed", "meeting_id": mid, "change": change})
+
     def is_queued_or_running(self, meeting_id: str) -> bool:
         with self._pending_lock:
             return self._pending.get(meeting_id, 0) > 0
@@ -360,6 +364,7 @@ class Services:
                     shutil.rmtree(self.cfg.audio_dir / m["id"], ignore_errors=True)
                 if field == "meeting":
                     self.store.delete_meeting(m["id"])
+                    self.meetings_changed(m["id"], "deleted")
                 elif field == "transcript":
                     self.store.forget_transcript(m["id"])
                 else:

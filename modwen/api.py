@@ -259,6 +259,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
             from modwen.storage import now_iso
 
             s.store.update_meeting(mid, opened_at=now_iso())
+            s.meetings_changed(mid, "opened")
         return {"meeting": m, "speakers": s.store.get_speakers(mid), "segments": s.store.get_segments(mid),
                 "notes": s.store.latest_notes(mid)}
 
@@ -273,6 +274,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
         shutil.rmtree(s.cfg.audio_dir / mid, ignore_errors=True)
         s.store.delete_meeting(mid)  # also removes the wrapped key -> audio unrecoverable
+        s.meetings_changed(mid, "deleted")
         return {"deleted": mid}
 
     @app.put("/api/meetings/{mid}/keep")
@@ -280,6 +282,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
         """Pin a meeting so retention never deletes it (or unpin)."""
         meeting_or_404(mid)
         s.store.update_meeting(mid, keep=int(req.keep))
+        s.meetings_changed(mid, "kept")
         return s.store.get_meeting(mid)
 
     @app.post("/api/meetings/{mid}/retry")
@@ -287,6 +290,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
         if s.is_queued_or_running(meeting_or_404(mid)["id"]):
             raise HTTPException(409, "This meeting is already being processed")
         s.store.update_meeting(mid, status="processing", error=None)
+        s.meetings_changed(mid, "retry")
         s.enqueue_processing(mid)
         return {"queued": True}
 
@@ -572,6 +576,7 @@ def import_sealed(s: Services, sealed, *, title: str, meeting_language: str, cha
         s.store.delete_meeting(m["id"])
         raise HTTPException(400, f"Could not read the audio file: {exc}") from exc
     s.enqueue_processing(m["id"])
+    s.meetings_changed(m["id"], "imported")
     return s.store.get_meeting(m["id"])  # type: ignore[return-value]
 
 
@@ -587,6 +592,7 @@ def import_audio(s: Services, audio, *, title: str, meeting_language: str = "aut
                                duration_ms=int(audio.size / 16))
     write_channel(s.cfg.audio_dir / m["id"], channel, data_key, audio, s.cfg.capture.chunk_seconds)
     s.enqueue_processing(m["id"])
+    s.meetings_changed(m["id"], "imported")
     return s.store.get_meeting(m["id"])  # type: ignore[return-value]
 
 
