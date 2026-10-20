@@ -13,8 +13,8 @@ if [ "$(uname)" = "Darwin" ]; then bash modwen/native/macos/build.sh; fi
 
 rm -rf "$OUT" "$OUT.zip"
 mkdir -p "$OUT"
-# Everything git would publish (respects .gitignore), plus the build outputs.
-{ git ls-files --cached --others --exclude-standard; echo ui/dist; [ -f modwen/native/macos/build/modwen-tap ] && echo modwen/native/macos/build/modwen-tap; } \
+# Committed files only (never a stray untracked file), plus the build outputs.
+{ git ls-files --cached; echo ui/dist; [ -f modwen/native/macos/build/modwen-tap ] && echo modwen/native/macos/build/modwen-tap; } \
   | grep -v -E '^(release/|\.github/)' | while read -r f; do
     [ -e "$f" ] || continue
     mkdir -p "$OUT/$(dirname "$f")"
