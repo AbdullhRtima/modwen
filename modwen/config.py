@@ -250,14 +250,20 @@ class Config(BaseModel):
         if not path.exists() and legacy.exists():
             import sqlite3
 
-            con = sqlite3.connect(legacy)
-            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")  # fold pending journal pages into the main file
-            con.close()
-            legacy.rename(path)
-            for suffix in ("-wal", "-shm"):
-                leftover = legacy.with_name(legacy.name + suffix)
-                if leftover.exists():
-                    leftover.unlink()
+            # SQLite's backup API copies the database including pending journal (WAL) pages, and works while
+            # the old file is open elsewhere (Windows refuses to rename an open file). The old file is removed
+            # when possible; if not, it is left behind harmlessly (the new one exists from now on).
+            src, dst = sqlite3.connect(legacy), sqlite3.connect(path)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+            for leftover in (legacy, legacy.with_name(legacy.name + "-wal"), legacy.with_name(legacy.name + "-shm")):
+                try:
+                    leftover.unlink(missing_ok=True)
+                except OSError:
+                    pass
         return path
 
     @property

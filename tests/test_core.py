@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import date
 
 import numpy as np
@@ -403,10 +404,12 @@ def test_legacy_database_is_migrated(data_dir):
     con.execute("CREATE TABLE t (x)")
     con.execute("INSERT INTO t VALUES (42)")
     con.commit()  # leaves data in the -wal file until checkpoint
-    path = Config().db_path
+    path = Config().db_path  # the old database is still open here (Windows can't rename it): must still work
     con.close()
-    assert path.name == "modwen.db" and not legacy.exists()
-    assert sqlite3.connect(path).execute("SELECT x FROM t").fetchone() == (42,)
+    assert path.name == "modwen.db"
+    assert sqlite3.connect(path).execute("SELECT x FROM t").fetchone() == (42,)  # journal pages included
+    if sys.platform != "win32":
+        assert not legacy.exists()  # removed (on Windows it may stay while open; harmless)
 
 
 def test_tests_never_write_outside_project(data_dir):
