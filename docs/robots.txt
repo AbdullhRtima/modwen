@@ -1,0 +1,6 @@
+# modwen.rtima.org
+User-agent: *
+Allow: /
+Disallow: /mockups/
+
+Sitemap: https://modwen.rtima.org/sitemap.xml

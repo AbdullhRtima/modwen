@@ -8,6 +8,27 @@
 <meta property="og:title" content="Modwen · مُدوَّن · Say it. See it.">
 <meta property="og:description" content="Local-first, open-source voice-to-notes for Arabic and English. Your voice never leaves your machine.">
 <link rel="canonical" href="https://modwen.rtima.org/">
+<link rel="alternate" hreflang="en" href="https://modwen.rtima.org/">
+<link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/?lang=ar">
+<link rel="alternate" hreflang="x-default" href="https://modwen.rtima.org/">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<meta name="robots" content="index, follow">
+<meta name="keywords" content="meeting notes, Arabic transcription, Arabic speech to text, local AI, offline meeting notes, open source, Whisper, privacy, تفريغ صوتي, محضر اجتماع, ملاحظات الاجتماعات">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Modwen">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ar_AR">
+<meta name="twitter:title" content="Modwen · مُدوَّن · Say it. See it.">
+<meta name="twitter:description" content="Local-first, open-source voice-to-notes for Arabic and English. Your voice never leaves your machine.">
+<meta name="twitter:image" content="https://modwen.rtima.org/assets/social-preview.png">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Modwen", "alternateName": "مُدوَّن",
+ "url": "https://modwen.rtima.org/", "applicationCategory": "BusinessApplication", "operatingSystem": "macOS, Windows",
+ "description": "Local-first, open-source meeting notes for Arabic and English: transcription, speakers, decisions and action items, entirely on your computer.",
+ "inLanguage": ["en", "ar"], "license": "https://www.apache.org/licenses/LICENSE-2.0", "isAccessibleForFree": true,
+ "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+ "codeRepository": "https://github.com/AbdullhRtima/modwen", "image": "https://modwen.rtima.org/assets/social-preview.png"}
+</script>
 <meta property="og:url" content="https://modwen.rtima.org/">
 <meta property="og:image" content="https://modwen.rtima.org/assets/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -696,6 +717,12 @@ function setLang(l) {
   const dict = l === "ar" ? AR : EN;
   document.documentElement.lang = l;
   document.documentElement.dir = l === "ar" ? "rtl" : "ltr";
+  // the Arabic page is its own page for search engines: its own canonical URL, title and description
+  document.querySelector('link[rel="canonical"]').href = "https://modwen.rtima.org/" + (l === "ar" ? "?lang=ar" : "");
+  document.title = l === "ar" ? "مُدوَّن · Modwen · تكلّم… والباقي مُدوَّن" : "Modwen · مُدوَّن · Say it. See it.";
+  document.querySelector('meta[name="description"]').content = l === "ar"
+    ? "مُدوَّن يحوّل كلام الاجتماعات بالعربية والإنجليزية إلى ملاحظات وقرارات ومهام، بالكامل على جهازك. مفتوح المصدر ومحلي أولاً."
+    : "Modwen turns Arabic and English speech into meeting notes, decisions and action items, entirely on your computer. Open source, local-first, private by design.";
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     const v = dict[el.dataset.i18n];
     if (v !== undefined) el.innerHTML = v;
