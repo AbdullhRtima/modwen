@@ -1,6 +1,6 @@
 [project]
 name = "modwen"
-version = "0.2.2"
+version = "0.3.0"
 description = "Modwen (مُدوَّن): local-first, open-source voice-to-notes. Arabic/English meeting transcription and notes with a local LLM."
 readme = "README.md"
 license = "Apache-2.0"
