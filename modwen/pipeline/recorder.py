@@ -219,7 +219,7 @@ class Recorder:
                 # Exact: where this block belongs vs. what is written. A hole (the device produced nothing,
                 # e.g. no sound playing, or dropped audio) is filled with silence; audio that would run ahead
                 # of the clock (a device delivering more than real time) is trimmed.
-                drift = int(s.elapsed_at(captured_at) * SAMPLE_RATE) - s.written[channel]
+                drift = round(s.elapsed_at(captured_at) * SAMPLE_RATE) - s.written[channel]
                 if drift > CAPTURE_SLACK:
                     self._pad(s, channel, w, drift, busy)
                 elif drift < -CAPTURE_SLACK:
@@ -229,7 +229,7 @@ class Recorder:
                     if mono.size == 0:
                         return
             else:
-                behind = int(s.elapsed_at(t) * SAMPLE_RATE) - (s.written[channel] + mono.size)
+                behind = round(s.elapsed_at(t) * SAMPLE_RATE) - (s.written[channel] + mono.size)
                 if behind > CLOCK_SLACK:
                     self._pad(s, channel, w, behind - CLOCK_SLACK // 3, busy)
         w.write(mono)
