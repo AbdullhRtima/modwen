@@ -679,7 +679,8 @@ def test_server_messages_have_an_arabic_translation_in_the_ui():
     assert len(patterns) >= 12
     samples = [  # the exact f-strings of modwen/notes/engine.py and modwen/pipeline/recorder.py
         f"Dropped a deadline not found in the transcript ({'بكرة'!r})", "3 item(s) without transcript evidence (low confidence)",
-        "2 action item(s) without an owner", "Summary (ar) failed: timeout",
+        "2 action item(s) without an owner", "3 action item(s) assigned to an unnamed speaker: rename speakers",
+        "Summary (ar) failed: timeout",
         "Bluetooth mic lowers accuracy. Use built-in or wired.",
         "The microphone device changed; recording continues on MacBook Pro Microphone.",
         "Lost the system device and could not reopen it: busy", "No system audio for 75 s. Is the meeting muted?",
@@ -693,7 +694,7 @@ def test_server_messages_have_an_arabic_translation_in_the_ui():
     engine = (Path(__file__).parent.parent / "modwen" / "notes" / "engine.py").read_text(encoding="utf-8")
     recorder = (Path(__file__).parent.parent / "modwen" / "pipeline" / "recorder.py").read_text(encoding="utf-8")
     for fragment in ("Dropped a deadline not found in the transcript", "without transcript evidence (low confidence)",
-                     "action item(s) without an owner"):
+                     "action item(s) without an owner", "assigned to an unnamed speaker: rename speakers"):
         assert fragment in engine, fragment
     for fragment in ("Bluetooth mic lowers accuracy", "Is the meeting muted?", "safety stop at", "Low disk space",
                      "live captions are paused", "dropped sound"):

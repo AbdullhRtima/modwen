@@ -120,7 +120,7 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
   const lowConf = segments.filter((s) => s.overlap).length;
   const warnings = [
     unnamed ? `${unnamed} ${t("unnamedN")}` : "",
-    ...(data?.warnings ?? []).map((w) => serverText(w, ui)),
+    ...[...new Set(data?.warnings ?? [])].map((w) => serverText(w, ui)),  // a long meeting can repeat one
     lowConf ? `${lowConf} ${t("overlapN")}` : "",
   ].filter(Boolean);
   const point = (id_: string, text: string, original: string | undefined, ids: string[], low = false) => (

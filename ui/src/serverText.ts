@@ -9,6 +9,8 @@ const AR: Rule[] = [
   [/^Dropped a deadline not found in the transcript \((.+)\)$/, (m) => `حُذف موعد لم يُذكر في النص (${m[1]})`],
   [/^(\d+) item\(s\) without transcript evidence \(low confidence\)$/, (m) => `${m[1]} عنصر بلا دليل من النص (ثقة منخفضة)`],
   [/^(\d+) action item\(s\) without an owner$/, (m) => `${m[1]} مهمة بلا مسؤول`],
+  [/^(\d+) action item\(s\) assigned to an unnamed speaker: rename speakers$/,
+    (m) => `${m[1]} مهمة مسندة إلى متحدث بلا اسم: سمِّ المتحدثين`],
   [/^Summary \((\w+)\) failed: (.*)$/, (m) => `تعذّر إنشاء الملخص (${m[1]}): ${m[2]}`],
   [/^Modwen closed before any audio was saved \(audio is saved every (\d+) s\)\. Nothing to process\.$/,
     (m) => `أُغلق مُدوَّن قبل حفظ أي صوت (يُحفظ الصوت كل ${m[1]} ث). لا يوجد ما يُعالج.`],
