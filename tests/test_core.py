@@ -699,3 +699,66 @@ def test_server_messages_have_an_arabic_translation_in_the_ui():
     for fragment in ("Bluetooth mic lowers accuracy", "Is the meeting muted?", "safety stop at", "Low disk space",
                      "live captions are paused", "dropped sound"):
         assert fragment in recorder, fragment
+
+
+def test_read_channel_matches_chunks_of_any_length(tmp_path):
+    """read_channel decodes into one buffer (no second copy of a long meeting); uneven chunks must still line up."""
+    import numpy as np
+
+    from modwen.audio.chunks import ChunkWriter, read_channel
+
+    key = b"k" * 32
+    rng = np.random.default_rng(1)
+    parts = [rng.standard_normal(n).astype(np.float32) * 0.1 for n in (16000 * 3, 16000 * 3, 16000 * 5, 1234)]
+    w = ChunkWriter(tmp_path, "mic", key, chunk_seconds=3)
+    for p in parts:
+        w.write(p)
+    w.close()
+    got = read_channel(tmp_path, "mic", key)
+    want = np.concatenate(parts)
+    assert got.dtype == np.float32 and got.size == want.size
+    assert np.allclose(got, want, atol=1e-4)  # FLAC is 24/16-bit: tiny quantisation
+    assert read_channel(tmp_path, "none", key).size == 0
+
+
+def test_speech_detection_runs_in_blocks_and_rejoins_at_the_edges(monkeypatch):
+    """Silence detection runs on 10-minute blocks (memory); speech cut by a block edge is one window again."""
+    import numpy as np
+
+    import modwen.audio.vad as vad
+
+    sr = 16000
+    monkeypatch.setattr(vad, "VAD_BLOCK", 10 * sr)
+    seen = []
+
+    def fake_silero(part, max_seconds, min_silence_ms):  # "speech" wherever the signal is loud
+        seen.append(part.size)
+        loud = np.flatnonzero(np.abs(part) > 0.5)
+        return [(int(loud[0]), int(loud[-1]) + 1)] if loud.size else []
+
+    monkeypatch.setattr(vad, "_silero", fake_silero)
+    audio = np.zeros(35 * sr, dtype=np.float32)
+    audio[8 * sr:13 * sr] = 1.0   # crosses the 10 s edge
+    audio[25 * sr:27 * sr] = 1.0
+    regions = vad.speech_regions(audio, max_seconds=20.0, method="silero")
+    assert seen == [10 * sr, 10 * sr, 10 * sr, 5 * sr]
+    assert regions == [(8 * sr, 13 * sr), (25 * sr, 27 * sr)]
+
+
+def test_notes_time_estimate_follows_the_real_pace(monkeypatch):
+    """Once notes parts are written, the estimate is their pace x parts left (the fixed shares were 3x too low)."""
+    import modwen.pipeline.processor as proc
+
+    now = [1000.0]
+    monkeypatch.setattr(proc.time, "time", lambda: now[0])
+
+    class Store:
+        def update_meeting(self, *a, **k):
+            pass
+
+    p = proc.Progress("m")
+    p.state["started"] = 0.0
+    p.update(Store(), step="notes", transcribe=1.0, notes_parts=11)
+    now[0] += 7 * 60  # two parts in 7 minutes
+    p.update(Store(), notes_part=2)
+    assert p.state["eta_seconds"] == int(3.5 * 60 * 9)

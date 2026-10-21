@@ -49,7 +49,12 @@ def energy_regions(
     if n == 0:
         return []
     frames = audio[: n * frame].reshape(n, frame)
-    rms = np.sqrt(np.mean(frames**2, axis=1) + 1e-12)
+    # frame energies block by block: squaring the whole meeting at once would copy it (~0.5 GB for 2 hours)
+    rms = np.empty(n, dtype=np.float32)
+    step = max(1, VAD_BLOCK // frame)
+    for i in range(0, n, step):
+        blk = frames[i:i + step]
+        rms[i:i + step] = np.sqrt(np.einsum("ij,ij->i", blk, blk) / frame + 1e-12)
     db = 20 * np.log10(rms + 1e-12)
     if threshold_db is None:
         peak = float(np.percentile(db, 95))
@@ -108,6 +113,9 @@ def merge_regions(regions: list[tuple[int, int]], max_gap_s: float = 1.5,
     return merged
 
 
+VAD_BLOCK = 600 * SAMPLE_RATE
+
+
 def speech_regions(audio: np.ndarray, max_seconds: float = 20.0, min_silence_ms: int = 500,
                    method: str = "auto", merge_gap_s: float = 1.5) -> list[tuple[int, int]]:
     """Return (start_sample, end_sample) windows of speech, each at most ``max_seconds`` long.
@@ -117,7 +125,17 @@ def speech_regions(audio: np.ndarray, max_seconds: float = 20.0, min_silence_ms:
     """
     if audio.size < SAMPLE_RATE // 4:
         return []
-    regions = _silero(audio, max_seconds, min_silence_ms) if method in ("auto", "silero") else None
+    regions = None
+    if method in ("auto", "silero"):
+        # In 10-minute blocks: the detector copies its input twice, which for a whole 2-hour meeting is ~1 GB.
+        # Speech cut at a block edge is joined again by merge_regions below (no gap between the two halves).
+        regions = []
+        for start in range(0, audio.size, VAD_BLOCK):
+            part = _silero(audio[start:start + VAD_BLOCK], max_seconds, min_silence_ms)
+            if part is None:
+                regions = None
+                break
+            regions += [(a + start, b + start) for a, b in part]
     if regions is None:
         regions = energy_regions(audio, max_seconds, min_silence_ms)
     regions = merge_regions(regions, max_gap_s=merge_gap_s, max_len_s=max_seconds)

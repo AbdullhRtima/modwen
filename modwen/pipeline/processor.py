@@ -17,7 +17,9 @@ from modwen.stt.transcriber import transcribe_channel
 
 log = logging.getLogger(__name__)
 
-STEP_WEIGHTS = {"transcribe": 0.55, "speakers": 0.15, "notes": 0.30}
+# Share of the total time per step, measured on a 2-hour meeting (M1 16 GB: 34 / 10 / 46 min). Only a first guess:
+# once notes parts are written, the estimate uses their real pace.
+STEP_WEIGHTS = {"transcribe": 0.38, "speakers": 0.11, "notes": 0.51}
 
 
 @dataclass
@@ -31,6 +33,8 @@ class Progress:
     })
 
     def update(self, store, **changes) -> None:
+        if changes.get("step") and changes["step"] != self.state.get("step"):
+            self.state["step_started"] = time.time()
         self.state.update(changes)
         done = (STEP_WEIGHTS["transcribe"] * self.state.get("transcribe", 0)
                 + (STEP_WEIGHTS["speakers"] if self.state["steps"]["speakers"] == "done" else 0)
@@ -39,6 +43,11 @@ class Progress:
         elapsed = time.time() - self.state["started"]
         self.state["overall"] = round(done, 3)
         self.state["eta_seconds"] = int(elapsed / done - elapsed) if done > 0.05 else None
+        parts, written = self.state["notes_parts"], self.state["notes_part"]
+        if self.state.get("step") == "notes" and parts and 0 < written < parts:
+            # the notes' own pace (the AI model's speed varies far more between computers than Whisper's)
+            per_part = (time.time() - self.state.get("step_started", self.state["started"])) / written
+            self.state["eta_seconds"] = int(per_part * (parts - written))
         store.update_meeting(self.meeting_id, progress=self.state)
         if self.publish:
             self.publish({"type": "progress", "meeting_id": self.meeting_id, "progress": self.state})

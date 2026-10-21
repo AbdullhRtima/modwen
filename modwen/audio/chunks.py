@@ -81,12 +81,20 @@ def list_channels(meeting_dir: Path) -> list[str]:
 
 
 def read_channel(meeting_dir: Path, channel: str, data_key: bytes) -> np.ndarray:
-    parts = []
-    for p in sorted(Path(meeting_dir).glob(f"{channel}-*.flac.enc")):
+    """The whole channel as one float32 array. Decoded straight into one buffer: joining a list of chunks would
+    hold the recording twice for a moment (~1 GB for a 2-hour meeting)."""
+    paths = sorted(Path(meeting_dir).glob(f"{channel}-*.flac.enc"))
+    out = np.zeros(0, dtype=np.float32)
+    n = 0
+    for p in paths:
         raw = decrypt(data_key, p.read_bytes(), channel.encode())
-        data, _ = sf.read(io.BytesIO(raw), dtype="float32")
-        parts.append(data)
-    return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+        with sf.SoundFile(io.BytesIO(raw)) as f:
+            if out.size < n + f.frames:  # sized from the first chunk; grows only if chunks differ in length
+                grown = np.empty(max(n + f.frames, f.frames * len(paths), int(out.size * 1.25)), dtype=np.float32)
+                grown[:n] = out[:n]
+                out = grown
+            n += len(f.read(out=out[n:n + f.frames], dtype="float32"))
+    return out[:n]
 
 
 def write_channel(meeting_dir: Path, channel: str, data_key: bytes, audio: np.ndarray, chunk_seconds: int = 30) -> int:

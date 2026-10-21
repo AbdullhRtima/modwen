@@ -122,12 +122,20 @@ def mlx_model_path(model: str, cache_dir: str | Path | None, local_only: bool = 
         raise
 
 
+MLX_CACHE_LIMIT = 256 * 1024 * 1024
+
+
 class MlxWhisperEngine:
     def __init__(self, model: str, beam_size: int = 5, cache_dir: str | Path | None = None):
         import mlx_whisper  # noqa: F401
 
         self.repo = mlx_model_path(model, cache_dir)
         self.name = f"mlx-whisper:{model}"
+        # MLX keeps freed GPU buffers for reuse without a limit (over 1 GB after 10 minutes of audio). Measured on an
+        # M1: same speed with 256 MB, so cap it; 16 GB Macs also hold the AI model for the notes.
+        import mlx.core as mx
+
+        mx.set_cache_limit(MLX_CACHE_LIMIT)
         self._lock = threading.Lock()
         self._model = None
 
