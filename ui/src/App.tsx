@@ -10,6 +10,7 @@ import Pill from "./pages/Pill";
 import People from "./pages/People";
 import Welcome from "./pages/Welcome";
 import Sidebar from "./components/Sidebar";
+import UpdateBanner from "./components/UpdateBanner";
 import { I } from "./components/icons";
 import { useI18n } from "./i18n";
 
@@ -146,6 +147,7 @@ export default function App() {
           <b style={{ fontFamily: "var(--display)" }}>Modwen</b>
         </div>
         {offline && <div className="conn" role="status">{t("offline")}</div>}
+        <UpdateBanner ctx={ctx} />
         <div className={`page ${narrow ? "narrow" : ""}`}>{page}</div>
       </main>
       {recorder.recording && <RecordingBar ctx={ctx} onLive={path.startsWith("/live")} />}

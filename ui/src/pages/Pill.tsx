@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { desktop } from "../desktop";
 import { api, fmtTs } from "../api";
 import type { Ctx } from "../App";
 import { useI18n } from "../i18n";
@@ -23,7 +24,9 @@ export default function Pill({ ctx }: { ctx: Ctx }) {
   }, [r.elapsed_ms, r.paused, r.recording]);
 
   const openMain = (hash: string) => {
-    if (window.opener && !window.opener.closed) {
+    if (desktop) {  // the app shows its main window on that page
+      desktop.core.invoke("show_main", { hash }).catch(() => undefined);
+    } else if (window.opener && !window.opener.closed) {
       window.opener.location.hash = hash;
       window.opener.focus();
     } else {
@@ -33,7 +36,7 @@ export default function Pill({ ctx }: { ctx: Ctx }) {
   const stop = async () => {
     const { meeting_id } = await api.stop();
     openMain(`#/meetings/${meeting_id}`);
-    window.close();
+    closePill();
   };
 
   if (!r.recording) {
@@ -43,7 +46,7 @@ export default function Pill({ ctx }: { ctx: Ctx }) {
           <span>{t("notRecording")}</span>
           <span style={{ flex: 1 }} />
           <button className="pb" onClick={() => openMain("#/start")}><I.record size={14} />{t("record")}</button>
-          <button className="pb" aria-label={lang === "ar" ? "إغلاق" : "Close"} onClick={() => window.close()}><I.close size={14} /></button>
+          <button className="pb" aria-label={lang === "ar" ? "إغلاق" : "Close"} onClick={closePill}><I.close size={14} /></button>
         </div></div>
       </div>
     );
@@ -79,7 +82,16 @@ export default function Pill({ ctx }: { ctx: Ctx }) {
   );
 }
 
+function closePill() {
+  if (desktop) desktop.core.invoke("close_pill").catch(() => undefined);
+  else window.close();
+}
+
 export function openPill(): Window | null {
+  if (desktop) {  // the app opens a real always-on-top window
+    desktop.core.invoke("open_pill").catch(() => undefined);
+    return null;
+  }
   return window.open(`${location.origin}/#/pill`, "modwen-pill",
     "popup=yes,width=470,height=150,left=40,top=40,resizable=yes");
 }

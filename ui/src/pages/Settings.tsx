@@ -4,6 +4,7 @@ import type { Ctx } from "../App";
 import { I } from "../components/icons";
 import JobProgress, { useJob } from "../components/JobProgress";
 import { useServerEvents } from "../events";
+import { desktop, UpdateInfo } from "../desktop";
 import { Key, useI18n } from "../i18n";
 
 type Tab = "general" | "audio" | "transcription" | "ai" | "notifications" | "privacy" | "about";
@@ -124,10 +125,44 @@ function General({ settings, save, ctx }: SP & { ctx: Ctx }) {
             options={[["system", `${tr("System", "النظام")} (${sysTz})`], ...tzs.map((t) => [t, t] as [string, string])]} /></div>
       </Section>
       <Network ctx={ctx} save={save} />
+      {desktop && <Updates settings={settings} save={save} />}
       <Section title={tr("Setup", "الإعداد")} hint={tr("Check permissions, speech models and the AI model again.", "تحقّق مجدداً من الأذونات ونماذج الكلام ونموذج الذكاء الاصطناعي.")}>
         <div><button className="btn" onClick={() => ctx.go("#/welcome")}><I.regenerate size={15} />{tr("Run the setup wizard again", "شغّل معالج الإعداد مجدداً")}</button></div>
       </Section>
     </div>
+  );
+}
+
+/** Desktop app only: automatic update checks (on by default) and "Check now". */
+function Updates({ settings, save }: SP) {
+  const { tr } = useI18n();
+  const [state, setState] = useState<"idle" | "checking" | "none" | "error">("idle");
+  const [found, setFound] = useState<UpdateInfo | null>(null);
+  const check = async () => {
+    setState("checking");
+    try {
+      const u = await desktop!.core.invoke<UpdateInfo | null>("check_update");
+      setFound(u);
+      setState(u ? "idle" : "none");
+    } catch {
+      setState("error");
+    }
+  };
+  return (
+    <Section title={tr("Updates", "التحديثات")}
+      hint={tr("Modwen asks GitHub whether a newer version exists. The request sends only the app version, never anything from your meetings.",
+        "يسأل مُدوَّن GitHub إن كانت هناك نسخة أحدث. لا يُرسَل إلا إصدار التطبيق، ولا شيء من اجتماعاتك أبداً.")}>
+      <label className="check"><input type="checkbox" checked={Boolean(settings["app.check_updates"])}
+        onChange={(e) => save({ "app.check_updates": e.target.checked })} />
+        {tr("Check for updates automatically", "تحقّق من التحديثات تلقائياً")}</label>
+      <div className="row-wrap" style={{ marginTop: 12 }}>
+        <button className="btn" disabled={state === "checking"} onClick={check}>
+          {state === "checking" ? <I.spin size={15} className="spin-anim" /> : <I.regenerate size={15} />}{tr("Check now", "تحقّق الآن")}</button>
+        {found && <span className="mi"><I.download size={14} />{tr(`Modwen ${found.version} is available (see the banner above)`, `يتوفر مُدوَّن ${found.version} (انظر الشريط أعلاه)`)}</span>}
+        {state === "none" && <span className="muted mi"><I.check size={14} />{tr("Modwen is up to date", "مُدوَّن محدّث")}</span>}
+        {state === "error" && <span className="mi" style={{ color: "var(--rec)" }}><I.warn size={14} />{tr("Couldn't reach GitHub. Check the internet connection.", "تعذّر الوصول إلى GitHub. تحقّق من الاتصال بالإنترنت.")}</span>}
+      </div>
+    </Section>
   );
 }
 
@@ -439,6 +474,14 @@ function Notifications({ settings, save }: SP) {
         <label className="check"><input type="checkbox" checked={Boolean(settings["notify.sound"])}
           onChange={(e) => save({ "notify.sound": e.target.checked })} />{tr("Play a sound", "شغّل صوتاً")}</label>
       </div>
+      {desktop && /Mac/.test(navigator.platform) && (
+        <div className="banner info" style={{ marginTop: 14, alignItems: "flex-start", flexWrap: "nowrap" }}><I.info style={{ marginTop: 2 }} />
+          <span className="grow">{tr("macOS asks once whether Modwen may show notifications: choose Allow. If you missed it, or nothing appears, turn on Allow notifications for Modwen in System Settings.",
+            "يسأل macOS مرة واحدة إن كان مُدوَّن يستطيع إظهار الإشعارات: اختر السماح. إن فاتك ذلك أو لم يظهر شيء، فعّل السماح بالإشعارات لمُدوَّن في إعدادات النظام.")}{" "}
+            <button className="btn sm" style={{ marginTop: 6 }} onClick={() => window.open("x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=org.rtima.modwen")}>
+              {tr("Open macOS notification settings", "افتح إعدادات الإشعارات في macOS")}</button></span>
+        </div>
+      )}
       <div className="row-wrap" style={{ marginTop: 14 }}>
         <button className="btn" onClick={() => setup.notifyTest().then(() => setSent(true))}><I.bell size={15} />{tr("Send test notification", "أرسل إشعاراً تجريبياً")}</button>
         {sent && <span className="muted mi"><I.check size={14} />{tr("Sent", "أُرسل")}</span>}

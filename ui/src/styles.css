@@ -431,3 +431,11 @@ button.badge.warn { border: 1px dashed var(--warn); }
 .btn.icon-only { padding: 6px; }
 .pform .field { grid-template-columns: minmax(0, 1fr); gap: 4px; margin-bottom: 12px; }
 .btn.danger-text { color: var(--rec); }
+
+/* desktop app: update available */
+.update-banner { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 24px 0; padding: 10px 14px;
+  border-radius: 10px; background: var(--accent-soft); color: var(--text); border: 1px solid var(--border); font-size: 13.5px; }
+.update-banner > .icon { color: var(--accent-text); }
+.update-banner .grow { flex: 1 1 240px; min-width: 0; }
+.update-notes { flex-basis: 100%; margin: 4px 0 0; white-space: pre-wrap; font: 12.5px/1.6 var(--font); color: var(--text-2);
+  max-height: 220px; overflow: auto; }
