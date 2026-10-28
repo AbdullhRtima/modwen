@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import threading
 from pathlib import Path
 from typing import Any, Literal
 
@@ -173,6 +174,40 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
             "setup_complete": s.cfg.app.setup_complete,
             "jobs_pending": s.jobs.qsize(),
         }
+
+    llm_seen = {"t": 0.0, "ok": False}
+
+    @app.get("/api/tray")
+    def tray():
+        """Everything the desktop app's menu-bar menu shows, in one small request (it asks every 1.5 s)."""
+        import time as _time
+
+        rec = s.recorder.status()
+        current = s.store.get_meeting(rec["meeting_id"]) if rec.get("recording") and rec.get("meeting_id") else None
+        meetings = s.store.list_meetings(limit=30)
+        if _time.time() - llm_seen["t"] > 15:  # the AI-model check is a request of its own: not every tick
+            llm_seen.update(t=_time.time(), ok=bool(s.llm_status().get("ok")))
+        return {
+            "recording": bool(rec.get("recording")), "paused": bool(rec.get("paused")),
+            "elapsed_ms": rec.get("elapsed_ms") or 0, "meeting_id": rec.get("meeting_id"),
+            "title": current["title"] if current else None,
+            "processing": sum(1 for m in meetings if m["status"] == "processing"),
+            "ready": [{"id": m["id"], "title": m["title"]} for m in meetings
+                      if m["status"] == "ready" and not m.get("opened_at")][:3],
+            "llm": {"active": s.cfg.llm.active, "online": llm_seen["ok"]},
+            "notifications": s.notifier.take_for_app(),  # the app posts these (only it may, on macOS)
+            "check_updates": s.cfg.app.check_updates,
+        }
+
+    @app.post("/api/app/quit")
+    def app_quit():
+        """The desktop app quits: stop safely (save the last audio of a recording, stop the AI model) on every
+        platform. Windows has no SIGTERM, and killing the process would lose both."""
+        stop = getattr(app.state, "on_quit", None)
+        if stop is None:
+            raise HTTPException(409, "Not started by the desktop app")
+        threading.Timer(0.3, stop).start()  # answer first, then stop
+        return {"stopping": True}
 
     @app.get("/api/hardware")
     def hardware():

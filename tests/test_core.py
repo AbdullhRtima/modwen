@@ -762,3 +762,25 @@ def test_notes_time_estimate_follows_the_real_pace(monkeypatch):
     now[0] += 7 * 60  # two parts in 7 minutes
     p.update(Store(), notes_part=2)
     assert p.state["eta_seconds"] == int(3.5 * 60 * 9)
+
+
+def test_secrets_handed_over_by_the_app_skip_the_keychain(cfg, monkeypatch):
+    """The macOS app passes the Keychain's master key at start: the engine must use it without asking the
+    Keychain (each program that reads it gets its own prompt). File mode ignores it."""
+    import base64
+    import sys
+    import types
+
+    import modwen.crypto as crypto
+
+    calls = []
+    fake = types.SimpleNamespace(get_password=lambda *a: calls.append(a) or None, set_password=lambda *a: calls.append(a))
+    monkeypatch.setitem(sys.modules, "keyring", fake)  # a fake keychain: safe to leave file mode
+    monkeypatch.delenv("MODWEN_KEYSTORE", raising=False)
+    monkeypatch.setattr(crypto, "_HANDED", {})
+    key = base64.b64encode(b"k" * 32).decode()
+    crypto.accept_handed_secrets({"master-key": key, "bad": 3})
+    cfg.privacy.keystore = "auto"
+    assert crypto.KeyStore(cfg).master == b"k" * 32 and calls == []
+    cfg.privacy.keystore = "file"
+    assert crypto.SecretStore(cfg).get("master-key") is None  # file mode never uses handed-over secrets

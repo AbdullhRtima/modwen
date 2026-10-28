@@ -52,6 +52,15 @@ def _keystore_mode(cfg: Config | None) -> str:
     return cfg.privacy.keystore if cfg else "auto"
 
 
+# Secrets the desktop app read from the macOS Keychain and handed over at start (see accept_handed_secrets). On
+# macOS every program that reads a Keychain item asks the user separately; the app asks once, in its own name.
+_HANDED: dict[str, str] = {}
+
+
+def accept_handed_secrets(secrets: dict[str, str]) -> None:
+    _HANDED.update({k: v for k, v in secrets.items() if isinstance(k, str) and isinstance(v, str) and v})
+
+
 class SecretStore:
     """Small secret store: OS keychain first, data-dir file as fallback."""
 
@@ -81,6 +90,8 @@ class SecretStore:
             pass
 
     def get(self, name: str) -> str | None:
+        if self.mode in ("auto", "keyring") and name in _HANDED:
+            return _HANDED[name]
         if self.mode in ("auto", "keyring"):
             try:
                 import keyring

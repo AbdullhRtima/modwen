@@ -20,7 +20,7 @@ EDITABLE = {
     "notes.summary_language", "notes.timezone", "notes.chunk_minutes",
     "stt.meeting_language", "stt.glossary", "stt.live.provider", "stt.live.model", "stt.final.model",
     "capture.mic_device", "capture.system_backend", "capture.system_device",
-    "notify.desktop", "notify.sound", "llm.managed.autostart", "app.lan_access",
+    "notify.desktop", "notify.sound", "llm.managed.autostart", "app.lan_access", "app.check_updates",
     "diarization.remember_my_voice",
     "privacy.retention.audio_days", "privacy.retention.transcript_days", "privacy.retention.notes_days",
 }

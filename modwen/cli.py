@@ -64,6 +64,15 @@ def cmd_serve(args) -> int:
     use_sigwait = hasattr(signal, "pthread_sigmask") and hasattr(signal, "sigwait")
     if use_sigwait:
         signal.pthread_sigmask(signal.SIG_BLOCK, quit_signals)
+    if os.environ.get("MODWEN_SECRETS_ON_STDIN") == "1":
+        # The desktop app (macOS) reads Modwen's Keychain items itself and passes them on one JSON line, so the
+        # engine's Python never triggers its own Keychain prompts.
+        from modwen.crypto import accept_handed_secrets
+
+        try:
+            accept_handed_secrets(json.loads(sys.stdin.readline() or "{}"))
+        except (ValueError, OSError):
+            pass
     services = Services(cfg)
     services.start_managed_llm()
     import atexit
@@ -89,6 +98,19 @@ def cmd_serve(args) -> int:
         for name in ("SIGINT", "SIGBREAK"):
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), _shutdown)
+    parent = os.environ.get("MODWEN_PARENT_PID")
+    if parent and parent.isdigit():
+        # Started by the desktop app: if the app goes away without stopping us (force quit, crash), stop too,
+        # safely, instead of running on in the background with the microphone open.
+        def _watch_parent(pid=int(parent)):
+            import psutil
+
+            while psutil.pid_exists(pid):
+                time.sleep(2)
+            logging.getLogger(__name__).warning("The Modwen app (pid %s) is gone; shutting down", pid)
+            _shutdown()
+
+        threading.Thread(target=_watch_parent, name="parent-watch", daemon=True).start()
     token = os.environ.get("MODWEN_TOKEN")
     if not token and lan:
         # LAN mode: keep the same token across restarts so links bookmarked on other devices keep working.
@@ -101,10 +123,13 @@ def cmd_serve(args) -> int:
             store.set("ui-token", token)
     token = token or secrets.token_urlsafe(24)
     app = create_app(services, token=token, lan=lan)
+    if os.environ.get("MODWEN_DESKTOP"):
+        app.state.on_quit = _shutdown
     url = f"http://{cfg.app.ui_host}:{cfg.app.ui_port}"
     open_url = f"{url}/?token={token}"
     print(f"Modwen {__version__} · Tier {services.plan.tier}: {services.plan.label}")
-    print(f"Open: {open_url}")
+    if not os.environ.get("MODWEN_DESKTOP"):  # the app opens the window itself; keep the token out of its log
+        print(f"Open: {open_url}")
     bind = "0.0.0.0" if lan else cfg.app.ui_host
     if lan:
         from modwen.network import lan_urls

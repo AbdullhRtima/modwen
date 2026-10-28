@@ -643,3 +643,42 @@ def test_meeting_cannot_be_deleted_during_a_summary_rewrite(cfg, fake_llm):
     with s._pending_lock:
         s._pending.pop(mid)
     assert c.delete(f"/api/meetings/{mid}").status_code == 200
+
+
+def test_tray_summary_for_the_desktop_menu(cfg, fake_llm):
+    """The desktop app's menu-bar menu reads one endpoint; the app calls it with the token header."""
+    from modwen.api import create_app, import_audio
+
+    s = _services(cfg, fake_llm)
+    mid = import_audio(s, speechy([(2.0, 2.5)]), title="Fresh notes")["id"]
+    assert _wait(s, mid)["status"] == "ready"
+    c = TestClient(create_app(s, token="t"))
+    assert c.get("/api/tray").status_code == 401
+    t = c.get("/api/tray", headers={"x-modwen-token": "t"}).json()
+    assert t["recording"] is False and t["processing"] == 0 and t["llm"]["active"]
+    assert t["ready"] == [{"id": mid, "title": "Fresh notes"}]  # unread notes are listed until opened
+
+
+def test_desktop_app_gets_notifications_and_can_quit_the_engine(cfg, fake_llm, monkeypatch):
+    """Inside the app the engine doesn't post notifications itself (macOS allows only the app bundle): they wait
+    for the app's next /api/tray. /api/app/quit stops the engine safely, and only when started by the app."""
+    from modwen.api import create_app
+
+    monkeypatch.setenv("MODWEN_DESKTOP", "1")
+    cfg.notify.desktop = True
+    s = _services(cfg, fake_llm)
+    app = create_app(s, token="t")
+    c = TestClient(app)
+    c.headers["x-modwen-token"] = "t"
+    s.notifier.notify("Notes ready: Weekly", "3 action items", "m1")
+    assert c.get("/api/tray").json()["notifications"] == [{"title": "Notes ready: Weekly", "body": "3 action items",
+                                                           "meeting_id": "m1"}]
+    assert c.get("/api/tray").json()["notifications"] == []  # handed over once
+    assert c.post("/api/app/quit").status_code == 409
+    stopped = []
+    app.state.on_quit = lambda: stopped.append(True)
+    assert c.post("/api/app/quit").json() == {"stopping": True}
+    import time
+
+    time.sleep(0.6)
+    assert stopped == [True]

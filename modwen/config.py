@@ -43,6 +43,9 @@ class AppConfig(BaseModel):
     # Opt-in: serve the UI to other devices on the local network (still token-protected). Needs a restart.
     lan_access: bool = False
     allowed_hosts: list[str] = []  # extra host names accepted in LAN mode (e.g. a DNS name for this machine)
+    # Desktop app: look for a new version on GitHub Releases at start and every 6 h (sends nothing but the
+    # request itself; see docs/planning/04-desktop-updates.md). Off: only "Check now" in Settings.
+    check_updates: bool = True
 
     @field_validator("ui_host")
     @classmethod
