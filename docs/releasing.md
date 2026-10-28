@@ -33,13 +33,15 @@ gh run list --limit 3                        # the last CI run on main is green 
 
 ## 2. Bump the version
 
-The version lives in four places. Replace `0.3.0` with the new version:
+The version lives in five places (the desktop app's `tauri.conf.json`, `Cargo.toml` and `package.json` too).
+Replace `0.3.0` with the new version:
 
 ```bash
 NEW=0.3.1
 sed -i '' "s/^version = \".*\"/version = \"$NEW\"/" pyproject.toml
 sed -i '' "s/__version__ = \".*\"/__version__ = \"$NEW\"/" modwen/__init__.py
-sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$NEW\"/" ui/package.json
+sed -i '' "s/\"version\": \"[0-9.]*\"/\"version\": \"$NEW\"/" ui/package.json desktop/package.json desktop/src-tauri/tauri.conf.json
+sed -i '' "s/^version = \".*\"/version = \"$NEW\"/" desktop/src-tauri/Cargo.toml
 python3 - "$NEW" <<'EOF'
 import json, pathlib, sys
 p = pathlib.Path("ui/package-lock.json"); d = json.loads(p.read_text())
@@ -140,6 +142,63 @@ gh release upload v$NEW release/modwen-$NEW.zip --clobber
 ```
 
 Don't move a pushed tag. If the code changes, release a new version (`0.3.1`) instead.
+
+## 6b. The desktop app (macOS + Windows)
+
+The desktop app (`desktop/`, Tauri) bundles `uv`, the engine's source and the built UI; on first start it sets
+up Modwen's private Python in the data folder. Design of updates: `docs/planning/04-desktop-updates.md`.
+
+**Keys** (git-ignored, in `.cache/desktop-signing/`; back them up offline, never commit them):
+
+| File | What | Also stored as |
+|---|---|---|
+| `modwen-updater.key` + `.password` | signs update files; the app only installs updates signed with it | GitHub secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` |
+| `modwen-updater.key.pub` | the matching public key, built into the app (`tauri.conf.json`) | |
+| `codesign.p12` + `.password` | the stable "Modwen Self-Signed" macOS identity (keeps microphone permission and Keychain "Always Allow" across updates) | |
+
+Losing the updater key means desktop users have to reinstall by hand once. Rotate it by shipping a version with
+the new public key while the old key still signs it.
+
+**macOS** (on the Mac): builds, signs (temporary keychain, deleted afterwards), makes the `.dmg` and the signed
+update archive in `release/desktop/`:
+
+```bash
+bash desktop/scripts/build-macos.sh
+```
+
+**Windows** (GitHub Actions, "Desktop app (Windows)"): runs on the version tag push, or by hand
+(`gh workflow run desktop.yml`). It builds `Modwen_<v>_x64-setup.exe` + `.sig`, installs it silently on the runner
+and runs the app's self-test; the run fails if any check is missing. Download the installer when it's green:
+
+```bash
+gh run download "$(gh run list --workflow desktop.yml --limit 1 --json databaseId --jq '.[0].databaseId')" \
+  --name modwen-windows --dir release/desktop
+```
+
+**Update manifest** (after both builds): what the installed apps read to find the new version.
+
+```bash
+python3 desktop/scripts/make-latest-json.py $NEW notes.md release/desktop > release/desktop/latest.json
+```
+
+**Publish** with the zip, both installers, both update files and `latest.json` (the updater reads
+`releases/latest/download/latest.json`, so the release must be the Latest one). The website's download buttons
+use fixed names (`releases/latest/download/Modwen-macOS.dmg`), so add those copies too:
+
+```bash
+cp release/desktop/Modwen_${NEW}_aarch64.dmg release/desktop/Modwen-macOS.dmg
+cp release/desktop/Modwen_${NEW}_x64-setup.exe release/desktop/Modwen-Windows-setup.exe
+gh release create v$NEW release/modwen-$NEW.zip release/desktop/Modwen_${NEW}_aarch64.dmg \
+  release/desktop/Modwen_${NEW}_aarch64.app.tar.gz release/desktop/Modwen_${NEW}_aarch64.app.tar.gz.sig \
+  release/desktop/Modwen_${NEW}_x64-setup.exe release/desktop/Modwen_${NEW}_x64-setup.exe.sig \
+  release/desktop/latest.json release/desktop/Modwen-macOS.dmg release/desktop/Modwen-Windows-setup.exe \
+  --latest --title "Modwen $NEW" --notes-file notes.md
+```
+
+**Test an update before publishing it** (optional): build the current version with
+`MODWEN_TEST_CONFIG='{"plugins":{"updater":{"dangerousInsecureTransportProtocol":true}}}'`, serve a newer
+build's `latest.json` from `http://127.0.0.1:<port>`, and run the app with `MODWEN_UPDATE_ENDPOINT` set and
+`MODWEN_APP_SELFTEST=update` (results in `logs/app-engine.log`). Never ship a build made with `MODWEN_TEST_CONFIG`.
 
 ## 7. The website
 

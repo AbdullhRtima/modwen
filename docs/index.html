@@ -412,7 +412,8 @@ footer a { text-decoration: none; } footer a:hover { color: var(--text); }
       <p class="sub-ar" data-i18n="hero.sub">تكلّم… والباقي مُدوَّن</p>
       <p class="lead" data-i18n="hero.lead">Modwen listens to your meetings in Arabic, English, or both in the same sentence, and turns them into notes, decisions and action items with real deadlines. No cloud. No account. Your voice never leaves your machine.</p>
       <div class="ctas">
-        <a class="btn primary" data-repo="/releases/latest" href="#start"><svg class="ic"><use href="#i-download"/></svg><span data-i18n="hero.download">Download for macOS &amp; Windows</span></a>
+        <a class="btn primary dl" data-os-dl="mac" data-repo="/releases/latest/download/Modwen-macOS.dmg" href="#start"><svg class="ic"><use href="#i-download"/></svg><span data-i18n="hero.dlmac">Download for Mac</span></a>
+        <a class="btn dl" data-os-dl="win" data-repo="/releases/latest/download/Modwen-Windows-setup.exe" href="#start"><svg class="ic"><use href="#i-download"/></svg><span data-i18n="hero.dlwin">Download for Windows</span></a>
         <a class="btn" href="#demo"><svg class="ic fill"><use href="#i-play"/></svg><span data-i18n="hero.watch">Watch it work</span></a>
       </div>
       <div class="trust">
@@ -573,21 +574,21 @@ footer a { text-decoration: none; } footer a:hover { color: var(--text); }
         <h2 data-i18n="start.h2">Up and running in three steps.</h2>
       </div>
       <div class="steps">
-        <div class="step reveal"><h3 data-i18n="start.s1h">Download</h3><p data-i18n="start.s1p">Grab the latest release zip (about 0.5 MB) and unzip it anywhere.</p></div>
-        <div class="step reveal"><h3 data-i18n="start.s2h">Double-click</h3><p data-i18n="start.s2p">Modwen.command on macOS, Modwen.bat on Windows. The setup wizard picks models for your hardware and downloads them once.</p></div>
+        <div class="step reveal"><h3 data-i18n="start.s1h">Download</h3><p data-i18n="start.s1p">The installer for Mac (Apple Silicon) or Windows, about 20 MB. Modwen keeps itself up to date after that.</p></div>
+        <div class="step reveal"><h3 data-i18n="start.s2h">Open it</h3><p data-i18n="start.s2p">The first start sets Modwen up in about a minute. The setup wizard picks models for your hardware and downloads them once.</p></div>
         <div class="step reveal"><h3 data-i18n="start.s3h">Talk</h3><p data-i18n="start.s3p">Press Start in your next meeting. Press Stop. Read your notes.</p></div>
       </div>
       <div class="tabs" role="tablist">
         <button class="on" data-os="mac">macOS</button><button data-os="win">Windows</button><button data-os="dev" data-i18n="start.dev">From source</button>
       </div>
-      <pre id="os-mac"><span class="c"># 1. download modwen-&lt;version&gt;.zip from Releases, unzip</span>
-<span class="c"># 2. first time only, if macOS blocks it: System Settings → Privacy &amp; Security → Open Anyway</span>
-<span class="k">open</span> Modwen.command
-<span class="c"># the setup wizard opens in your browser: choose "Download Qwen for me"</span>
-<span class="c"># or connect your own local server, e.g. http://localhost:11434/v1 (Ollama)</span></pre>
-      <pre id="os-win" hidden><span class="c">:: 1. download modwen-&lt;version&gt;.zip from Releases, unzip</span>
-<span class="c">:: 2. double-click (SmartScreen: More info → Run anyway)</span>
-<span class="k">Modwen.bat</span>
+      <pre id="os-mac"><span class="c"># 1. open Modwen-macOS.dmg and drag Modwen to Applications</span>
+<span class="c"># 2. open Modwen. First time only, if macOS blocks it:</span>
+<span class="c">#    System Settings → Privacy &amp; Security → </span><span class="k">Open Anyway</span>
+<span class="c"># 3. allow the microphone and meeting audio when asked (in Modwen's name)</span>
+<span class="c"># Modwen lives in the menu bar; the setup wizard offers "Download Qwen for me"</span></pre>
+      <pre id="os-win" hidden><span class="c">:: 1. run Modwen-Windows-setup.exe (no admin rights needed)</span>
+<span class="c">:: 2. if SmartScreen appears: More info → </span><span class="k">Run anyway</span>
+<span class="c">:: 3. Modwen opens; it lives in the tray next to the clock</span>
 <span class="c">:: NVIDIA GPU? CUDA acceleration is set up automatically.</span></pre>
       <pre id="os-dev" hidden><span class="k">git clone</span> <span data-repo-text>https://github.com/&lt;you&gt;/modwen</span> && cd modwen
 <span class="k">uv sync</span> --extra stt --extra desktop --extra mac   <span class="c"># Windows: --extra windows</span>
@@ -667,7 +668,7 @@ const AR = {
   "hero.eyebrow": "مفتوح المصدر · يعمل بالكامل على جهازك",
   "hero.h1a": "تكلّم.", "hero.h1b": "والباقي مُدوَّن.", "hero.sub": "<span dir=\"ltr\">Say it. See it.</span>",
   "hero.lead": "يستمع مُدوَّن لاجتماعاتك بالعربية أو الإنجليزية أو بالاثنتين في نفس الجملة، ويحوّلها إلى ملاحظات وقرارات ومهام بمواعيد حقيقية. بلا سحابة، بلا حساب. صوتك لا يغادر جهازك أبداً.",
-  "hero.download": "حمّل لماك وويندوز", "hero.watch": "شاهده يعمل",
+  "hero.dlmac": "حمّل لماك", "hero.dlwin": "حمّل لويندوز", "hero.watch": "شاهده يعمل",
   "hero.t1": "خليجي · شامي · مصري · فصحى", "hero.t2": "يعمل مع Meet وTeams والاجتماعات الحضورية", "hero.t3": "Apache-2.0",
   "demo.record": "سجّل اجتماعاً", "demo.today": "اليوم", "demo.yesterday": "أمس", "demo.m2": "التحضير لعرض العميل",
   "demo.title": "اجتماع الفريق · Google Meet", "demo.decisions": "القرارات", "demo.dec1": "إطلاق الـ MVP يوم الخميس",
@@ -696,8 +697,8 @@ const AR = {
   "next.kicker": "القادم", "next.h2": "صوت يدخل. أي شيء يخرج.",
   "next.lead": "الاجتماعات مجرد البداية. بعدها يحوّل مُدوَّن ما تقوله إلى ما تحتاجه، مباشرة: شرائح، رسوم بيانية، مستندات.",
   "next.badge": "يُولَّد مباشرة", "next.slideh": "الذهب هذه السنة", "next.slidem": "متوسط شهري · بيانات توضيحية",
-  "start.kicker": "ابدأ", "start.h2": "جاهز في ثلاث خطوات.", "start.s1h": "حمّل", "start.s1p": "نزّل آخر إصدار (حوالي 0.5 ميغابايت) وفك الضغط في أي مكان.",
-  "start.s2h": "اضغط مرتين", "start.s2p": "Modwen.command على ماك، وModwen.bat على ويندوز. معالج الإعداد يختار النماذج المناسبة لجهازك ويحمّلها مرة واحدة.",
+  "start.kicker": "ابدأ", "start.h2": "جاهز في ثلاث خطوات.", "start.s1h": "حمّل", "start.s1p": "المثبّت لماك (Apple Silicon) أو ويندوز، حوالي 20 ميغابايت. بعدها يحدّث مُدوَّن نفسه.",
+  "start.s2h": "افتحه", "start.s2p": "أول تشغيل يجهّز مُدوَّن في حوالي دقيقة. معالج الإعداد يختار النماذج المناسبة لجهازك ويحمّلها مرة واحدة.",
   "start.s3h": "تكلّم", "start.s3p": "اضغط ابدأ في اجتماعك القادم. اضغط إيقاف. اقرأ ملاحظاتك.", "start.dev": "من المصدر",
   "oss.kicker": "مفتوح المصدر · Apache-2.0", "oss.h2": "ساعد مُدوَّن على فهم كل صوت عربي.",
   "oss.l1": "سجّل عينة قصيرة بلهجتك (بموافقة): خليجي، شامي، مصري، مغاربي.", "oss.l2": "جرّبه على ويندوز ولينكس وأخبرنا بما يتعطل.", "oss.l3": "ابنِ معنا طبقة الصوت ← الشرائح.",
@@ -787,7 +788,8 @@ const FEATURES = [
   ]],
   ["Platforms", "الأنظمة", [
     [Y, "macOS and Windows", "ماك وويندوز", "Runs in your browser, served from your computer", "يعمل في متصفحك، من جهازك"],
-    [S, "Desktop app with installers and updates", "تطبيق سطح مكتب مع مثبّت وتحديثات", "", ""],
+    [Y, "Desktop app for Mac and Windows", "تطبيق سطح مكتب لماك وويندوز", "Menu-bar icon with recording controls and a timer", "أيقونة في شريط القوائم مع أزرار التسجيل ومؤقت"],
+    [Y, "Updates itself, signed and verified", "يحدّث نفسه، بتوقيع يُتحقق منه", "Never during a meeting; can be turned off", "ليس أثناء الاجتماع أبداً؛ ويمكن إيقافه"],
     [S, "Linux", "لينكس", "", ""],
   ]],
 ];
@@ -886,7 +888,10 @@ document.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("cli
   document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
   ["mac", "win", "dev"].forEach((o) => (document.getElementById("os-" + o).hidden = o !== b.dataset.os));
 }));
-if (/Win/.test(navigator.platform)) document.querySelector('.tabs button[data-os="win"]').click();
+if (/Win/.test(navigator.platform)) {
+  document.querySelector('.tabs button[data-os="win"]').click();
+  document.querySelectorAll(".btn.dl").forEach((b) => b.classList.toggle("primary", b.dataset.osDl === "win"));
+}
 
 // ---------- chart + reveal on scroll ----------
 const chart = document.getElementById("chart");
