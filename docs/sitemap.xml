@@ -2,20 +2,36 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://modwen.rtima.org/</loc>
-    <lastmod>2026-10-20</lastmod>
-    <changefreq>weekly</changefreq>
+    <lastmod>2026-10-28</lastmod>
     <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="en" href="https://modwen.rtima.org/"/>
-    <xhtml:link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/?lang=ar"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://modwen.rtima.org/"/>
   </url>
   <url>
-    <loc>https://modwen.rtima.org/?lang=ar</loc>
-    <lastmod>2026-10-20</lastmod>
-    <changefreq>weekly</changefreq>
+    <loc>https://modwen.rtima.org/arabic-meeting-notes/</loc>
+    <lastmod>2026-10-28</lastmod>
     <priority>0.9</priority>
-    <xhtml:link rel="alternate" hreflang="en" href="https://modwen.rtima.org/"/>
-    <xhtml:link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/?lang=ar"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://modwen.rtima.org/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://modwen.rtima.org/arabic-meeting-notes/"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/ar/"/>
+  </url>
+  <url>
+    <loc>https://modwen.rtima.org/ar/</loc>
+    <lastmod>2026-10-28</lastmod>
+    <priority>0.9</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://modwen.rtima.org/arabic-meeting-notes/"/>
+    <xhtml:link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/ar/"/>
+  </url>
+  <url>
+    <loc>https://modwen.rtima.org/local-ai-meeting-transcription/</loc>
+    <lastmod>2026-10-28</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://modwen.rtima.org/meetily-alternative/</loc>
+    <lastmod>2026-10-28</lastmod>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://modwen.rtima.org/code-signing/</loc>
+    <lastmod>2026-10-28</lastmod>
+    <priority>0.3</priority>
   </url>
 </urlset>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Arabic Meeting Notes and Transcription, Offline · Modwen</title>
+<meta name="description" content="Free, open-source meeting notes built for Arabic first: Arabic and English transcription (Gulf, Levantine, Egyptian, MSA), summaries, decisions and action items, written by local AI on your own computer.">
+<link rel="canonical" href="https://modwen.rtima.org/arabic-meeting-notes/">
+<link rel="alternate" hreflang="en" href="https://modwen.rtima.org/arabic-meeting-notes/">
+<link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/ar/">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Arabic meeting notes and transcription, offline · Modwen">
+<meta property="og:description" content="Open-source meeting notes built for Arabic first. Runs on your own computer.">
+<meta property="og:url" content="https://modwen.rtima.org/arabic-meeting-notes/">
+<meta property="og:image" content="https://modwen.rtima.org/assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23e9a23b'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<link rel="stylesheet" href="../assets/site.css">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+ {"@type": "Question", "name": "Does Modwen transcribe Arabic dialects?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. It uses Whisper large-v3, which handles Modern Standard Arabic well and Gulf, Levantine and Egyptian Arabic increasingly well, including English words inside Arabic sentences."}},
+ {"@type": "Question", "name": "Can it write the meeting summary in Arabic?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. The summary can be in English, Arabic or both, and every decision and action item links to the moment it was said."}},
+ {"@type": "Question", "name": "Is it free?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. Modwen is free and open source under Apache-2.0, with no account and no subscription."}},
+ {"@type": "Question", "name": "Does my meeting audio go to the cloud?", "acceptedAnswer": {"@type": "Answer", "text": "No. Recording, transcription and the AI that writes the notes all run on your computer. Modwen refuses to send anything to an AI server that isn't on your machine."}}
+]}
+</script>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:13px"></i><i style="height:17px"></i><i style="height:10px"></i></span><b>Modwen</b></a>
+  <nav><a href="/ar/">العربية</a><a href="/local-ai-meeting-transcription/">Offline transcription</a><a href="/#included">What's included</a></nav>
+</div></header>
+<main><div class="wrap">
+  <h1>Arabic meeting notes, written on your own computer</h1>
+  <p class="lead">Modwen is free, open-source meeting software built for Arabic first. It records your meeting, transcribes Arabic and English, even in the same sentence, and writes the summary, decisions and action items. Nothing is sent to the cloud.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-macOS.dmg">Download for Mac</a>
+    <a class="btn" href="https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-Windows-setup.exe">Download for Windows</a>
+  </div>
+  <p class="note">Free · Apache-2.0 · Mac (Apple Silicon) and Windows · no account</p>
+
+  <h2>Why most meeting tools struggle with Arabic</h2>
+  <p>Real meetings in the Arab world rarely stay in one language. A sentence starts in Arabic and ends in English, product names and technical terms stay in English, and people speak their own dialect. Most transcription tools pick one language per recording and either translate the English away or turn it into Arabic letters.</p>
+  <div class="example" dir="rtl" lang="ar">«خلاص اتفقنا، بكرة تسليم الـ MVP، و Lina بتخلص الـ QA قبل الأربعاء.»</div>
+  <p>Modwen decides the language sentence by sentence and keeps each word in the script it was spoken in, so this line stays exactly like this in the transcript.</p>
+
+  <h2>What you get after the meeting</h2>
+  <ul>
+    <li><b>A transcript</b> with who said what, in Arabic, English or both. Gulf, Levantine, Egyptian Arabic and MSA.</li>
+    <li><b>A summary in English, Arabic or both</b>, your choice per meeting.</li>
+    <li><b>Decisions, action items with owners and real deadlines</b>, and open questions. "بكرة", "الخميس الجاي" or "by end of day" become dates in your time zone.</li>
+    <li><b>Every point links to the moment it was said.</b> Click it and the recording plays from there.</li>
+    <li><b>Speakers named by voice</b> in later meetings, once you've named them (with their consent).</li>
+  </ul>
+
+  <h2>Private by design</h2>
+  <p>The recording, the transcription and the AI model that writes your notes all run on your computer. Modwen downloads its models once and then works offline. It refuses, in code, to talk to any AI server that isn't on your own machine. Recordings are encrypted with a separate key per meeting.</p>
+  <p>That matters for meetings you can't upload: client calls, HR conversations, legal and government work.</p>
+
+  <h2>Works with the meetings you already have</h2>
+  <p>Google Meet, Microsoft Teams, Zoom or a meeting in the room: Modwen records your microphone and the meeting audio from your computer. Live captions show while you talk, and a notification tells you when the notes are ready.</p>
+
+  <h2>Questions</h2>
+  <details><summary>Does Modwen transcribe Arabic dialects?</summary><p>Yes. It uses Whisper large-v3, which handles Modern Standard Arabic well and Gulf, Levantine and Egyptian Arabic increasingly well, including English words inside Arabic sentences.</p></details>
+  <details><summary>Can it write the meeting summary in Arabic?</summary><p>Yes, in English, Arabic or both. The whole app is also available in Arabic, with a right-to-left layout.</p></details>
+  <details><summary>What computer do I need?</summary><p>16 GB of memory at least. Best: an Apple Silicon Mac with 32 GB, or a Windows PC with an NVIDIA graphics card (12 GB or more). Modwen checks your computer and picks models that fit.</p></details>
+  <details><summary>Is it free?</summary><p>Yes, free and open source under Apache-2.0. No account, no subscription, no usage limits. See <a href="/#included">what's included</a>.</p></details>
+</div></main>
+<footer><div class="wrap">
+  <span>Modwen · مُدوَّن · open-source meeting notes built for Arabic first</span>
+  <span><a href="/">Home</a> · <a href="/ar/">العربية</a> · <a href="/meetily-alternative/">Compare with Meetily</a> · <a href="https://github.com/AbdullhRtima/modwen">GitHub</a></span>
+</div></footer>
+</body>
+</html>

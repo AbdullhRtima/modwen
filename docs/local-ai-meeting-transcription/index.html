@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Offline AI Meeting Transcription and Notes, 100% Local · Modwen</title>
+<meta name="description" content="Transcribe meetings and get AI notes without the cloud. Modwen runs Whisper and a local LLM (Qwen via llama.cpp, or Ollama / LM Studio) on your Mac or Windows PC. Free and open source.">
+<link rel="canonical" href="https://modwen.rtima.org/local-ai-meeting-transcription/">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Offline AI meeting transcription and notes · Modwen">
+<meta property="og:description" content="Whisper + a local LLM on your own computer. No cloud, no account. Free and open source.">
+<meta property="og:url" content="https://modwen.rtima.org/local-ai-meeting-transcription/">
+<meta property="og:image" content="https://modwen.rtima.org/assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23e9a23b'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<link rel="stylesheet" href="../assets/site.css">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
+ {"@type": "Question", "name": "Does it work without internet?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. After the one-time model download, Modwen transcribes and writes notes with the internet turned off."}},
+ {"@type": "Question", "name": "Which AI model writes the notes?", "acceptedAnswer": {"@type": "Answer", "text": "By default Qwen3, run by llama.cpp, which Modwen downloads and starts for you. You can also use any OpenAI-compatible server on your own computer, such as Ollama, LM Studio or vLLM."}},
+ {"@type": "Question", "name": "Can it use a cloud AI like ChatGPT?", "acceptedAnswer": {"@type": "Answer", "text": "No, by design. Modwen only accepts AI servers on your own machine (localhost), so meeting audio and transcripts never leave it."}}
+]}
+</script>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:13px"></i><i style="height:17px"></i><i style="height:10px"></i></span><b>Modwen</b></a>
+  <nav><a href="/arabic-meeting-notes/">Arabic</a><a href="/meetily-alternative/">Compare</a><a href="/#included">What's included</a></nav>
+</div></header>
+<main><div class="wrap">
+  <h1>Offline AI meeting transcription and notes, on your own computer</h1>
+  <p class="lead">Modwen records your meetings, transcribes them with Whisper and writes the summary, decisions and action items with a local language model. All of it runs on your Mac or Windows PC. No cloud, no account, no subscription.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-macOS.dmg">Download for Mac</a>
+    <a class="btn" href="https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-Windows-setup.exe">Download for Windows</a>
+  </div>
+  <p class="note">Free and open source (Apache-2.0)</p>
+
+  <h2>What runs where</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Step</th><th>What does it</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Recording</td><td>Your microphone and the meeting audio (Meet, Teams, Zoom or in the room)</td><td>Your computer, encrypted</td></tr>
+      <tr><td>Transcription</td><td>Whisper large-v3 (MLX on Apple Silicon, CUDA on NVIDIA)</td><td>Your computer</td></tr>
+      <tr><td>Who spoke when</td><td>Speaker detection and optional voice profiles</td><td>Your computer</td></tr>
+      <tr><td>Notes</td><td>Qwen3 via llama.cpp, set up in one click, or your own Ollama / LM Studio / vLLM</td><td>Your computer</td></tr>
+    </tbody>
+  </table></div>
+  <p>The only downloads are the models, once, when you press Download, and checking for app updates, which you can turn off. Modwen refuses in code to send anything to an AI server that isn't on your own machine.</p>
+
+  <h2>Why local</h2>
+  <ul>
+    <li><b>Confidential meetings stay confidential.</b> Client calls, HR, legal and board meetings never touch a third-party server.</li>
+    <li><b>It works offline:</b> on a plane, on a site visit, on a restricted network.</li>
+    <li><b>No per-minute pricing and no limits.</b> The models are yours.</li>
+  </ul>
+
+  <h2>What you get</h2>
+  <ul>
+    <li>Live captions while you talk, and a full transcript after.</li>
+    <li>A summary, decisions, action items with owners and real deadlines, and open questions.</li>
+    <li>Every point links to the moment it was said.</li>
+    <li>English, Arabic, or both in the same sentence: Modwen is <a href="/arabic-meeting-notes/">built for Arabic first</a>.</li>
+  </ul>
+
+  <h2>Questions</h2>
+  <details><summary>Does it work without internet?</summary><p>Yes. After the one-time model download, Modwen transcribes and writes notes with the internet turned off.</p></details>
+  <details><summary>Which AI model writes the notes?</summary><p>By default Qwen3, run by llama.cpp, which Modwen downloads and starts for you. You can also connect any OpenAI-compatible server on your computer: Ollama, LM Studio, llama.cpp or vLLM.</p></details>
+  <details><summary>What computer do I need?</summary><p>16 GB of memory at least. Best: an Apple Silicon Mac with 32 GB, or a Windows PC with an NVIDIA graphics card (12 GB or more).</p></details>
+  <details><summary>Can it use a cloud AI like ChatGPT?</summary><p>No, by design. Only AI servers on your own machine are accepted, so your audio and transcripts never leave it.</p></details>
+</div></main>
+<footer><div class="wrap">
+  <span>Modwen · مُدوَّن · local AI meeting notes</span>
+  <span><a href="/">Home</a> · <a href="/ar/">العربية</a> · <a href="/meetily-alternative/">Compare with Meetily</a> · <a href="https://github.com/AbdullhRtima/modwen">GitHub</a></span>
+</div></footer>
+</body>
+</html>

@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Modwen · مُدوَّن · Say it. See it.</title>
-<meta name="description" content="Modwen turns Arabic and English speech into meeting notes, decisions and action items, entirely on your computer. Open source, local-first, private by design.">
+<title>Modwen · Open-source meeting notes for Arabic & English, with local AI · مُدوَّن</title>
+<meta name="description" content="Free, open-source meeting notes built for Arabic first. Modwen transcribes Arabic and English meetings and writes the summary, decisions and action items with local AI, offline, on your Mac or Windows PC.">
 <meta property="og:title" content="Modwen · مُدوَّن · Say it. See it.">
 <meta property="og:description" content="Local-first, open-source voice-to-notes for Arabic and English. Your voice never leaves your machine.">
 <link rel="canonical" href="https://modwen.rtima.org/">
 <link rel="alternate" hreflang="en" href="https://modwen.rtima.org/">
-<link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/?lang=ar">
+<link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/ar/">
 <link rel="alternate" hreflang="x-default" href="https://modwen.rtima.org/">
 <link rel="sitemap" type="application/xml" href="/sitemap.xml">
 <meta name="robots" content="index, follow">
@@ -637,6 +637,11 @@ footer a { text-decoration: none; } footer a:hover { color: var(--text); }
     <div style="display:flex;gap:20px;flex-wrap:wrap">
       <a data-repo href="#" target="_blank" rel="noopener">GitHub</a>
       <a data-repo="/blob/main/docs/install.md" href="#" target="_blank" rel="noopener" data-i18n="foot.install">Install guide</a>
+      <a href="/arabic-meeting-notes/">Arabic meeting notes</a>
+      <a href="/local-ai-meeting-transcription/">Offline transcription</a>
+      <a href="/meetily-alternative/">Meetily alternative</a>
+      <a href="/ar/" lang="ar">العربية</a>
+      <a href="/code-signing/">Code signing</a>
       <a data-repo="/blob/main/LICENSE" href="#" target="_blank" rel="noopener">Apache-2.0</a>
     </div>
   </div>
@@ -719,8 +724,8 @@ function setLang(l) {
   document.documentElement.lang = l;
   document.documentElement.dir = l === "ar" ? "rtl" : "ltr";
   // the Arabic page is its own page for search engines: its own canonical URL, title and description
-  document.querySelector('link[rel="canonical"]').href = "https://modwen.rtima.org/" + (l === "ar" ? "?lang=ar" : "");
-  document.title = l === "ar" ? "مُدوَّن · Modwen · تكلّم… والباقي مُدوَّن" : "Modwen · مُدوَّن · Say it. See it.";
+  // one canonical for this page in both languages; Arabic search lands on /ar/ (its own page)
+  document.title = l === "ar" ? "مُدوَّن · محاضر اجتماعات بالعربية والإنجليزية بالذكاء الاصطناعي على جهازك" : "Modwen · Open-source meeting notes for Arabic & English, with local AI · مُدوَّن";
   document.querySelector('meta[name="description"]').content = l === "ar"
     ? "مُدوَّن يحوّل كلام الاجتماعات بالعربية والإنجليزية إلى ملاحظات وقرارات ومهام، بالكامل على جهازك. مفتوح المصدر ومحلي أولاً."
     : "Modwen turns Arabic and English speech into meeting notes, decisions and action items, entirely on your computer. Open source, local-first, private by design.";

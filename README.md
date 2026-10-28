@@ -18,7 +18,9 @@
 
 # Modwen · مُدوَّن
 
-**Say it. See it.** Modwen turns speech into something you can use, and it runs entirely on your own computer.
+**Free, open-source meeting notes built for Arabic first.** Modwen transcribes Arabic and English meetings, even both in the same sentence, and writes the summary, decisions and action items with a local AI model. Everything runs on your own Mac or Windows PC: no cloud, no account.
+
+**[Download for Mac](https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-macOS.dmg)** · **[Download for Windows](https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-Windows-setup.exe)** · [Website](https://modwen.rtima.org/) · [بالعربية](https://modwen.rtima.org/ar/)
 
 *مُدوَّن* means "written down" in Arabic.
 
@@ -37,14 +39,16 @@
 
 ## Install (macOS and Windows)
 
-1. Download `modwen-<version>.zip` from Releases and unzip it.
-2. Double-click **`Modwen.command`** (macOS; if it's blocked the first time: System Settings → Privacy & Security → Open Anyway) or **`Modwen.bat`** (Windows).
-3. The setup wizard opens in your browser:
+1. Download the app: **[Mac (Apple Silicon)](https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-macOS.dmg)** or **[Windows](https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-Windows-setup.exe)**.
+   - Mac: drag Modwen to Applications. If macOS blocks it the first time: System Settings → Privacy & Security → **Open Anyway**.
+   - Windows: run the installer (no admin rights needed). If SmartScreen appears: **More info → Run anyway**.
+2. The first start sets Modwen up in about a minute. After that it updates itself.
+3. The setup wizard opens:
    - It tests your audio and picks models for your hardware.
    - It downloads the speech models.
    - For the AI model you can either **download Qwen** (Modwen runs it for you) or **connect your own local server** (Ollama, LM Studio, llama.cpp: any `localhost` URL).
 
-Full guide: [docs/install.md](docs/install.md).
+Full guide: [docs/install.md](docs/install.md). Intel Macs and terminal users can use `modwen-<version>.zip` from [Releases](https://github.com/AbdullhRtima/modwen/releases) (double-click `Modwen.command` or `Modwen.bat`).
 
 ### From source (developers)
 

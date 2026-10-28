@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Code Signing Policy · Modwen</title>
+<meta name="description" content="How Modwen's Windows and macOS releases are built and signed, who can approve a signing, and what the app sends over the network.">
+<link rel="canonical" href="https://modwen.rtima.org/code-signing/">
+<meta name="robots" content="index, follow">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23e9a23b'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="/"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:13px"></i><i style="height:17px"></i><i style="height:10px"></i></span><b>Modwen</b></a>
+  <nav><a href="/#start">Download</a><a href="https://github.com/AbdullhRtima/modwen">GitHub</a></nav>
+</div></header>
+<main><div class="wrap">
+  <h1>Code signing policy</h1>
+  <p class="lead">How Modwen's installers are built and signed, and who is allowed to sign them.</p>
+
+  <div class="box">
+    <p><b>Windows:</b> free code signing provided by <a href="https://signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
+    <p class="note">Until that certificate is in place, Windows installers are unsigned and Windows SmartScreen shows a warning on first install.</p>
+  </div>
+
+  <h2>What is signed</h2>
+  <ul>
+    <li><b>Windows:</b> the installer <code>Modwen_&lt;version&gt;_x64-setup.exe</code> and the Modwen program inside it.</li>
+    <li><b>macOS:</b> <code>Modwen.app</code> and the <code>.dmg</code>, with Modwen's own self-signed identity, so macOS keeps your permissions across updates.</li>
+    <li><b>Updates (both systems):</b> every update file is also signed with Modwen's update key. The installed app only accepts updates with a valid signature.</li>
+  </ul>
+  <p>Only software built from this project's public source code is signed. Nothing from other vendors is signed under this project, apart from the open-source components the app bundles, which keep their own licences.</p>
+
+  <h2>How a release is built</h2>
+  <p>The source code is public at <a href="https://github.com/AbdullhRtima/modwen">github.com/AbdullhRtima/modwen</a> under the Apache-2.0 licence. The Windows installer is built from a tagged commit by the "Desktop app (Windows)" GitHub Actions workflow (<code>.github/workflows/desktop.yml</code>), which also installs it and runs the app's self-test before the file is kept. The macOS app is built from the same tagged commit with <code>desktop/scripts/build-macos.sh</code>. The full process is in <a href="https://github.com/AbdullhRtima/modwen/blob/main/docs/releasing.md">docs/releasing.md</a>.</p>
+
+  <h2>Team roles</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Role</th><th>Who</th></tr></thead>
+    <tbody>
+      <tr><td>Committers and reviewers</td><td><a href="https://github.com/AbdullhRtima">AbdullhRtima</a> (maintainer)</td></tr>
+      <tr><td>Approvers (each signing request is approved by hand)</td><td><a href="https://github.com/AbdullhRtima">AbdullhRtima</a> (maintainer)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Contributions from others are reviewed by the maintainer before they are merged.</p>
+
+  <h2>Privacy</h2>
+  <p>Modwen runs on your computer. Meeting audio, transcripts and notes are never sent to any other system: the AI that writes the notes must run on your own machine, and Modwen refuses any other address.</p>
+  <p>Modwen connects to the internet only for:</p>
+  <ul>
+    <li><b>Model downloads</b> (speech models, the local AI model) when you press Download, from Hugging Face (speech and AI models) and GitHub (llama.cpp and the speaker-detection models).</li>
+    <li><b>Setting itself up</b> on first start: the desktop app downloads its Python packages once from the Python Package Index.</li>
+    <li><b>Checking for updates</b> on GitHub Releases. It sends only the request itself and the app version. Turn it off in Settings → General → Updates.</li>
+  </ul>
+  <p>There is no account, no analytics and no telemetry.</p>
+</div></main>
+<footer><div class="wrap">
+  <span>Modwen · مُدوَّن</span>
+  <span><a href="/">Home</a> · <a href="https://github.com/AbdullhRtima/modwen/blob/main/LICENSE">Apache-2.0</a></span>
+</div></footer>
+</body>
+</html>

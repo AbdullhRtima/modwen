@@ -1,0 +1,62 @@
+/* Shared style for modwen.rtima.org's content pages (the home page carries its own copy inline).
+   Self-hosted fonts and no third-party requests, like the home page. */
+@font-face { font-family: "Readex Pro"; font-weight: 600; font-display: swap; src: url(fonts/readex-pro-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: "Readex Pro"; font-weight: 600; font-display: swap; src: url(fonts/readex-pro-arabic-600-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-sans-arabic-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 600; font-display: swap; src: url(fonts/ibm-plex-sans-arabic-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 400; font-display: swap; src: url(fonts/ibm-plex-sans-arabic-arabic-400-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+@font-face { font-family: "IBM Plex Sans Arabic"; font-weight: 600; font-display: swap; src: url(fonts/ibm-plex-sans-arabic-arabic-600-normal.woff2) format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF; }
+
+:root {
+  --ink: #0d1430; --ink-fg: #fff; --amber: #e9a23b; --amber-soft: #fbefd9; --amber-text: #8a5a0b;
+  --bg: #f5f6f9; --surface: #fff; --surface-2: #f8f9fc; --border: #e1e4ec; --text: #141a2e; --text-2: #535b72; --text-3: #8890a5;
+  --ok: #1d7a4b; --ok-soft: #e1f3e9; --accent: #2f4cc7;
+  --display: "Readex Pro", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font: "IBM Plex Sans Arabic", "Readex Pro", system-ui, -apple-system, "Segoe UI", "Geeza Pro", Tahoma, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --ink: #e9ecf6; --ink-fg: #0c1124; --amber: #f0b153; --amber-soft: #3a2c14; --amber-text: #f0b153;
+  --bg: #0c1124; --surface: #131a32; --surface-2: #10172d; --border: #232b47; --text: #e8ebf5; --text-2: #a8b0c8; --text-3: #7480a0;
+  --ok: #5cc98f; --ok-soft: #10301f; --accent: #8ea3ff; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 17px/1.7 var(--font); -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+header { border-bottom: 1px solid var(--border); }
+header .wrap { display: flex; align-items: center; gap: 16px; height: 60px; max-width: 1160px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+.mark { width: 28px; height: 28px; border-radius: 8px; background: #0d1430; display: flex; align-items: center; justify-content: center; gap: 2px; }
+.mark i { display: block; width: 3px; background: #e9a23b; border-radius: 2px; }
+.brand b { font-family: var(--display); font-weight: 600; font-size: 17px; }
+header nav { margin-inline-start: auto; display: flex; gap: 18px; font-size: 14.5px; }
+header nav a { color: var(--text-2); text-decoration: none; } header nav a:hover { color: var(--text); }
+main { padding-block: 48px 72px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; line-height: 1.2; }
+h1 { font-size: clamp(32px, 5vw, 46px); margin: 0 0 14px; letter-spacing: -.02em; }
+[dir="rtl"] h1 { letter-spacing: 0; line-height: 1.35; }
+h2 { font-size: 26px; margin: 44px 0 10px; }
+h3 { font-size: 19px; margin: 26px 0 6px; }
+.lead { font-size: 19.5px; color: var(--text-2); margin: 0 0 22px; }
+p, li { max-width: 70ch; }
+li { margin-bottom: 6px; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; margin: 26px 0 8px; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 11px; font: 600 15.5px/1.2 var(--font);
+  text-decoration: none; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.btn.primary { background: var(--ink); color: var(--ink-fg); border-color: var(--ink); }
+.note { color: var(--text-3); font-size: 14px; }
+.box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; margin: 22px 0; }
+.example { font-family: var(--display); font-size: 18px; background: var(--amber-soft); color: var(--text); border-radius: 12px; padding: 14px 18px; margin: 14px 0; }
+.table-wrap { overflow-x: auto; margin: 18px 0; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { padding: 11px 16px; text-align: start; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-family: var(--display); font-weight: 600; background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+.yes { color: var(--ok); font-weight: 600; } .no { color: var(--text-3); }
+details { border-bottom: 1px solid var(--border); padding: 14px 0; }
+summary { cursor: pointer; font: 600 17px/1.4 var(--display); }
+details p { color: var(--text-2); margin: 8px 0 0; }
+footer { border-top: 1px solid var(--border); padding-block: 28px 44px; color: var(--text-3); font-size: 14px; }
+footer .wrap { display: flex; gap: 18px; flex-wrap: wrap; justify-content: space-between; max-width: 1160px; }
+footer a { color: var(--text-2); text-decoration: none; }
+@media (max-width: 600px) { header nav a:not(:first-child) { display: none; } main { padding-block: 32px 56px; } }

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>مُدوَّن · تفريغ الاجتماعات بالعربية وكتابة المحاضر بالذكاء الاصطناعي على جهازك</title>
+<meta name="description" content="مُدوَّن برنامج مجاني ومفتوح المصدر يحوّل كلام الاجتماعات بالعربية والإنجليزية إلى نص ومحضر: ملخص وقرارات ومهام بمواعيد، بالذكاء الاصطناعي على جهازك ودون إنترنت. للماك وويندوز.">
+<link rel="canonical" href="https://modwen.rtima.org/ar/">
+<link rel="alternate" hreflang="ar" href="https://modwen.rtima.org/ar/">
+<link rel="alternate" hreflang="en" href="https://modwen.rtima.org/arabic-meeting-notes/">
+<link rel="alternate" hreflang="x-default" href="https://modwen.rtima.org/">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ar_AR">
+<meta property="og:title" content="مُدوَّن · تفريغ الاجتماعات وكتابة المحاضر على جهازك">
+<meta property="og:description" content="مجاني ومفتوح المصدر، صُمّم للعربية أولاً. لا سحابة ولا حساب.">
+<meta property="og:url" content="https://modwen.rtima.org/ar/">
+<meta property="og:image" content="https://modwen.rtima.org/assets/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect x='4' y='4' width='56' height='56' rx='16' fill='%230d1430'/><g fill='%23e9a23b'><rect x='16' y='27' width='5' height='10' rx='2.5'/><rect x='25' y='20' width='5' height='24' rx='2.5'/><rect x='34' y='15' width='5' height='34' rx='2.5'/><rect x='43' y='23' width='5' height='18' rx='2.5'/></g></svg>">
+<link rel="stylesheet" href="../assets/site.css">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "FAQPage", "inLanguage": "ar", "mainEntity": [
+ {"@type": "Question", "name": "هل يفرّغ مُدوَّن اللهجات العربية؟", "acceptedAnswer": {"@type": "Answer", "text": "نعم. يستخدم Whisper large-v3 الذي يتعامل جيداً مع الفصحى، وبشكل متزايد مع اللهجات الخليجية والشامية والمصرية، بما فيها الكلمات الإنجليزية داخل الجملة العربية."}},
+ {"@type": "Question", "name": "هل يُرسَل صوت الاجتماع إلى الإنترنت؟", "acceptedAnswer": {"@type": "Answer", "text": "لا. التسجيل والتفريغ والذكاء الاصطناعي الذي يكتب المحضر كلها تعمل على جهازك، ومُدوَّن يرفض الاتصال بأي خادم ذكاء اصطناعي خارج جهازك."}},
+ {"@type": "Question", "name": "هل البرنامج مجاني؟", "acceptedAnswer": {"@type": "Answer", "text": "نعم، مجاني ومفتوح المصدر برخصة Apache-2.0، بلا حساب ولا اشتراك ولا حدود استخدام."}},
+ {"@type": "Question", "name": "هل يكتب المحضر بالعربية؟", "acceptedAnswer": {"@type": "Answer", "text": "نعم. يكتب الملخص بالعربية أو الإنجليزية أو كليهما، وكل قرار ومهمة مرتبطة باللحظة التي قيلت فيها."}}
+]}
+</script>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="/?lang=ar"><span class="mark" aria-hidden="true"><i style="height:7px"></i><i style="height:13px"></i><i style="height:17px"></i><i style="height:10px"></i></span><b>مُدوَّن</b></a>
+  <nav><a href="/arabic-meeting-notes/" lang="en">English</a><a href="/?lang=ar#included">ما المتاح</a></nav>
+</div></header>
+<main><div class="wrap">
+  <h1>تفريغ الاجتماعات وكتابة المحاضر بالعربية، على جهازك</h1>
+  <p class="lead">مُدوَّن برنامج مجاني ومفتوح المصدر صُمّم للعربية أولاً. يسجّل اجتماعك، ويحوّل الكلام العربي والإنجليزي إلى نص حتى لو اختلطا في الجملة نفسها، ثم يكتب الملخص والقرارات والمهام. لا شيء يُرسَل إلى السحابة.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-macOS.dmg">حمّل لماك</a>
+    <a class="btn" href="https://github.com/AbdullhRtima/modwen/releases/latest/download/Modwen-Windows-setup.exe">حمّل لويندوز</a>
+  </div>
+  <p class="note">مجاني · مفتوح المصدر (Apache-2.0) · ماك (Apple Silicon) وويندوز · بلا حساب</p>
+
+  <h2>لماذا تتعثّر أدوات الاجتماعات مع العربية؟</h2>
+  <p>اجتماعاتنا نادراً ما تبقى بلغة واحدة: تبدأ الجملة بالعربية وتنتهي بالإنجليزية، وتبقى أسماء المنتجات والمصطلحات التقنية بالإنجليزية، وكلٌّ يتكلم بلهجته. معظم أدوات التفريغ تختار لغة واحدة للتسجيل كله، فتترجم الإنجليزية أو تكتبها بحروف عربية.</p>
+  <div class="example">«خلاص اتفقنا، بكرة تسليم الـ MVP، و Lina بتخلص الـ QA قبل الأربعاء.»</div>
+  <p>مُدوَّن يحدّد اللغة جملةً جملة، ويُبقي كل كلمة بالحرف الذي قيلت به، فتبقى هذه الجملة في النص كما قيلت تماماً.</p>
+
+  <h2>ماذا تحصل بعد الاجتماع؟</h2>
+  <ul>
+    <li><b>نص الاجتماع كاملاً</b> مع من قال ماذا، بالعربية أو الإنجليزية أو كلتيهما: الخليجية والشامية والمصرية والفصحى.</li>
+    <li><b>ملخص بالعربية أو الإنجليزية أو كلتيهما</b>، باختيارك لكل اجتماع.</li>
+    <li><b>القرارات والمهام مع المسؤول عنها وموعد حقيقي</b>، والأسئلة المفتوحة. «بكرة» و«الخميس الجاي» و«by end of day» تصبح تواريخ بتوقيتك.</li>
+    <li><b>كل نقطة مرتبطة باللحظة التي قيلت فيها:</b> اضغطها فيُشغَّل التسجيل من هناك.</li>
+    <li><b>تمييز المتحدثين بأصواتهم</b> في الاجتماعات التالية، بعد أن تسمّيهم مرة واحدة وبموافقتهم.</li>
+    <li><b>واجهة عربية كاملة</b> من اليمين إلى اليسار.</li>
+  </ul>
+
+  <h2>الخصوصية في التصميم</h2>
+  <p>التسجيل والتفريغ والذكاء الاصطناعي الذي يكتب المحضر كلها تعمل على جهازك. يحمّل مُدوَّن نماذجه مرة واحدة ثم يعمل دون إنترنت، ويرفض في الكود الاتصال بأي خادم ذكاء اصطناعي خارج جهازك. والتسجيلات مشفّرة بمفتاح مستقل لكل اجتماع.</p>
+  <p>وهذا مهم للاجتماعات التي لا يجوز رفعها: اجتماعات العملاء والموارد البشرية والعمل القانوني والحكومي.</p>
+
+  <h2>يعمل مع اجتماعاتك الحالية</h2>
+  <p>Google Meet أو Microsoft Teams أو Zoom أو اجتماع في الغرفة: يسجّل مُدوَّن الميكروفون وصوت الاجتماع من جهازك، ويعرض النص مباشرة أثناء الحديث، وينبّهك عندما يجهز المحضر.</p>
+
+  <h2>أسئلة</h2>
+  <details><summary>هل يفرّغ مُدوَّن اللهجات العربية؟</summary><p>نعم. يستخدم Whisper large-v3 الذي يتعامل جيداً مع الفصحى، وبشكل متزايد مع اللهجات الخليجية والشامية والمصرية، بما فيها الكلمات الإنجليزية داخل الجملة العربية.</p></details>
+  <details><summary>هل يكتب المحضر بالعربية؟</summary><p>نعم، بالعربية أو الإنجليزية أو كلتيهما. وكل قرار ومهمة مرتبطة باللحظة التي قيلت فيها.</p></details>
+  <details><summary>ما الجهاز الذي أحتاجه؟</summary><p>ذاكرة 16 غيغابايت على الأقل. الأفضل: ماك بمعالج Apple وذاكرة 32 غيغابايت، أو حاسوب ويندوز ببطاقة رسوميات NVIDIA (‏12 غيغابايت أو أكثر). يفحص مُدوَّن جهازك ويختار النماذج المناسبة.</p></details>
+  <details><summary>هل البرنامج مجاني؟</summary><p>نعم، مجاني ومفتوح المصدر برخصة Apache-2.0، بلا حساب ولا اشتراك ولا حدود استخدام.</p></details>
+</div></main>
+<footer><div class="wrap">
+  <span>مُدوَّن · Modwen · محاضر اجتماعات مفتوحة المصدر صُمّمت للعربية أولاً</span>
+  <span><a href="/?lang=ar">الرئيسية</a> · <a href="/arabic-meeting-notes/" lang="en">English</a> · <a href="https://github.com/AbdullhRtima/modwen">GitHub</a></span>
+</div></footer>
+</body>
+</html>
