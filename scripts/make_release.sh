@@ -15,7 +15,7 @@ rm -rf "$OUT" "$OUT.zip"
 mkdir -p "$OUT"
 # Committed files only (never a stray untracked file), plus the build outputs.
 { git ls-files --cached; echo ui/dist; [ -f modwen/native/macos/build/modwen-tap ] && echo modwen/native/macos/build/modwen-tap; } \
-  | grep -v -E '^(release/|\.github/)' | while read -r f; do
+  | grep -v -E '^(release/|\.github/|desktop/)' | while read -r f; do
     [ -e "$f" ] || continue
     mkdir -p "$OUT/$(dirname "$f")"
     cp -R "$f" "$OUT/$f"

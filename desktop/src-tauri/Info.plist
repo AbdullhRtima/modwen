@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Shown by macOS when Modwen first asks for the microphone / meeting audio. The engine and its audio helper
+       run inside the app, so macOS attributes their requests to Modwen. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Modwen records your microphone during meetings you start. Everything stays on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Modwen records the meeting audio (what plays on your speakers) during meetings you start. Everything stays on this Mac.</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+</dict>
+</plist>

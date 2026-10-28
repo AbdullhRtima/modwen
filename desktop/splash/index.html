@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modwen</title>
+<style>
+  /* Shown while the local engine starts (a few seconds; the first start sets up Modwen's private Python). */
+  :root { --ink: #0d1430; --amber: #e9a23b; --bg: #f5f6f9; --surface: #fff; --border: #e1e4ec; --text: #141a2e;
+          --text-2: #535b72; --text-3: #8890a5; --rec: #d63a32; --ok: #1d7a4b; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e9ecf6; --bg: #0c1124; --surface: #131a32; --border: #232b47;
+          --text: #e8ebf5; --text-2: #a8b0c8; --text-3: #7480a0; --rec: #ff6b61; --ok: #5cc98f; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.55 -apple-system, "Segoe UI", system-ui, "Geeza Pro", sans-serif;
+         display: grid; place-items: center; padding: 24px; -webkit-user-select: none; user-select: none; }
+  main { width: min(460px, 100%); display: grid; gap: 18px; justify-items: center; text-align: center; }
+  .mark { width: 64px; height: 64px; border-radius: 16px; background: #0d1430; display: flex; align-items: center;
+          justify-content: center; gap: 4px; }
+  .mark i { display: block; width: 6px; border-radius: 3px; background: var(--amber); animation: bar 1.1s ease-in-out infinite; }
+  .mark i:nth-child(2) { animation-delay: .12s } .mark i:nth-child(3) { animation-delay: .24s } .mark i:nth-child(4) { animation-delay: .36s }
+  @keyframes bar { 50% { transform: scaleY(.55); } }
+  .done .mark i, .error .mark i { animation: none; }
+  h1 { margin: 0; font-size: 20px; font-weight: 600; }
+  h1 small { display: block; font-size: 14px; font-weight: 400; color: var(--text-3); margin-top: 2px; }
+  #status { color: var(--text-2); min-height: 1.5em; }
+  #hint { color: var(--text-3); font-size: 12.5px; max-width: 40ch; }
+  .bar { width: 100%; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 30%; background: var(--amber); border-radius: 2px; animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+  .error .bar { display: none; }
+  pre { width: 100%; max-height: 160px; overflow: auto; text-align: left; font: 11.5px/1.5 ui-monospace, Menlo, monospace;
+        background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 0;
+        color: var(--text-2); white-space: pre-wrap; word-break: break-word; -webkit-user-select: text; user-select: text; }
+  .error #status { color: var(--rec); }
+  .row { display: flex; gap: 8px; }
+  button { font: inherit; padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface);
+           color: var(--text); cursor: pointer; }
+  button.primary { background: #0d1430; color: #fff; border-color: #0d1430; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main id="app">
+  <span class="mark" aria-hidden="true"><i style="height:20px"></i><i style="height:34px"></i><i style="height:44px"></i><i style="height:26px"></i></span>
+  <h1>Modwen<small>مُدوَّن</small></h1>
+  <div class="bar"><i></i></div>
+  <div id="status">Starting Modwen…</div>
+  <div id="hint" hidden>The first start sets up Modwen's private Python on this computer. It takes a few minutes and needs the internet once. Later starts take seconds.</div>
+  <pre id="log" hidden></pre>
+  <div class="row" id="actions" hidden>
+    <button class="primary" id="retry">Try again</button>
+    <button id="copy">Copy details</button>
+  </div>
+</main>
+<script>
+  const T = window.__TAURI__;
+  const $ = (id) => document.getElementById(id);
+  const lines = [];
+  function show(st) {
+    if (!st) return;
+    $("status").textContent = st.message || "Starting Modwen…";
+    $("hint").hidden = !st.first_run || st.phase === "error";
+    document.getElementById("app").className = st.phase === "error" ? "error" : st.phase === "ready" ? "done" : "";
+    $("actions").hidden = st.phase !== "error";
+    if (st.phase === "error" || st.first_run) $("log").hidden = lines.length === 0;
+  }
+  function addLine(text) {
+    lines.push(text);
+    if (lines.length > 200) lines.shift();
+    $("log").textContent = lines.join("\n");
+    $("log").scrollTop = $("log").scrollHeight;
+  }
+  if (T) {
+    T.event.listen("engine-state", (e) => show(e.payload));
+    T.event.listen("engine-log", (e) => { addLine(e.payload); if (!$("hint").hidden || document.getElementById("app").className === "error") $("log").hidden = false; });
+    T.core.invoke("engine_state").then(show).catch(() => undefined);
+    $("retry").onclick = () => { lines.length = 0; $("log").textContent = ""; T.core.invoke("restart_engine"); };
+    $("copy").onclick = () => navigator.clipboard.writeText(lines.join("\n")).catch(() => undefined);
+  }
+</script>
+</body>
+</html>

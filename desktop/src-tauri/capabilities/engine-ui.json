@@ -1,0 +1,24 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "engine-ui",
+  "description": "The Modwen UI, served by the local engine on 127.0.0.1: may open / close the pop-out pill, show the main window on a page, and check for / install an app update. Nothing else.",
+  "windows": [
+    "main",
+    "pill"
+  ],
+  "remote": {
+    "urls": [
+      "http://127.0.0.1:*/*"
+    ]
+  },
+  "permissions": [
+    "core:event:default",
+    "allow-open-pill",
+    "allow-close-pill",
+    "allow-show-main",
+    "allow-selftest",
+    "allow-update-info",
+    "allow-check-update",
+    "allow-install-update"
+  ]
+}

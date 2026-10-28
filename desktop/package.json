@@ -1,0 +1,14 @@
+{
+  "name": "modwen-desktop",
+  "private": true,
+  "version": "0.4.1",
+  "description": "Modwen desktop app: a Tauri shell around the local Modwen engine",
+  "scripts": {
+    "stage": "bash scripts/stage-engine.sh",
+    "dev": "bash scripts/stage-engine.sh && tauri dev",
+    "build": "bash scripts/stage-engine.sh && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.2"
+  }
+}

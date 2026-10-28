@@ -1,0 +1,110 @@
+name: Desktop app (Windows)
+
+# Builds the Windows installer (NSIS -setup.exe + its updater signature), installs it silently and runs the app's
+# self-test (engine starts, the UI reaches the app, the pop-out pill opens and closes, the menu reads the engine).
+# The macOS app is built and signed on the Mac (desktop/scripts/build-macos.sh, docs/releasing.md).
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows installer + self-test
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      UV_CACHE_DIR: ${{ github.workspace }}/.cache/uv
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            ui/package-lock.json
+            desktop/package-lock.json
+
+      - name: Rust (stable)
+        shell: bash
+        run: rustup default stable && rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install the UI and desktop tooling
+        shell: bash
+        run: |
+          (cd ui && npm ci --no-audit --no-fund)
+          (cd desktop && npm ci --no-audit --no-fund)
+
+      - name: Stage the engine and uv
+        shell: bash
+        run: bash desktop/scripts/stage-engine.sh
+
+      - name: Build the installer (signed for in-app updates)
+        working-directory: desktop
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --bundles nsis
+
+      - name: Install silently and run the self-test
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter "modwen-desktop.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "Installed app not found" }
+          Write-Host "Installed: $($exe.FullName)"
+          $data = "$env:RUNNER_TEMP\modwen-data"
+          New-Item -ItemType Directory -Force $data | Out-Null
+          "app: {setup_complete: true, open_browser: false}`nnotify: {desktop: false}`nllm: {managed: {enabled: false, autostart: false}}" | Set-Content "$env:RUNNER_TEMP\modwen.yaml"
+          $env:MODWEN_DATA_DIR = $data
+          $env:MODWEN_CONFIG = "$env:RUNNER_TEMP\modwen.yaml"
+          $env:MODWEN_KEYSTORE = "file"
+          $env:MODWEN_APP_SELFTEST = "1"
+          $app = Start-Process $exe.FullName -PassThru
+          $log = "$data\logs\app-engine.log"
+          $deadline = (Get-Date).AddMinutes(12)   # first start installs Modwen's Python and packages
+          while ((Get-Date) -lt $deadline) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern "SELFTEST tray endpoint" -Quiet)) { break }
+            if ($app.HasExited) { break }
+            Start-Sleep -Seconds 5
+          }
+          Stop-Process -Id $app.Id -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 5
+          if (Test-Path $log) { Get-Content $log -Tail 40 } else { Write-Host "no log written" }
+          $results = if (Test-Path $log) { Select-String -Path $log -Pattern "^SELFTEST" | ForEach-Object { $_.Line } } else { @() }
+          $results | ForEach-Object { Write-Host $_ }
+          foreach ($need in @("bridge ok", "pill window present", "pill closes itself ok", "tray endpoint ok")) {
+            if (-not ($results -match [regex]::Escape($need))) { throw "Self-test failed: '$need' missing" }
+          }
+          # the engine must not outlive the app (it watches the app's process)
+          Start-Sleep -Seconds 5
+          $left = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*modwen serve*" }
+          if ($left) { throw "The engine kept running after the app stopped" }
+
+      - name: Keep the self-test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-selftest-logs
+          path: ${{ runner.temp }}/modwen-data/logs/
+          if-no-files-found: ignore
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: modwen-windows
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/*-setup.exe.sig
+          if-no-files-found: error

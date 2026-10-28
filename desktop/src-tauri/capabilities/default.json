@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "splash",
+  "description": "The bundled splash screen: shows the engine's progress and can retry starting it.",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-engine-state", "allow-restart-engine"]
+}
