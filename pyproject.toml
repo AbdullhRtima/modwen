@@ -46,7 +46,7 @@ mac = ["mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm6
 diarization = ["pyannote.audio>=3.3"]
 # Tray icon + native notifications.
 desktop = ["pystray>=0.19", "pillow>=10", "desktop-notifier>=5"]
-# Windows + NVIDIA: CUDA libraries for faster-whisper (the launcher adds this when it finds an NVIDIA GPU).
+# Windows + NVIDIA: CUDA libraries for faster-whisper (Modwen.bat and the desktop app add this when they find an NVIDIA GPU).
 cuda = ["nvidia-cublas-cu12; sys_platform == 'win32'", "nvidia-cudnn-cu12>=9,<10; sys_platform == 'win32'"]
 # System-audio capture backends.
 windows = ["pyaudiowpatch>=0.2.12; sys_platform == 'win32'"]

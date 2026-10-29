@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import functools
+import logging
 import os
 import platform
 import shutil
 import subprocess
+import sys
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 import psutil
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -169,10 +175,39 @@ def mlx_available() -> bool:
         return False
 
 
+@functools.cache
+def add_windows_cuda_dlls() -> None:
+    """Windows + NVIDIA: make pip-installed cuBLAS/cuDNN (nvidia-cublas-cu12, nvidia-cudnn-cu12) loadable."""
+    if sys.platform != "win32":
+        return
+    import site
+
+    for base in site.getsitepackages():
+        for sub in ("cublas", "cudnn", "cuda_runtime"):
+            d = Path(base) / "nvidia" / sub / "bin"
+            if d.is_dir():
+                os.add_dll_directory(str(d))
+                os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+
+
 def cuda_available() -> bool:
     try:
         import ctranslate2
 
-        return ctranslate2.get_cuda_device_count() > 0
+        if ctranslate2.get_cuda_device_count() == 0:
+            return False
     except Exception:
         return False
+    if sys.platform == "win32":
+        # The driver shows the GPU, but Whisper also needs cuBLAS and cuDNN (the `cuda` extra).
+        import ctypes
+
+        add_windows_cuda_dlls()
+        for dll in ("cublas64_12.dll", "cudnn64_9.dll"):
+            try:
+                ctypes.WinDLL(dll)
+            except OSError:
+                log.warning("NVIDIA GPU found, but %s can't be loaded: Whisper runs on the CPU "
+                            "(install the CUDA libraries with: uv sync --extra cuda)", dll)
+                return False
+    return True

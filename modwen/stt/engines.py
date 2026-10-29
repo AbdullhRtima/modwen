@@ -222,23 +222,6 @@ class FakeEngine:
         return [STTSegment(0.0, dur, text, language or lang, 0.9)]
 
 
-def _add_windows_cuda_dlls() -> None:
-    """Windows + NVIDIA: make pip-installed cuBLAS/cuDNN (nvidia-cublas-cu12, nvidia-cudnn-cu12) loadable."""
-    import os
-    import sys
-
-    if sys.platform != "win32":
-        return
-    import site
-
-    for base in site.getsitepackages():
-        for sub in ("cublas", "cudnn", "cuda_runtime"):
-            d = Path(base) / "nvidia" / sub / "bin"
-            if d.is_dir():
-                os.add_dll_directory(str(d))
-                os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
-
-
 def resolve_models(cfg, plan) -> tuple[str, str, str]:
     """Return (backend, live_model, final_model) honouring config overrides and installed backends."""
     from modwen.hardware import mlx_available
@@ -265,6 +248,8 @@ def build_engine(cfg, model: str, backend: str, pass_cfg) -> STTEngine:
         raise RuntimeError("STT provider is 'none'")
     if backend == "mlx":
         return MlxWhisperEngine(model, beam_size=pass_cfg.beam_size, cache_dir=cfg.models_dir / "mlx")
-    _add_windows_cuda_dlls()
+    from modwen.hardware import add_windows_cuda_dlls
+
+    add_windows_cuda_dlls()
     return FasterWhisperEngine(model, device=pass_cfg.device, compute_type=pass_cfg.compute_type,
                                download_root=cfg.models_dir / "whisper", beam_size=pass_cfg.beam_size)

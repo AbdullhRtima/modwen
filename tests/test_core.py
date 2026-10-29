@@ -342,6 +342,26 @@ def test_tiers():
     assert choose_tier(small).warnings
 
 
+def test_windows_cuda_needs_cublas(monkeypatch):
+    # An NVIDIA GPU without the `cuda` extra: Whisper must fall back to the CPU, not fail on every meeting.
+    import ctypes
+    import types
+
+    from modwen import hardware
+
+    monkeypatch.setitem(sys.modules, "ctranslate2", types.SimpleNamespace(get_cuda_device_count=lambda: 1))
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(hardware, "add_windows_cuda_dlls", lambda: None)
+
+    def missing(name):
+        raise OSError(f"{name} not found")
+
+    monkeypatch.setattr(ctypes, "WinDLL", missing, raising=False)
+    assert not hardware.cuda_available()
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name: None, raising=False)
+    assert hardware.cuda_available()
+
+
 def test_merge_short_regions_into_windows():
     from modwen.audio.vad import merge_regions
 

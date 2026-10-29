@@ -132,11 +132,34 @@ fn uv_command(p: &Paths) -> Command {
     c
 }
 
-/// What the installed environment was built from; a new app version or lockfile reinstalls it.
-fn env_stamp(p: &Paths, version: &str) -> String {
+/// Windows: an NVIDIA GPU, found the same way as Modwen.bat and the engine (`nvidia-smi` on PATH).
+fn has_nvidia_gpu() -> bool {
+    cfg!(windows)
+        && std::env::var_os("PATH")
+            .is_some_and(|path| std::env::split_paths(&path).any(|d| d.join("nvidia-smi.exe").is_file()))
+}
+
+/// The pyproject extras this machine needs.
+fn uv_extras() -> Vec<&'static str> {
+    let mut extras = vec!["stt", "desktop"];
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        extras.push("mac");
+    }
+    if cfg!(windows) {
+        extras.push("windows");
+        if has_nvidia_gpu() {
+            extras.push("cuda"); // cuBLAS and cuDNN: without them Whisper can't run on the GPU
+        }
+    }
+    extras
+}
+
+/// What the installed environment was built from; a new app version, lockfile or set of extras reinstalls it.
+fn env_stamp(p: &Paths, version: &str, extras: &[&str]) -> String {
     let mut h = DefaultHasher::new();
     version.hash(&mut h);
     fs::read(p.engine.join("uv.lock")).unwrap_or_default().hash(&mut h);
+    extras.hash(&mut h);
     format!("{:016x}", h.finish())
 }
 
@@ -162,7 +185,8 @@ fn run_logged(app: &AppHandle, logs: &Path, mut cmd: Command) -> Result<(), Stri
 fn ensure_environment(app: &AppHandle, p: &Paths) -> Result<(), String> {
     let version = app.package_info().version.to_string();
     let stamp_file = p.runtime.join("venv-stamp");
-    let stamp = env_stamp(p, &version);
+    let extras = uv_extras();
+    let stamp = env_stamp(p, &version, &extras);
     if python(&p.runtime).exists() && fs::read_to_string(&stamp_file).ok().as_deref() == Some(stamp.as_str()) {
         return Ok(());
     }
@@ -171,13 +195,9 @@ fn ensure_environment(app: &AppHandle, p: &Paths) -> Result<(), String> {
     fs::create_dir_all(&p.runtime).map_err(|e| e.to_string())?;
     let mut cmd = uv_command(p);
     cmd.arg("sync").arg("--frozen").arg("--no-dev").arg("--no-install-project")
-        .arg("--project").arg(&p.engine)
-        .args(["--extra", "stt", "--extra", "desktop"]);
-    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
-        cmd.args(["--extra", "mac"]);
-    }
-    if cfg!(windows) {
-        cmd.args(["--extra", "windows"]);
+        .arg("--project").arg(&p.engine);
+    for &extra in &extras {
+        cmd.args(["--extra", extra]);
     }
     run_logged(app, &p.logs, cmd).map_err(|e| format!("Setting up Modwen's Python failed ({e}). Check the internet connection and try again."))?;
     fs::write(&stamp_file, stamp).map_err(|e| e.to_string())?;
