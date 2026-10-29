@@ -367,7 +367,7 @@ fn self_test(app: &AppHandle) {
               window.open(location.origin + "/#/selftest/TAURI=" + typeof t + "/INTERNALS=" + typeof i, "st");
               if (t) t.core.invoke("selftest", { report: "bridge ok on " + where })
                 .catch((e) => window.open(location.origin + "/#/selftest/invoke-error=" + encodeURIComponent(String(e)), "st2"));
-              window.open(location.origin + "/#/pill", "modwen-pill");
+              if (t) t.core.invoke("open_pill");  // what the UI's pop-out button does
             })();"#);
         }
         thread::sleep(Duration::from_secs(4));
@@ -421,8 +421,10 @@ fn restart_engine(app: AppHandle) {
     boot(app);
 }
 
+/// Async, so it runs off the main thread: on Windows, building a window in a synchronous command deadlocks
+/// (WebView2 never loads it: a blank window that can't be closed).
 #[tauri::command]
-fn open_pill(app: AppHandle) -> Result<(), String> {
+async fn open_pill(app: AppHandle) -> Result<(), String> {
     open_pill_window(&app)
 }
 
