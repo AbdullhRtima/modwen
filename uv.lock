@@ -1384,6 +1384,8 @@ name = "modwen"
 version = "0.5.1"
 source = { editable = "." }
 dependencies = [
+    { name = "av", version = "18.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "av", version = "19.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1450,6 +1452,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", specifier = ">=18.1" },
     { name = "cryptography", specifier = ">=42" },
     { name = "desktop-notifier", marker = "extra == 'desktop'", specifier = ">=5" },
     { name = "fastapi", specifier = ">=0.110" },
