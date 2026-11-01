@@ -193,9 +193,12 @@ button.badge.warn { border: 1px dashed var(--warn); }
 .meter .bar i { display: block; height: 100%; background: var(--ok); transition: width .2s; }
 .live-stage { padding: 26px clamp(18px, 4vw, 44px); min-height: 360px; }
 .live-box { max-height: 62vh; overflow: auto; display: grid; gap: 14px; align-content: start; }
-.cap { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 4px 18px; align-items: baseline; }
+.cap { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 4px 18px; align-items: baseline; }
 .cap .w { font-weight: 600; font-size: 13px; }
 .cap .w .ts { display: block; font-weight: 400; }
+.cap .w .nm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cap .w .guess { text-decoration: underline dotted; text-underline-offset: 3px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .cap .x { font-size: clamp(16px, 1.5vw, 20px); line-height: 1.6; unicode-bidi: plaintext; color: var(--text-2); }
 .cap:last-child .x { color: var(--text); }
 

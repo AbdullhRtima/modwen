@@ -57,9 +57,15 @@ export type Notes = { id: string; version: number; llm_profile: string; model: s
 
 export type RecorderStatus = { recording: boolean; paused?: boolean; meeting_id?: string; elapsed_ms?: number;
   levels?: Record<string, number>; warnings?: Record<string, string>; bookmarks?: number[];
-  sources?: Record<string, string>; live?: { enabled: boolean; paused: boolean; error: string | null } };
+  sources?: Record<string, string>; live?: { enabled: boolean; paused: boolean; error: string | null; names?: LiveNamesStatus } };
 
-export type LiveLine = { channel: string; speaker: string; start_ms: number; text: string; language: string };
+/** Live speaker names: absent on older servers, which means "off". */
+export type LiveNamesStatus = "on" | "paused" | "off";
+
+export type LiveSpeakerState = "named" | "maybe";
+export type LiveLine = { channel: string; speaker: string; start_ms: number; text: string; language: string;
+  /** Server-assigned, with the meeting id the key of a line. Absent on older servers. */
+  id?: string | number; speaker_name?: string | null; speaker_state?: LiveSpeakerState | null; name_latency_ms?: number };
 
 const headers: Record<string, string> = { "Content-Type": "application/json" };
 const envToken = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_MODWEN_TOKEN;
