@@ -108,19 +108,31 @@ def shutdown_worker() -> None:
             _POOL = None
 
 
-def _call(fn, *args):
-    """Run ``fn(*args)`` in the worker; restart it once if it died (e.g. out of memory)."""
+def _call(fn, *args, timeout: float | None = None):
+    """Run ``fn(*args)`` in the worker; restart it once if it died (e.g. out of memory).
+
+    ``timeout`` (seconds) bounds the wait for the result: on expiry the job is cancelled if it has not started
+    and ``TimeoutError`` is raised (a job already running in the worker cannot be stopped). If the worker is
+    shut down meanwhile, ``concurrent.futures.CancelledError`` is raised; callers off the main path must catch it.
+    The pool is reset only if it is still the broken one, so two threads that see the same dead pool start
+    one new pool, not two."""
     global _POOL
     from concurrent.futures.process import BrokenProcessPool
 
     for attempt in (1, 2):
+        pool = _pool()
+        future = pool.submit(fn, *args)
         try:
-            return _pool().submit(fn, *args).result()
+            return future.result(timeout)
         except BrokenProcessPool:
             with _POOL_LOCK:
-                _POOL = None
+                if _POOL is pool:
+                    _POOL = None
             if attempt == 2:
                 raise
+        except TimeoutError:
+            future.cancel()
+            raise
     return None
 
 
