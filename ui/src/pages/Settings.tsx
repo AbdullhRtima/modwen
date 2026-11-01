@@ -61,7 +61,7 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
         <>
           {tab === "general" && <General settings={settings} save={save} ctx={ctx} />}
           {tab === "audio" && <Audio settings={settings} save={save} st={st} />}
-          {tab === "transcription" && <Transcription settings={settings} save={save} st={st} ctx={ctx} />}
+          {tab === "transcription" && <Transcription settings={settings} save={save} st={st} ctx={ctx} go={go} />}
           {tab === "ai" && <AIModel ctx={ctx} st={st} reload={reload} />}
           {tab === "notifications" && <Notifications settings={settings} save={save} />}
           {tab === "privacy" && <Privacy settings={settings} save={save} />}
@@ -262,8 +262,21 @@ function Audio({ settings, save, st }: SP & { st: SetupStatus }) {
   );
 }
 
-function Transcription({ settings, save, st, ctx }: SP & { st: SetupStatus; ctx: Ctx }) {
+function Transcription({ settings, save, st, ctx, go }: SP & { st: SetupStatus; ctx: Ctx; go: (t: Tab) => void }) {
   const { tr } = useI18n();
+  // Which names box was changed during this visit, for the "applies from the next meeting" line (only while recording).
+  const [changed, setChanged] = useState<{ key: string; on: boolean } | null>(null);
+  const liveOff = settings["stt.live.provider"] === "none";
+  const namesOn = settings["diarization.live_names"] !== false;
+  const roomOn = settings["diarization.live_names_room"] !== false;
+  const setNames = async (key: string, on: boolean) => {
+    await save({ [key]: on });
+    setChanged({ key, on });
+  };
+  const statusLine = (key: string) => ctx.recorder.recording && changed?.key === key && (
+    <p role="status" className="faint" style={{ fontSize: 12.5, margin: "4px 0 0", paddingInlineStart: 24 }}>{changed.on
+      ? tr("On from the next meeting.", "يعمل من الاجتماع القادم.")
+      : tr("Off. The next caption will not be matched.", "أُوقف. لن تُطابَق الجملة التالية.")}</p>);
   const [glossary, setGlossary] = useState(((settings["stt.glossary"] as string[]) ?? []).join(", "));
   const [job, setJob] = useJob(ctx, st.jobs.find((j) => j.kind === "whisper" && j.status === "running") ?? null);
   const models = ["auto", "large-v3", "large-v3-turbo", "medium", "small", "base"];
@@ -283,6 +296,29 @@ function Transcription({ settings, save, st, ctx }: SP & { st: SetupStatus; ctx:
               options={[["local_whisper", tr("On", "تشغيل")], ["none", tr("Off", "إيقاف")]]} />
             <Select value={String(settings["stt.live.model"])} onChange={(v) => save({ "stt.live.model": v })}
               options={models.map((m) => [m, m === "auto" ? auto(st.plan.live_model) : m] as [string, string])} />
+          </div></div>
+        <div className="field" style={{ alignItems: "start" }}><label>{tr("Speaker names", "أسماء المتحدثين")}</label>
+          <div>
+            <label className="check" style={liveOff ? { opacity: .45, cursor: "not-allowed" } : undefined}>
+              <input type="checkbox" checked={namesOn} disabled={liveOff}
+                onChange={(e) => setNames("diarization.live_names", e.target.checked)} />
+              {tr("Show speaker names in live captions", "أظهر أسماء المتحدثين في الترجمة المباشرة")}</label>
+            <p className="faint" style={{ fontSize: 12.5, margin: "6px 0 0", paddingInlineStart: 24 }}>{tr(
+              "When someone you saved in People speaks, their caption shows their name while the meeting is still going. If Modwen is not sure it adds a question mark, like “Sara?”. Everyone else stays as Call or Room. These names are a live guess; the final names come from the full processing after you stop.",
+              "عندما يتحدث شخص حفظتَه في صفحة الأشخاص، يظهر اسمه على سطره أثناء الاجتماع. إذا لم يكن مُدوَّن متأكداً يضيف علامة استفهام، مثل «سارة؟». أما بقية المتحدثين فيبقون «المكالمة» أو «الغرفة». هذه الأسماء تخمين مباشر؛ أما الأسماء النهائية فتأتي من المعالجة الكاملة بعد الإنهاء.")}</p>
+            <p className="faint" style={{ fontSize: 12.5, margin: "6px 0 0", paddingInlineStart: 24 }}>{liveOff
+              ? tr("Needs live captions to be on.", "يتطلب تشغيل الترجمة المباشرة.")
+              : tr("Needs at least one person saved with “Remember this voice” (see People).", "يتطلب حفظ شخص واحد على الأقل عبر «تذكّر هذا الصوت» (انظر صفحة الأشخاص).")}{" "}
+              <a href="#/settings/privacy" onClick={() => go("privacy")}>{tr("How voices are handled", "كيف يتعامل مُدوَّن مع الأصوات")}</a></p>
+            {statusLine("diarization.live_names")}
+            <label className="check" style={{ marginTop: 10, paddingInlineStart: 24, ...(liveOff || !namesOn ? { opacity: .45, cursor: "not-allowed" } : {}) }}>
+              <input type="checkbox" checked={roomOn} disabled={liveOff || !namesOn}
+                onChange={(e) => setNames("diarization.live_names_room", e.target.checked)} />
+              {tr("Also in in-person meetings", "في الاجتماعات الحضورية أيضاً")}</label>
+            <p className="faint" style={{ fontSize: 12.5, margin: "6px 0 0", paddingInlineStart: 48 }}>{tr(
+              "Voices recorded through one room microphone are harder to tell apart, so names there are less reliable.",
+              "الأصوات المسجّلة عبر ميكروفون واحد في الغرفة أصعب تمييزاً، فتكون الأسماء هناك أقل موثوقية.")}</p>
+            {statusLine("diarization.live_names_room")}
           </div></div>
         <div className="field" style={{ alignItems: "start" }}><label>{tr("Glossary", "المسرد")}</label>
           <div><textarea className="input" rows={2} value={glossary} onChange={(e) => setGlossary(e.target.value)} dir="auto"
@@ -502,6 +538,8 @@ function Privacy({ settings, save }: SP) {
       "لا تحدث التنزيلات إلا عند ضغطك زر التنزيل (نماذج الكلام، llama.cpp، Qwen). لا قياس عن بُعد.")],
     [<I.voice size={16} />, tr("Voiceprints are kept only for people you chose to remember (with their consent), encrypted, until you delete them.",
       "تُحفظ بصمات الصوت فقط لمن اخترت تذكّرهم (بموافقتهم)، مشفّرة، حتى تحذفها.")],
+    [<I.voice size={16} />, tr("Live speaker names compare voices in memory only, and the comparison is discarded at once. Nothing about a voice is saved or sent.",
+      "أسماء المتحدثين المباشرة تقارن الأصوات في الذاكرة فقط، ويُتلَف ناتج المقارنة فوراً. لا يُحفظ ولا يُرسل أي شيء عن الصوت.")],
     [<I.trash size={16} />, tr(`Old data is deleted automatically: audio after ${days("audio")} days, transcripts after ${days("transcript")}, notes after ${days("notes")} (0 = keep forever). Pinned meetings are always kept.`,
       `تُحذف البيانات القديمة تلقائياً: الصوت بعد ${days("audio")} يوماً، النصوص بعد ${days("transcript")}، الملاحظات بعد ${days("notes")} (0 = الاحتفاظ دائماً). الاجتماعات المثبّتة تبقى دائماً.`)],
   ];
@@ -513,6 +551,24 @@ function Privacy({ settings, save }: SP) {
         <p className="faint" style={{ fontSize: 12.5, margin: "6px 0 0", paddingInlineStart: 24 }}>{tr(
           "Keeps a voiceprint of you, taken from your microphone in online meetings, so Modwen can tell which voice is you in in-person meetings. Delete it any time on the People page.",
           "يحتفظ ببصمة صوتك من الميكروفون في الاجتماعات عبر الإنترنت، ليعرف مُدوَّن صوتك في الاجتماعات الحضورية. احذفها متى شئت من صفحة الأشخاص.")}</p>
+      </Section>
+      <Section title={tr("Live speaker names", "أسماء المتحدثين المباشرة")}>
+        <div id="live-names-disclosure" style={{ display: "grid", gap: 10, fontSize: 13.5 }}>
+          {tr(
+            `**While a meeting is recording, Modwen compares each speaker's voice with the voices you saved in People.**
+This happens for every voice on the call or in the room, including people you never saved, because Modwen has to listen to a voice to know it is not one it knows.
+For each sentence, Modwen turns a few seconds of audio into a short numeric voice summary and checks it against your saved voices. It keeps only the answer: a name, a name with a question mark, or nothing. The voice summary stays in memory for a moment and is then thrown away. It is never saved, never written to a log, never grouped to build a profile of people you did not save, and never sent anywhere.
+Only people you already saved in People, with their consent, can be named. Modwen never creates or changes a saved voice on its own during a meeting.
+The names appear on the live captions only. They are a guess. They are not stored in the transcript and are not given to the AI that writes your notes; the final names come from the processing after you stop. If you let other devices view live captions (Settings, Other devices), they will see these names too.
+Nothing leaves this computer. If you switch this off, or nobody is saved yet, Modwen does no voice comparison during the meeting. If voice matching of people on a call needs their agreement where you are, switch it off.`,
+            `**أثناء تسجيل الاجتماع، يقارن مُدوَّن صوت كل متحدث بالأصوات التي حفظتَها في صفحة الأشخاص.**
+يحدث هذا لكل صوت في المكالمة أو في الغرفة، حتى من لم تحفظهم، لأن مُدوَّن يحتاج إلى سماع الصوت ليعرف أنه ليس صوتاً يعرفه.
+لكل جملة، يحوّل مُدوَّن بضع ثوانٍ من الصوت إلى ملخّص رقمي قصير للصوت ويقارنه بأصواتك المحفوظة. ولا يحتفظ إلا بالنتيجة: اسم، أو اسم مع علامة استفهام، أو لا شيء. يبقى ملخّص الصوت في الذاكرة لحظة ثم يُتلَف. لا يُحفظ أبداً، ولا يُكتب في أي سجل، ولا يُجمع لبناء ملف عمّن لم تحفظهم، ولا يُرسل إلى أي مكان.
+لا يمكن تسمية إلا من حفظتَهم مسبقاً في صفحة الأشخاص بموافقتهم. ولا ينشئ مُدوَّن بصمة صوت محفوظة ولا يغيّرها من تلقاء نفسه أثناء الاجتماع.
+تظهر الأسماء على الترجمة المباشرة فقط، وهي تخمين. لا تُحفظ في النص الكامل ولا تُعطى للذكاء الاصطناعي الذي يكتب ملاحظاتك؛ الأسماء النهائية تأتي من المعالجة بعد الإنهاء. وإذا سمحتَ لأجهزة أخرى بعرض الترجمة المباشرة (الإعدادات، الأجهزة الأخرى) فسترى هذه الأسماء أيضاً.
+لا شيء يغادر هذا الجهاز. وإذا أوقفتَ هذا الخيار، أو لم يكن أحد محفوظاً بعد، فلا يجري أي مقارنة للأصوات أثناء الاجتماع. وإذا كانت مطابقة أصوات من في المكالمة تتطلب موافقتهم حيث تقيم، فأوقف هذا الخيار.`)
+            .split("\n").map((p, i) => <p key={i} style={{ margin: 0 }}>{i === 0 ? <b>{p.replace(/\*\*/g, "")}</b> : p}</p>)}
+        </div>
       </Section>
       <Section title={tr("Local only, always", "محلي فقط، دائماً")}>
         <ul className="promise">{points.map(([icon, text], i) => <li key={i}><span className="pi">{icon}</span><span>{text}</span></li>)}</ul>
