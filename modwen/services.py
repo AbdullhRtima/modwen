@@ -17,6 +17,13 @@ from modwen.storage import Store
 
 log = logging.getLogger(__name__)
 
+# The "import:" prefix is how the UI tells a failed-import record from a meeting that failed in processing.
+IMPORT_INTERRUPTED = "import: Modwen stopped before this import finished."
+
+
+def is_failed_import(meeting: dict) -> bool:
+    return meeting["status"] == "failed" and (meeting.get("error") or "").startswith("import:")
+
 
 def free_gpu_memory() -> None:
     """Drop MLX Whisper's own cached model and MLX's buffer cache (Apple Silicon), then collect garbage."""
@@ -390,8 +397,22 @@ class Services:
                 log.exception("Retention clean-up failed")
             time.sleep(6 * 3600)
 
+    def mark_import_interrupted(self, mid: str) -> None:
+        """An import that didn't finish keeps its name and nothing else. Safe to repeat after a crash here."""
+        import shutil
+
+        shutil.rmtree(self.cfg.audio_dir / mid, ignore_errors=True)
+        self.store.forget_audio(mid)
+        self.store.update_meeting(mid, status="failed", error=IMPORT_INTERRUPTED)
+
+    def _recover_imports(self) -> None:
+        for m in self.store.interrupted_imports():
+            log.warning("Import %s did not finish; its audio was removed", m["id"])
+            self.mark_import_interrupted(m["id"])
+
     def _recover(self) -> None:
         """Meetings left 'recording'/'processing' by a crash are re-processed from their saved chunks."""
+        self._recover_imports()
         for m in self.store.list_meetings(limit=50):
             if m["status"] in ("recording", "processing"):
                 if m["status"] == "recording" and not any((self.cfg.audio_dir / m["id"]).glob("*.flac.enc")):

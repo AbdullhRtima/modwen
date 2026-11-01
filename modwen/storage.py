@@ -213,10 +213,11 @@ class Store:
         return row["wrapped_key"] if row else None
 
     def list_meetings(self, limit: int = 200) -> list[dict]:
-        """Newest first, with counts for the list view: four queries in total, however many meetings."""
+        """Newest first, with counts for the list view: four queries in total, however many meetings.
+        An import still running isn't a meeting yet, so it isn't listed."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM meetings ORDER BY created_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM meetings WHERE status != 'importing' ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
             ids = [r["id"] for r in rows]
             marks = ",".join("?" * len(ids)) or "''"
@@ -242,6 +243,18 @@ class Store:
             d["speaker_count"] = speakers.get(d["id"], 0)  # type: ignore[index]
             out.append(d)
         return out
+
+    def interrupted_imports(self) -> list[dict]:
+        """Rows still marked as importing. At startup, these are the imports a crash cut short."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM meetings WHERE status = 'importing'").fetchall()
+        return [self._row(r) for r in rows]  # type: ignore[misc]
+
+    def commit_import(self, mid: str, title: str, duration_ms: int) -> bool:
+        """The point where an import is complete, as one write. False if the row was no longer importing."""
+        cur = self._exec("UPDATE meetings SET status = 'processing', title = ?, duration_ms = ? "
+                         "WHERE id = ? AND status = 'importing'", (title, duration_ms, mid))
+        return cur.rowcount == 1
 
     def delete_meeting(self, mid: str) -> None:
         self._exec("DELETE FROM meetings WHERE id = ?", (mid,))
