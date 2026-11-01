@@ -266,10 +266,12 @@ class SpeakerEmbedder:
         self._emb = emb_path
 
     def embed(self, audio: np.ndarray, spans: list[tuple[float, float]], *, max_seconds: float = 60.0,
-              min_seconds: float = 10.0, min_piece: float = 1.0) -> tuple[np.ndarray | None, float]:
+              min_seconds: float = 10.0, min_piece: float = 1.0,
+              timeout: float | None = None) -> tuple[np.ndarray | None, float]:
         """Mean normalised embedding of the longest ``spans`` (seconds) up to ``max_seconds``.
 
-        Returns (None, seconds) when there is less than ``min_seconds`` of usable speech."""
+        Returns (None, seconds) when there is less than ``min_seconds`` of usable speech. ``timeout`` bounds the
+        wait for the worker (live use); ``TimeoutError`` or ``CancelledError`` is raised when it is exceeded."""
         pieces, used = [], 0.0
         for a, b in sorted(spans, key=lambda s: s[0] - s[1]):
             if b - a < min_piece or used >= max_seconds:
@@ -279,7 +281,7 @@ class SpeakerEmbedder:
                 continue
             pieces.append(piece)
             used += piece.size / SAMPLE_RATE
-        vecs = [v / (np.linalg.norm(v) or 1.0) for v in (_call(_w_embed, self._emb, self.threads, pieces)
+        vecs = [v / (np.linalg.norm(v) or 1.0) for v in (_call(_w_embed, self._emb, self.threads, pieces, timeout=timeout)
                                                          if pieces else []) if v is not None]
         if not vecs or used < min_seconds:
             return None, used
