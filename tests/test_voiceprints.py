@@ -265,3 +265,58 @@ def test_lines_go_to_the_person_they_sound_like():
     # The unclear last line is not guessed as "You": it goes to "Room", flagged for the user to set.
     assert said == ["You", "Taymaa", "You", "Taymaa", "You", "Room"]
     assert [s.get("uncertain", 0) for s in segs] == [0, 0, 0, 0, 0, 1]
+
+
+def _unit(*xs):
+    v = np.array(xs, np.float32)
+    return v / np.linalg.norm(v)
+
+
+def test_classify_live_bands():
+    from modwen.voiceprints import LOCAL, REMOTE, LiveThresholds, classify_live
+
+    th = LiveThresholds()
+    sara, omar = _unit(1, 0, 0), _unit(0, 1, 0)
+    prints = {"p1": {REMOTE: sara}, "p2": {REMOTE: omar}}
+    assert classify_live(sara, prints, REMOTE, th) == ("p1", "named")
+    assert classify_live(omar, prints, REMOTE, th) == ("p2", "named")
+    assert classify_live(_unit(0, 0, 1), prints, REMOTE, th) == (None, "other")
+    # a middling score is only "maybe"; two near-identical people are never "named"
+    middling = _unit(0.52, 0, 0.85)
+    assert classify_live(middling, prints, REMOTE, th) == ("p1", "maybe")
+    twins = {"p1": {REMOTE: _unit(1, 0.05, 0)}, "p2": {REMOTE: _unit(1, -0.05, 0)}}
+    assert classify_live(sara, twins, REMOTE, th)[1] != "named"
+    # one saved person: the margin is vacuous, so the bar is higher by solo_bonus
+    solo = {"p1": {LOCAL: sara}}
+    just_over = _unit(0.62, 0, 0.78)
+    assert classify_live(just_over, solo, LOCAL, th) == ("p1", "maybe")
+    assert classify_live(_unit(0.7, 0, 0.71), solo, LOCAL, th) == ("p1", "named")
+    assert classify_live(sara, {}, LOCAL, th) == (None, "other")
+    assert classify_live(_unit(1, 0), solo, LOCAL, th) == (None, "other")  # other embedding size
+
+
+def test_live_name_settings_default_on_and_editable(cfg):
+    from modwen.api_setup import EDITABLE
+
+    assert cfg.diarization.live_names is True and cfg.diarization.live_names_room is True
+    assert {"diarization.live_names", "diarization.live_names_room"} <= EDITABLE
+
+
+def test_processing_active_counts_running_jobs(cfg, fake_llm):
+    import threading
+
+    s = _services(cfg, fake_llm, FakeEmbedder())
+    assert s.processing_active == 0
+    seen, release = [], threading.Event()
+
+    def process(mid):
+        seen.append(s.processing_active)
+        release.wait(5)
+        raise RuntimeError("boom")  # a failing job must still release the counter
+
+    s.processor.process = process
+    s.store.get_meeting = lambda mid: {"id": mid}
+    release.set()
+    s.enqueue_processing("nope")
+    s.jobs.join()
+    assert seen == [1] and s.processing_active == 0

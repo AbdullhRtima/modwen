@@ -64,6 +64,7 @@ class Services:
         self._job_seq = itertools.count()
         self._pending: dict[str, int] = {}  # meeting id -> jobs queued or running for it
         self._pending_lock = threading.Lock()
+        self._active_jobs = 0  # post-meeting jobs running now; live naming steps aside while this is above 0
         from modwen.runtime.jobs import JobManager
         from modwen.runtime.llm_manager import ManagedLLM
 
@@ -321,9 +322,16 @@ class Services:
         self.store.update_meeting(meeting_id, status="processing", error=None)
         self._enqueue("redetect", meeting_id, kw)
 
+    @property
+    def processing_active(self) -> int:
+        """Post-meeting jobs running right now (best effort: a job can start just after this is read)."""
+        return self._active_jobs
+
     def _run_jobs(self) -> None:
         while True:
             _, _, kind, mid, kw = self.jobs.get()
+            with self._pending_lock:
+                self._active_jobs += 1
             try:
                 if not self.store.get_meeting(mid):
                     log.info("Skipping %s for meeting %s: it was deleted", kind, mid)
@@ -340,6 +348,7 @@ class Services:
                     log.info("Meeting %s was deleted while %s ran; its result was discarded", mid, kind)
             finally:
                 with self._pending_lock:
+                    self._active_jobs -= 1
                     left = self._pending.get(mid, 1) - 1
                     if left > 0:
                         self._pending[mid] = left

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -89,6 +90,41 @@ def score(vec: np.ndarray, prints: dict[str, np.ndarray], kind: str) -> float:
     if ref is None or ref.size != vec.size:
         return 0.0
     return float(vec @ ref)
+
+
+@dataclass(frozen=True)
+class LiveThresholds:
+    """Cut-offs for naming one live utterance (``classify_live``).
+
+    PLACEHOLDERS: not tuned on real audio yet (task 5, the accuracy experiment, is blocked). Do not treat
+    these numbers as measured, and do not ship on them."""
+
+    named: float = 0.60  # PLACEHOLDER: show the name
+    named_margin: float = 0.15  # PLACEHOLDER: lead over the runner-up for a name
+    maybe: float = 0.45  # PLACEHOLDER: show "Name?"
+    maybe_margin: float = 0.10  # PLACEHOLDER: lead over the runner-up for "Name?"
+    solo_bonus: float = 0.05  # PLACEHOLDER: with one saved person there is no runner-up, so ask for more score
+
+
+def classify_live(vec: np.ndarray, prints: dict[str, dict[str, np.ndarray]], kind: str,
+                  th: LiveThresholds = LiveThresholds()) -> tuple[str | None, str]:
+    """Pure: who does one utterance's voice sound like? Returns (person id or None, "named" | "maybe" | "other").
+
+    The best person must lead the runner-up by a margin; a clear lead and a high score is "named", a weaker
+    one is "maybe" (shown as "Name?"), anything else is "other" with no person."""
+    scores = sorted(((score(vec, p, kind), pid) for pid, p in prints.items()), reverse=True)
+    if not scores:
+        return None, "other"
+    best, pid = scores[0]
+    if len(scores) > 1:
+        lead, named, maybe = best - scores[1][0], th.named, th.maybe
+    else:  # one saved person: the margin test is empty, so the score must carry it
+        lead, named, maybe = 1.0, th.named + th.solo_bonus, th.maybe + th.solo_bonus
+    if best >= named and lead >= th.named_margin:
+        return pid, "named"
+    if best >= maybe and lead >= th.maybe_margin:
+        return pid, "maybe"
+    return None, "other"
 
 
 def match(candidates: dict[str, tuple[np.ndarray, str]], people: dict[str, dict[str, np.ndarray]], *,
