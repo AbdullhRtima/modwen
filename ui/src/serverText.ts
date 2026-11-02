@@ -52,11 +52,12 @@ const REFUSALS: [RegExp, (m: RegExpMatchArray, t: (k: Key) => string) => string]
     () => "لا يمكن استيراد هذا الملف. قد يكون محمياً من النسخ أو بصيغة لا يدعمها مُدوَّن. استخدم ملف WAV أو FLAC أو MP3 أو OGG أو AIFF أو MP4 أو MOV أو M4A."],
   [/^This file is damaged or incomplete, so nothing was imported\. If you can, get a fresh copy and import that\.$/,
     () => "هذا الملف تالف أو غير مكتمل، فلم يُستورد شيء منه. جرّب نسخة سليمة منه إن توفّرت."],
-  [/^This recording is ([\d.]+(?:e\+\d+)?) hours long\. Imports are limited to ([\d.]+) hours\. Trim or split it, then import it again\.$/,
+  [/^This recording is (over )?([\d.]+) hours long\. Imports are limited to ([\d.]+) hours\. Trim or split it, then import it again\.$/,
     (m) => {
-      const h = Number(m[1]);
+      const h = Number(m[2]);
       const unit = Number.isInteger(h) && h >= 7 && h <= 10 ? "ساعات" : "ساعة";
-      return `مدة هذا التسجيل ${m[1]} ${unit}، والحد الأقصى للاستيراد ${m[2]} ساعات. اختصره أو قسّمه، ثم استورده من جديد.`;
+      const length = m[1] ? `أكثر من ${m[2]} ساعات` : `${m[2]} ${unit}`;
+      return `مدة هذا التسجيل ${length}، والحد الأقصى للاستيراد ${m[3]} ساعات. اختصره أو قسّمه، ثم استورده من جديد.`;
     }],
   [/^This file is larger than 8 GB, the limit for imports\. Use a smaller copy and import that\.$/, (_m, t) => t("importTooBig")],
   [/^This file is empty\. Choose the original recording and import it again\.$/,

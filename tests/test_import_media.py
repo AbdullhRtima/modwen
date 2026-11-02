@@ -139,6 +139,33 @@ def open_ended_mdat(data: bytes) -> bytes:
     return data[:at] + bytes(4) + data[at + 4:]
 
 
+def two_mdats(data: bytes, last: int) -> tuple[bytes, int]:
+    """Split a moov-first file's audio into two mdats, the second holding the ``last`` packets. Returns the file and
+    the offset where the second mdat starts: a cut there ends on a clean box boundary."""
+    with av.open(io.BytesIO(data)) as container:
+        packets = [p.pos for p in container.demux(container.streams.audio[0]) if p.size]
+    mdat_at, mdat_size, _ = box_of(data, b"mdat")
+    first, second = data[mdat_at + 8:packets[-last]], data[packets[-last]:mdat_at + mdat_size]
+    moov_at, moov_size, _ = box_of(data, b"moov")
+    moov = data[moov_at:moov_at + moov_size]
+
+    def words(*values: int) -> bytes:
+        return b"".join(v.to_bytes(4, "big") for v in values)
+
+    for kind, body in ((b"stsc", words(0, 2, 1, len(packets) - last, 1, 2, last, 1)), (b"stco", words(0, 2, 0, 0))):
+        at = moov.index(kind) - 4
+        moov = moov[:at] + (8 + len(body)).to_bytes(4, "big") + kind + body + moov[at + int.from_bytes(moov[at:at + 4], "big"):]
+    grown = bytearray(moov)
+    for kind in (b"moov", b"trak", b"mdia", b"minf", b"stbl"):
+        at = moov.index(kind) - 4
+        grown[at:at + 4] = (int.from_bytes(moov[at:at + 4], "big") + len(moov) - moov_size).to_bytes(4, "big")
+    head = moov_at + len(grown)
+    offsets = moov.index(b"stco") + 12
+    grown[offsets:offsets + 8] = words(head + 8, head + 8 + len(first) + 8)
+    mdats = (8 + len(first)).to_bytes(4, "big") + b"mdat" + first + (8 + len(second)).to_bytes(4, "big") + b"mdat" + second
+    return data[:moov_at] + bytes(grown) + mdats, head + 8 + len(first)
+
+
 def make_gapped(where: Path, movflags: str | None = None) -> bytes:
     """A valid file with a 3 s hole in its audio timeline, 10 s in."""
     path = where / f"fixture-{os.urandom(4).hex()}.mp4"
@@ -457,6 +484,91 @@ def test_a_cut_that_loses_no_audio_is_still_refused(app, data_dir, movflags):
     _refused(s, c, body[:-1], 400, DAMAGED)
 
 
+def test_a_cut_before_a_fragmented_files_first_fragment_is_damaged_not_empty(app, data_dir):
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags=FRAGMENTED)
+    _refused(s, c, body[:box_of(body, b"moof")[0]], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("kw", [{}, {"fmt": "mov", "codec": "pcm_s16le"}])
+@pytest.mark.parametrize("lost", [1, 2, 5])
+def test_an_open_ended_mdat_shows_every_missing_packet(app, data_dir, kw, lost):
+    """No time margin: each sample the table lists must arrive."""
+    s, c = app
+    good = make_media(data_dir, seconds=20, movflags="faststart", **kw)
+    _refused(s, c, open_ended_mdat(good)[:packet_ends(good)[-lost - 1]], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("last", [1, 5, 100])
+def test_several_mdats_import_whole_and_show_a_cut_between_them(app, data_dir, last):
+    s, c = app
+    body, second = two_mdats(make_media(data_dir, seconds=20, movflags="faststart"), last)
+    _refused(s, c, body[:second], 400, DAMAGED)
+    _refused(s, c, body[:second + 3], 400, DAMAGED)  # part of a header: ignored as a remainder, but packets are lost
+    r = _post(c, body)
+    assert r.status_code == 200, r.text
+    assert abs(_audio(s, r.json()["id"]).size / 16000 - 20) < 0.2
+
+
+@pytest.mark.parametrize("edit", [{"trim_end": 5 * RATE}, {"skip": 5 * RATE}])
+def test_an_edit_list_can_drop_samples_from_what_is_expected(data_dir, edit):
+    """Why the check counts FFmpeg's index and not ``st.frames``: this intact file demuxes fewer samples than it lists."""
+    with av.open(io.BytesIO(_patch_elst(make_media(data_dir, seconds=20), **edit)), format="mov") as container:
+        track = container.streams.audio[0]
+        expected = len(track.index_entries)
+        assert expected == sum(1 for p in container.demux(track) if p.dts is not None)
+        assert expected < track.frames
+
+
+def test_pcm_groups_its_samples_and_the_index_counts_the_groups(data_dir):
+    with av.open(io.BytesIO(make_media(data_dir, seconds=20, fmt="mov", codec="pcm_s16le")), format="mov") as container:
+        track = container.streams.audio[0]
+        expected = len(track.index_entries)
+        assert expected == sum(1 for p in container.demux(track) if p.dts is not None)
+        assert track.frames == 20 * RATE > expected
+
+
+TRAILING = [bytes(1), bytes(7), b"END", b"TAG" + bytes(125), b"\xff" * 32, b"recorded by device firmware 1.2.3\n......"]
+
+
+@pytest.mark.parametrize("tail", TRAILING, ids=lambda t: f"{len(t)}b")
+def test_bytes_after_the_last_box_do_not_refuse_a_whole_file(app, data_dir, tail):
+    s, c = app
+    r = _post(c, make_media(data_dir, seconds=20) + tail)
+    assert r.status_code == 200, r.text
+    assert abs(_audio(s, r.json()["id"]).size / 16000 - 20) < 0.2
+
+
+@pytest.mark.parametrize("kw", [{"fmt": "mov"}, {"fmt": "ipod"}, {"video": True}, {"movflags": "faststart"}])
+@pytest.mark.parametrize("tail", [bytes(3), b"TAG" + bytes(125)], ids=lambda t: f"{len(t)}b")
+def test_trailing_bytes_are_ignored_in_each_container(app, data_dir, kw, tail):
+    s, c = app
+    r = _post(c, make_media(data_dir, seconds=20, **kw) + tail)
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("kind", [b"moov", b"mdat", b"moof", b"mfra", b"free", b"skip", b"uuid", b"udta", b"ftyp",
+                                  b"wide", b"meta"])
+def test_a_known_box_running_past_the_end_is_still_damage(app, data_dir, kind):
+    s, c = app
+    tail = (1000).to_bytes(4, "big") + kind + bytes(20)
+    _refused(s, c, make_media(data_dir, seconds=20) + tail, 400, DAMAGED)
+
+
+@pytest.mark.parametrize("movflags,kind", [("faststart", b"mdat"), (None, b"moov")])
+def test_a_remainder_is_only_ignored_once_the_audio_and_moov_are_whole(app, data_dir, movflags, kind):
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags=movflags)
+    _refused(s, c, body[:box_of(body, kind)[0] + 3], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("tail", [bytes(3), b"END", b"TAG" + bytes(125), b"\xff" * 32], ids=lambda t: f"{len(t)}b")
+def test_fragmented_files_stay_strict_about_a_remainder(app, data_dir, tail):
+    """A short remainder there can be a lost fragment."""
+    s, c = app
+    _refused(s, c, make_media(data_dir, seconds=20, movflags=FRAGMENTED) + tail, 400, DAMAGED)
+
+
 def test_a_gap_in_the_timeline_is_not_damage(app, data_dir):
     s, c = app
     for body in (make_gapped(data_dir), make_gapped(data_dir, "faststart"),
@@ -652,6 +764,29 @@ def test_length_message_wording():
                                      "Trim or split it, then import it again.")
 
 
+def test_a_false_length_never_prints_an_exponent():
+    from modwen.audio.importer import too_long_message
+
+    assert "9999.9 hours long" in too_long_message(9999.9)
+    for hours in (10_000, 2_562_047_788.0, 1e30):
+        assert too_long_message(hours).startswith("This recording is over 6 hours long. Imports are limited to 6 hours.")
+
+
+def test_a_hostile_declared_length_is_refused_in_plain_words(app, data_dir, monkeypatch):
+    """The demuxer's answer is stood in for: the largest length a stream can state, in the file's own time base."""
+    from fractions import Fraction
+
+    from modwen.audio import importer
+
+    s, c = app
+    track = SimpleNamespace(duration=2 ** 63 - 1, time_base=Fraction(1, 1_000_000), index_entries=())
+    monkeypatch.setattr(importer, "_pick_audio", lambda container: track)
+    r = _post(c, make_media(data_dir, seconds=20))
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"].startswith("This recording is over 6 hours long.")
+    _nothing_left(s)
+
+
 def test_declared_length_over_the_limit_is_refused(app, data_dir, monkeypatch):
     from modwen.audio import importer
 
@@ -717,7 +852,7 @@ def test_an_audio_track_with_no_frames_is_empty(app, data_dir, monkeypatch):
 
     s, c = app
     body = make_media(data_dir)
-    monkeypatch.setattr(importer, "_pick_audio", lambda container: SimpleNamespace(duration=None))
+    monkeypatch.setattr(importer, "_pick_audio", lambda container: SimpleNamespace(duration=None, index_entries=()))
     monkeypatch.setattr(importer, "_decode_track", lambda *a: 0.0)
     _refused(s, c, body, 400, EMPTY)
 

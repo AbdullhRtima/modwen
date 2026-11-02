@@ -34,6 +34,11 @@ def test_the_length_refusal_has_a_pattern_at_any_length(hours):
     assert known(importer.too_long_message(hours))
 
 
+def test_the_length_pattern_reads_a_plain_number_only():
+    assert not known("This recording is 2.56205e+09 hours long. Imports are limited to 6 hours. "
+                     "Trim or split it, then import it again.")
+
+
 def test_each_pattern_matches_exactly_one_refusal():
     messages = [importer.NOT_SUPPORTED, importer.NO_AUDIO, importer.DAMAGED, importer.EMPTY, importer.TOO_BIG,
                 importer.too_long_message(7)]
