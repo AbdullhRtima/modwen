@@ -462,3 +462,44 @@ def test_live_names_reach_neither_saved_segments_nor_prompt_nor_notes(cfg, fake_
     sent = repr(s.recorder.live_lines(mid)) + repr(fake_llm.requests)
     assert SENTINEL not in stored and SENTINEL not in sent
     assert fake_llm.requests  # a prompt was built
+
+
+def test_slow_embedder_never_stalls_captions_and_never_runs_twice_at_once(world):
+    """QA F3: the real LiveTranscriber and the real LiveIdentifier with a held-back embedder. Every caption is
+    published, and while one voice is being embedded the next captions are not queued behind it."""
+    _, bank, person = world
+    person("Sara", A)
+    gate, lock = threading.Event(), threading.Lock()
+    live_now, peak = [0], [0]
+
+    def enter():
+        with lock:
+            live_now[0] += 1
+            peak[0] = max(peak[0], live_now[0])
+
+    emb = Emb(vec=A, gate=gate, on_call=enter)
+    real_embed = emb.embed
+
+    def embed(*a, **kw):
+        try:
+            return real_embed(*a, **kw)
+        finally:
+            with lock:
+                live_now[0] -= 1
+
+    emb.embed = embed
+    ident = _ident(bank, emb)
+    _wait_for(lambda: ident.status() == "on")
+    lt, events = _live(ident)
+    n = 6
+    for i in range(n):
+        lt._q.put(("system", i * 16000, tone(2.0)))
+        if i == 0:
+            _wait_for(lambda: emb.calls == 1)  # the first voice is now held inside the embedder
+    _wait_for(lambda: len(_lines(events)) == n)  # captions kept flowing while the embedder was stuck
+    assert len(_lines(events)) == n and emb.calls == 1 and peak[0] == 1
+    gate.set()
+    _wait_for(lambda: any(e["type"] == "live_speaker" for e in events) or _lines(events)[0]["speaker_name"])
+    assert emb.calls == 1 and peak[0] == 1  # the skipped captions were never embedded afterwards either
+    lt.stop()
+    ident.close()
