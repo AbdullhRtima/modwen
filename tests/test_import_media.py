@@ -199,10 +199,13 @@ def _start_from_empty_db(cfg) -> None:
 
 
 def _services(cfg, fake_llm, **kw):
+    from modwen.audio import importer
     from modwen.notify import Notifier
     from modwen.services import Services
     from modwen.stt.engines import FakeEngine
 
+    # In process, for speed. tests/test_import_isolation.py runs the real child.
+    kw.setdefault("media_decoder", lambda sealed, writer: importer.decode_media_into(sealed, writer))
     _start_from_empty_db(cfg)
     engine = FakeEngine([("en", "So the release is Thursday, right?"), ("ar", "أيوه، بس محتاجين الـ QA يخلص قبلها.")])
     return Services(cfg, stt_engine_factory=lambda: engine, llm_http_client=fake_llm.client(),
@@ -694,7 +697,8 @@ def test_any_decoder_error_means_damaged(app, data_dir, break_it, kw):
     _refused(s, c, break_it(make_media(data_dir, seconds=6, **kw)), 400, DAMAGED)
 
 
-@pytest.mark.parametrize("error", [av.error.MemoryError, av.error.NotImplementedError, av.error.PatchWelcomeError])
+@pytest.mark.parametrize("error", [av.error.InvalidDataError, av.error.NotImplementedError,
+                                   av.error.PatchWelcomeError])
 def test_every_ffmpeg_error_class_is_caught_while_decoding(data_dir, error):
     from modwen.audio import importer
     from modwen.audio.chunks import ChunkWriter
@@ -704,6 +708,18 @@ def test_every_ffmpeg_error_class_is_caught_while_decoding(data_dir, error):
 
     container = SimpleNamespace(demux=lambda st: iter([SimpleNamespace(is_corrupt=False, dts=None, decode=bad)]))
     with pytest.raises(importer.ImportRefused, match="damaged"):
+        importer._decode_track(container, None, ChunkWriter(data_dir / "m", "system", b"k" * 32), 3600)
+
+
+def test_running_out_of_memory_says_nothing_about_the_file(data_dir):
+    from modwen.audio import importer
+    from modwen.audio.chunks import ChunkWriter
+
+    def bad():
+        raise av.error.MemoryError(12, "from the decoder")
+
+    container = SimpleNamespace(demux=lambda st: iter([SimpleNamespace(is_corrupt=False, dts=None, decode=bad)]))
+    with pytest.raises(MemoryError):
         importer._decode_track(container, None, ChunkWriter(data_dir / "m", "system", b"k" * 32), 3600)
 
 
@@ -990,7 +1006,7 @@ elif where == "decode":
     real, n = ChunkWriter.write, [0]
     def write(self, frames):
         n[0] += 1
-        if n[0] > 200:
+        if n[0] > 5:  # the engine dies with the real decoder child mid-file
             die()
         real(self, frames)
     ChunkWriter.write = write

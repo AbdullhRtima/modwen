@@ -1,0 +1,438 @@
+"""The production process boundary, generated hostile files and deliberately broken child peers.
+
+No decoder fault is injected into pytest itself. Windows kernel-limit tests run in the real named job; an outer
+watchdog kills the test peer if production cleanup fails. Native Mac behaviour still requires a Mac runner.
+"""
+from __future__ import annotations
+
+import concurrent.futures
+import ctypes
+import io
+import json
+import os
+import struct
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import psutil
+import pytest
+
+from modwen.audio import decoder as D, decoder_child as C, importer as I
+from modwen.audio.chunks import ChunkWriter
+from tests.test_import_media import _encode_audio, make_media
+from tests.test_import_preflight import (FULL, find, parse, put, ser, sound_entry, stbl, stco, stsc_bomb, trak)
+from tests.test_import_safety import box, rewrite
+
+av = pytest.importorskip("av")
+
+
+class Writer:
+    def __init__(self):
+        self.total_samples, self.blocks, self.closed = 0, [], False
+
+    def write(self, frames):
+        self.blocks.append(frames.copy())
+        self.total_samples += frames.size
+
+    def close(self):
+        self.closed = True
+
+
+def decode(where, data, writer=None):
+    writer = writer or Writer()
+    with I.SealedTempFile(where) as sealed:
+        sealed.append(data)
+        return D.decode_isolated(sealed, writer), writer
+
+
+@pytest.mark.parametrize("codec,fmt", [("aac", "mp4"), ("pcm_s16le", "mov")])
+def test_f14_seven_point_one_is_packed_before_numpy(data_dir, codec, fmt):
+    out = io.BytesIO()
+    with av.open(out, "w", format=fmt) as container:
+        stream = container.add_stream(codec, rate=48000, layout="7.1")
+        for packet in _encode_audio(container, stream, 440, 2):
+            container.mux(packet)
+    samples, writer = decode(data_dir, out.getvalue())
+    assert samples == pytest.approx(32000, abs=500)
+    assert writer.closed and np.isfinite(np.concatenate(writer.blocks)).all()
+
+
+def attacks(base, name):
+    if name.startswith("moof"):
+        tree = parse(base)
+        find(tree, b"moov")[1].extend([[b"trak", []] for _ in range(999)])
+        return ser(tree) + box(b"moof", b"") * int(name.split("_")[1])
+    if name.startswith("co64"):
+        tree = stsc_bomb(base)
+        table = stbl(tree)
+        old = next(b for b in table if b[0] == b"stco")
+        at = table.index(old)
+        old[:] = [b"co64", FULL + struct.pack(">I", 40) + struct.pack(">Q", 40) * 40]
+        table.insert(at + int(name.endswith("last")), [b"stco", FULL + bytes(4)])
+        return ser(tree)
+    if name == "stz2":
+        tree, n = parse(base), 1 << 25
+        put(stbl(tree), b"stts", FULL + struct.pack(">III", 1, 1, 1024))
+        put(stbl(tree), b"stsc", FULL + struct.pack(">IIII", 1, 1, n, 1))
+        put(stbl(tree), b"stsz", FULL + bytes(8))
+        stco(tree)
+        stbl(tree).append([b"stz2", FULL + b"\0\0\0\x04" + struct.pack(">I", n) + bytes(n // 2)])
+        return ser(tree)
+    if name.startswith("sync"):
+        tree = parse(base)
+        h = find(tree, b"moov", b"trak", b"mdia", b"hdlr")
+        h[1] = h[1][:8] + b"vide" + h[1][12:]
+        put(stbl(tree), b"stsd", FULL + struct.pack(">I", 1) + box(b"hvc1", bytes(78)))
+        inner = box(b"sgpd", b"\x01\0\0\0sync" + struct.pack(">II", 1, 1) + bytes([21]))
+        inner += box(b"sbgp", FULL + b"sync" + struct.pack(">III", 1, 0x1f000000, 1))
+        trak(tree).append([b"moof", box(b"traf", inner)] if name.endswith("moof") else [b"traf", inner])
+        return ser(tree)
+    if name in ("iinf", "iloc"):
+        atom = box(name.encode(), (b"\x01\0\0\0" if name == "iinf" else b"\x02\0\0\0\0\0") +
+                   struct.pack(">I", 1 << 27))
+        return rewrite(base, b"stsd", lambda body: body[:8] +
+                       struct.pack(">I", len(body[8:]) + len(atom)) + body[12:] + atom)
+    tree, n = parse(base), 1 << 24
+    table = stbl(tree)
+    put(table, b"stts", FULL + struct.pack(">III", 1, n, 1))
+    put(table, b"stsc", FULL + struct.pack(">IIII", 1, 1, n, 1))
+    put(table, b"stsz", FULL + struct.pack(">II", 1, n))
+    put(table, b"stsd", FULL + struct.pack(">I", 1) + sound_entry(b"sowt"))
+    stco(tree)
+    if name == "hdlr_meta":
+        trak(tree).append([b"meta", b"hdlr" + bytes(4) + b"mhlr" + b"vide" + bytes(13)])
+        return ser(tree) + box(b"free", bytes(n))
+    assert name == "hdlr_short"
+    trak(tree).extend([[b"hdlr", FULL + b"mhlr"], [b"zzzz", b""]])
+    body = ser(tree)
+    at = body.rindex(b"zzzz") - 4
+    return body[:at] + b"vide" + body[at + 4:] + box(b"free", bytes(n))
+
+
+ATTACKS = ["moof_2000", "moof_20000", "moof_100000", "co64_first", "co64_last", "stz2", "sync_traf",
+           "sync_moof", "iinf", "iloc", "hdlr_meta", "hdlr_short"]
+
+
+@pytest.mark.parametrize("name", ATTACKS)
+def test_f15_to_f20_native_allocations_are_contained(data_dir, monkeypatch, name):
+    # A shortened wall timer protects CI from regressions, but reaching it must fail this resource proof.
+    stop, reasons = D.Child.stop, []
+
+    def remember(self):
+        reasons.append(self.reason)
+        stop(self)
+
+    monkeypatch.setattr(D.Child, "stop", remember)
+    D.WALL_SECONDS, old = min(D.WALL_SECONDS, 40), D.WALL_SECONDS
+    try:
+        body = attacks(make_media(data_dir, seconds=2), name)
+        if name == "moof_2000":
+            assert decode(data_dir, body)[0] == pytest.approx(32000, abs=500)
+        else:
+            with pytest.raises(I.ImportRefused):
+                decode(data_dir, body)
+        assert decode(data_dir, make_media(data_dir, seconds=2))[0] > 0  # parent and next import survive
+        assert not any(reasons)
+    finally:
+        D.WALL_SECONDS = old
+
+
+@pytest.mark.parametrize("tag,codec", [(b"NONE", "pcm_s16be"), (b"ms\0\x01", "pcm_s16le")])
+def test_f21_long_pcm_tags_are_not_counted_as_packets(data_dir, tag, codec):
+    from tests.test_import_preflight import pcm_file
+
+    body = pcm_file(data_dir, "mov", codec, 170)
+    body = body.replace(b"twos" if codec.endswith("be") else b"sowt", tag, 1)
+    assert decode(data_dir, body, ChunkWriter(data_dir / "out", "system", b"k" * 32))[0] == 170 * 16000
+
+
+def test_f22_opaque_metadata_is_not_walked_as_a_container(data_dir):
+    body = make_media(data_dir, seconds=2)
+    opaque = box(b"stsz", FULL + struct.pack(">II", 8, 1 << 26))
+    body = rewrite(body, b"trak", lambda t: t + box(b"udta", box(b"name", opaque)))
+    assert decode(data_dir, body)[0] > 0
+
+
+def test_f23_audible_protection_uses_the_unsupported_message(data_dir):
+    body = rewrite(make_media(data_dir, seconds=2), b"stsd", lambda t: t.replace(b"mp4a", b"aavd"))
+    with pytest.raises(I.ImportRefused) as caught:
+        decode(data_dir, body)
+    assert str(caught.value) == I.NOT_SUPPORTED
+
+
+PEER = '''
+import ctypes,json,os,struct,sys,time
+from modwen.audio.decoder_child import send,join_job,job_holds
+out=os.dup(1)
+if sys.platform == 'win32':
+    import msvcrt
+    msvcrt.setmode(out,os.O_BINARY)
+    if not join_job(): os._exit(3)
+{early}
+send(out,b'H',struct.pack('<I',os.getpid()))
+limits=json.loads(sys.stdin.buffer.readline())
+if sys.platform == 'win32' and not job_holds(limits['memory'],limits['cpu']): os._exit(3)
+{confirm}
+send(out,b'P')
+request=json.loads(sys.stdin.buffer.readline())
+send(out,b'P')
+{action}
+'''
+
+
+def peer(monkeypatch, action="", early="", confirm=""):
+    code = PEER.format(early=early, confirm=confirm, action=action)
+    monkeypatch.setattr(D, "child_command", lambda: [sys.executable, "-P", "-c", code])
+
+
+@pytest.mark.parametrize("action", [
+    "ctypes.memset(0,1,1)", "os._exit(9)", "send(out,b'Z')", "os.write(out,b'A'+struct.pack('<I',131073))",
+    "send(out,b'A',b'x')", "send(out,b'A',struct.pack('<f',float('nan')))",
+    "send(out,b'D',struct.pack('<Q',1))", "send(out,b'R',struct.pack('<Bd',99,0))",
+    "send(out,b'R',struct.pack('<Bd',5,float('inf')))", "os.write(out,b'A\\x04')",
+    "os.write(out,b'A'+struct.pack('<I',4)+b'x')",
+])
+def test_child_crashes_and_invalid_frames_cannot_succeed(data_dir, monkeypatch, action):
+    peer(monkeypatch, action=action)
+    with pytest.raises(I.ImportRefused, match="supported"):
+        decode(data_dir, b"sealed dummy")
+    assert list(data_dir.glob("*.sealed")) == []
+
+
+@pytest.mark.parametrize("early,confirm", [("os._exit(1)", ""), ("os.write(out,b'H\\x04');os._exit(1)", ""),
+    ("send(out,b'H',struct.pack('<I',os.getppid()));time.sleep(1);os._exit(1)", ""), ("", "os._exit(1)")])
+def test_startup_failures_never_receive_the_upload_key(data_dir, monkeypatch, early, confirm):
+    peer(monkeypatch, early=early, confirm=confirm)
+    with I.SealedTempFile(data_dir) as sealed:
+        monkeypatch.setattr(sealed, "handoff", lambda: pytest.fail("key sent before confirmed limits"))
+        with pytest.raises(RuntimeError):
+            D.decode_isolated(sealed, Writer())
+
+
+@pytest.mark.parametrize("timer", ["SILENCE_SECONDS", "WALL_SECONDS"])
+def test_hangs_and_endless_heartbeats_are_killed(data_dir, monkeypatch, timer):
+    monkeypatch.setattr(D, timer, 1.0)
+    action = "time.sleep(20)" if timer == "SILENCE_SECONDS" else "while True: send(out,b'P');time.sleep(.02)"
+    peer(monkeypatch, action=action)
+    began = time.monotonic()
+    with pytest.raises(I.ImportRefused):
+        decode(data_dir, b"sealed dummy")
+    assert time.monotonic() - began < 10
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows kernel commitment limit")
+def test_a_real_kernel_limit_breach_does_not_terminate_the_engine(data_dir, monkeypatch):
+    peer(monkeypatch, action="memory=bytearray(2*1024**3);os._exit(11)")
+    with pytest.raises(I.ImportRefused):
+        decode(data_dir, b"sealed dummy")
+    assert psutil.Process().is_running()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows job CPU and process limits")
+def test_cpu_and_descendant_limits_hold(data_dir, monkeypatch):
+    monkeypatch.setattr(D, "CPU_SECONDS", 1)
+    peer(monkeypatch, action="while True: pass")
+    began = time.monotonic()
+    with pytest.raises(I.ImportRefused):
+        decode(data_dir, b"dummy")
+    assert time.monotonic() - began < 20  # Windows checks CPU periodically; this is not an exact wall deadline
+    peer(monkeypatch, action="""
+import subprocess
+try: subprocess.Popen([sys.executable,'-c','pass'])
+except OSError: send(out,b'A',bytes(4));send(out,b'D',struct.pack('<Q',1))
+else: os._exit(10)
+""")
+    assert decode(data_dir, b"dummy")[0] == 1
+
+
+def test_disk_failure_kills_the_child_before_upload_cleanup(data_dir, monkeypatch):
+    peer(monkeypatch, action="send(out,b'A',bytes(4));time.sleep(30)")
+    start, pids = D.Child.start, []
+
+    def remember(self):
+        start(self)
+        pids.append(self.pid)
+
+    monkeypatch.setattr(D.Child, "start", remember)
+
+    class FullDisk(Writer):
+        def write(self, frames):
+            raise OSError(28, "synthetic disk full")
+
+    with pytest.raises(OSError):
+        decode(data_dir, b"dummy", FullDisk())
+    assert all(not psutil.pid_exists(pid) for pid in pids)
+    assert list(data_dir.glob("*.sealed")) == []
+
+
+def test_pipe_backpressure_does_not_queue_whole_audio(data_dir, monkeypatch):
+    peer(monkeypatch, action="""
+block=bytes(131072)
+for _ in range(32): send(out,b'A',block)
+send(out,b'D',struct.pack('<Q',32*32768))
+""")
+    start, pids = D.Child.start, []
+
+    def remember(self):
+        start(self)
+        pids.append(self.pid)
+
+    monkeypatch.setattr(D.Child, "start", remember)
+
+    class SlowDisk(Writer):
+        def write(self, frames):
+            self.total_samples += frames.size
+            self.blocks.append(psutil.Process(pids[0]).memory_info().rss)
+            time.sleep(.02)
+
+    samples, writer = decode(data_dir, b"dummy", SlowDisk())
+    assert samples == 32 * 32768 and writer.closed
+    assert max(writer.blocks) - min(writer.blocks) < 16 * 1024 ** 2
+
+
+@pytest.mark.parametrize("stage", ["startup", "decoding"])
+def test_parent_death_leaves_no_decoder(data_dir, stage):
+    source = Path(__file__).resolve().parent.parent
+    media = data_dir / "source.mp4"
+    media.write_bytes(make_media(data_dir, seconds=2))
+    script = '''
+import json,os,sys,time
+from pathlib import Path
+from modwen.audio import decoder as D,importer as I
+child=D.Child()
+class Writer:
+    def write(self,frames):
+        print(json.dumps([os.getpid(),child.pid]),flush=True)
+        time.sleep(30)
+    def close(self):pass
+child.start()
+if sys.argv[1]=='startup':
+    print(json.dumps([os.getpid(),child.pid]),flush=True)
+    time.sleep(30)
+else:
+    with I.SealedTempFile(Path(sys.argv[2]).parent) as sealed:
+        sealed.append(Path(sys.argv[2]).read_bytes())
+        child.decode(sealed,Writer())
+'''
+    env = {**os.environ, "PYTHONPATH": str(source)}
+    process = subprocess.Popen([sys.executable, "-P", "-c", script, stage, str(media)], env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    timed_out = []
+
+    def safety_stop():
+        timed_out.append(True)
+        try:
+            for member in reversed([psutil.Process(process.pid), *psutil.Process(process.pid).children(recursive=True)]):
+                member.kill()
+        except psutil.Error:
+            pass
+
+    timer = threading.Timer(15, safety_stop)
+    timer.start()
+    try:
+        parent, decoder = json.loads(process.stdout.readline())
+        psutil.Process(parent).kill()
+        process.wait(timeout=10)
+        deadline = time.monotonic() + 5
+        while psutil.pid_exists(decoder) and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert not psutil.pid_exists(decoder)
+        assert not timed_out
+        I.remove_leftovers(data_dir)
+        assert list(data_dir.glob("*.sealed")) == []
+    finally:
+        timer.cancel()
+        if process.poll() is None:
+            safety_stop()
+        process.stdout.close()
+
+
+def test_upload_reopen_owns_no_file_and_gets_no_storage_key(data_dir):
+    with I.SealedTempFile(data_dir) as sealed:
+        sealed.append(b"synthetic privacy marker")
+        request = sealed.handoff()
+        reopened = I.SealedTempFile.reopen(request["path"], bytes.fromhex(request["key"]), request["iv"], request["size"])
+        assert reopened.read() == b"synthetic privacy marker"
+        reopened.close()
+        assert sealed.path.exists()
+        assert b"synthetic privacy marker" not in sealed.path.read_bytes()
+    assert not sealed.path.exists()
+
+
+def test_child_environment_does_not_contain_engine_secrets(monkeypatch):
+    monkeypatch.setenv("MODWEN_TOKEN", "secret-token")
+    monkeypatch.setenv("MODWEN_KEYSTORE", "file")
+    monkeypatch.setenv("UNRELATED_SECRET", "secret")
+    env = D.child_env()
+    assert not any(k in env for k in ("MODWEN_TOKEN", "MODWEN_KEYSTORE", "UNRELATED_SECRET"))
+    assert "secret-token" not in json.dumps(env)
+
+
+def test_platform_abi_layouts():
+    assert ctypes.sizeof(D.RusageInfoV0) == 96
+    assert D.RusageInfoV0.phys_footprint.offset == 72
+    if sys.platform == "win32":
+        assert ctypes.sizeof(C.JobLimits) == 144
+        assert C.JobLimits.job_memory.offset == 120
+
+
+def test_macos_footprint_uses_the_documented_struct_and_fails_closed(monkeypatch):
+    # ABI/call wiring only; this is deliberately not a Mac runtime resource proof.
+    monkeypatch.setattr(D, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(psutil, "Process", lambda pid: SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=100)))
+
+    class Proc:
+        def __call__(self, pid, flavor, info):
+            assert pid == 42 and flavor == 0
+            ctypes.cast(info, ctypes.POINTER(D.RusageInfoV0)).contents.phys_footprint = 200
+            return 0
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: SimpleNamespace(proc_pid_rusage=Proc()))
+    assert D.footprint(42) == 200
+
+    class Failed(Proc):
+        def __call__(self, *args):
+            return -1
+
+    monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: SimpleNamespace(proc_pid_rusage=Failed()))
+    with pytest.raises(OSError):
+        D.footprint(42)
+
+
+def test_posix_limits_fail_closed_without_allocation_guard(monkeypatch):
+    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, setrlimit=lambda *a: None)
+    monkeypatch.setitem(sys.modules, "resource", resource)
+    monkeypatch.setattr(os, "nice", lambda value: 0, raising=False)
+    monkeypatch.setattr(C, "_set_max_alloc", lambda: False)
+    assert not C.posix_limits(3600)
+    monkeypatch.setattr(C, "_set_max_alloc", lambda: True)
+    assert C.posix_limits(3600)
+
+
+def test_only_two_decoders_run_at_once(data_dir, monkeypatch):
+    peer(monkeypatch, action="time.sleep(.2);send(out,b'A',bytes(4));send(out,b'D',struct.pack('<Q',1))")
+    start, stop, lock, active, peak = D.Child.start, D.Child.stop, threading.Lock(), [0], [0]
+
+    def counted_start(self):
+        with lock:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        start(self)
+
+    def counted_stop(self):
+        try:
+            stop(self)
+        finally:
+            with lock:
+                active[0] -= 1
+
+    monkeypatch.setattr(D.Child, "start", counted_start)
+    monkeypatch.setattr(D.Child, "stop", counted_stop)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        assert [x[0] for x in pool.map(lambda _: decode(data_dir, b"dummy"), range(3))] == [1, 1, 1]
+    assert peak[0] == 2 and active[0] == 0

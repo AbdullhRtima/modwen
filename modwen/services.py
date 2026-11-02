@@ -47,7 +47,7 @@ def free_gpu_memory() -> None:
 class Services:
     def __init__(self, cfg: Config, *, stt_engine_factory=None, live_engine_factory=None, diarizer_factory=None,
                  llm_http_client=None, notifier: Notifier | None = None, source_factory=None, start_worker=True,
-                 embedder_factory=None):
+                 embedder_factory=None, media_decoder=None):
         self.cfg = cfg
         # Models load strictly from local files; only explicit download actions (setup / `modwen models
         # download`) go online.
@@ -64,6 +64,7 @@ class Services:
         self._live_factory_override = live_engine_factory
         self._diarizer_factory_override = diarizer_factory
         self._embedder_factory_override = embedder_factory
+        self._media_decoder_override = media_decoder
         self._engine_cache: dict[str, object] = {}
         self._engine_lock = threading.Lock()
         # Post-meeting work. New meetings first, then re-detect / regenerate; FIFO within a priority.
@@ -100,6 +101,14 @@ class Services:
             self._worker.start()
             self._recover()
             threading.Thread(target=self._retention_loop, name="retention", daemon=True).start()
+
+    def media_decoder(self, sealed, writer) -> int:
+        """Decode an MP4, MOV or M4A into ``writer``. Production always goes through the limited child process."""
+        if self._media_decoder_override:
+            return self._media_decoder_override(sealed, writer)
+        from modwen.audio.decoder import decode_isolated
+
+        return decode_isolated(sealed, writer)
 
     # ----- hardware / models -----
     @cached_property

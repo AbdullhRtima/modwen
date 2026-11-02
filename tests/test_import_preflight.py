@@ -1,6 +1,8 @@
-"""Regressions for QA's bypasses of the metadata preflight (FFmpeg's mov.c dispatches tables by box type, not place).
+"""Generated QA preflight regressions, now contained by the real production child.
 
-Every hostile file is generated here and judged with av.open replaced by a tripwire, so no bomb ever goes off."""
+Only the retained DRM/completeness rules use an in-process native-open tripwire. Allocation estimates and position
+rules are replaced by OS limits; valid edits and ignored metadata may import under those limits.
+"""
 
 from __future__ import annotations
 
@@ -329,28 +331,41 @@ def padded_enca(base):
 
 
 def judge(where, data):
+    from modwen.audio.decoder import decode_isolated
+
     with importer.SealedTempFile(where) as sealed:
         sealed.append(data)
-        return importer.decode_media_into(sealed, ChunkWriter(where / "out", "system", b"k" * 32))
+        return decode_isolated(sealed, ChunkWriter(where / "out", "system", b"k" * 32))
 
 
 def refused(where, monkeypatch, data):
     """Judge with av.open as a tripwire. It's set only here, because building the fixtures needs the real one."""
     monkeypatch.setattr(av, "open", lambda *a, **k: pytest.fail("hostile metadata reached av.open"))
     with pytest.raises(importer.ImportRefused) as caught:
-        judge(where, data)
+        with importer.SealedTempFile(where) as sealed:
+            sealed.append(data)
+            importer.decode_media_into(sealed, ChunkWriter(where / "out", "system", b"k" * 32))
     return str(caught.value)
 
 
 @pytest.mark.parametrize("attack", REFUSED)
-def test_every_qa_probe_is_refused_before_native_open(data_dir, monkeypatch, attack):
-    refused(data_dir, monkeypatch, REFUSED[attack](make_media(data_dir, seconds=2)))
+def test_qa_probes_are_contained_in_the_real_child(data_dir, attack):
+    # These used to assert a Python estimate could predict native allocations. F15-F20 disproved that contract.
+    # The production child now contains native work; permissive but harmless metadata may import.
+    harmless = {"tables_in_clip", "tables_in_tapt", "tables_in_udta", "meta_junk_cmov", "ipco_cmov",
+                "sidx_into_a_box", "anevia_free", "toplevel_trak", "edit_list_in_tref", "overrun_sample_entry",
+                "edits_1000000", "cmov_in_clip", "ctts_bomb", "sync_group_bomb"}
+    try:
+        samples = judge(data_dir, REFUSED[attack](make_media(data_dir, seconds=2)))
+    except importer.ImportRefused:
+        pass
+    else:
+        assert attack in harmless and samples > 0
 
 
 @pytest.mark.parametrize("attack,message", [
     ("enca_mdia_in_udta", importer.NOT_SUPPORTED), ("enca_moov_in_moov", importer.NOT_SUPPORTED),
-    ("cmov_in_tref", importer.NOT_SUPPORTED), ("stsc_bomb_aac", importer.NOT_SUPPORTED),
-    ("moved_tref", importer.DAMAGED), ("toplevel_trak", importer.DAMAGED), ("overrun_sample_entry", importer.DAMAGED),
+    ("cmov_in_tref", importer.NOT_SUPPORTED),
 ])
 def test_message_says_limit_or_damage_truthfully(data_dir, monkeypatch, attack, message):
     assert refused(data_dir, monkeypatch, REFUSED[attack](make_media(data_dir, seconds=2))) == message
@@ -376,22 +391,18 @@ class Sparse(io.BytesIO):
     _audio_track(samples=1_012_500, edits=4) * 2,  # over the work limit only because of its edits
     _audio_track(samples=1_012_500) * 8,
 ])
-def test_intact_files_over_a_safety_limit_are_not_called_damaged(track):
-    with pytest.raises(importer.ImportRefused) as refused:
-        importer._check_metadata(Sparse(box(b"moov", track)))
-    assert str(refused.value) == importer.NOT_SUPPORTED
+def test_long_track_counts_and_edits_are_left_to_the_limited_decoder(track):
+    assert not importer.is_encrypted(Sparse(box(b"moov", track)))
 
 
-def test_too_many_edits_is_a_limit_not_damage():
-    with pytest.raises(importer.ImportRefused) as refused:
-        importer._check_metadata(Sparse(box(b"moov", _audio_track(edits=257))))
-    assert str(refused.value) == importer.NOT_SUPPORTED
+def test_edit_count_is_no_longer_a_preflight_refusal():
+    assert not importer.is_encrypted(Sparse(box(b"moov", _audio_track(edits=257))))
 
 
 def test_nested_budget_is_a_limit_not_damage(monkeypatch):
     monkeypatch.setattr(importer, "MAX_BOXES", 4)
     with pytest.raises(importer.ImportRefused) as refused:
-        importer._check_metadata(Sparse(box(b"moov", box(b"udta", box(b"junk", b"") * 8))))
+        importer.is_encrypted(Sparse(box(b"moov", box(b"udta", box(b"junk", b"") * 8))))
     assert str(refused.value) == importer.NOT_SUPPORTED
 
 
@@ -399,23 +410,23 @@ def test_fragment_walks_share_one_budget(monkeypatch):
     monkeypatch.setattr(importer, "MAX_FRAGMENT_BOXES", 20)
     moof = box(b"moof", box(b"free", b"") * 9)
     data = box(b"moov", b"") + moof * 2
-    importer._check_metadata(Sparse(data))
+    importer.is_encrypted(Sparse(data))
     with pytest.raises(importer.ImportRefused) as refused:
-        importer._check_metadata(Sparse(data + moof))
+        importer.is_encrypted(Sparse(data + moof))
     assert str(refused.value) == importer.NOT_SUPPORTED
 
 
 def test_six_hours_of_ordinary_tracks_pass():
     aac = _audio_track(samples=1_012_500, chunks=2000, per=506)
     video = _audio_track(sub=b"vide", tag=b"avc1", samples=1_296_000, delta=1000, chunks=2000, per=648, edits=1)
-    importer._check_metadata(Sparse(box(b"moov", aac + video)))
+    importer.is_encrypted(Sparse(box(b"moov", aac + video)))
 
 
 def test_stsc_never_refuses_a_table_ffmpeg_repairs():
     # mov_read_stsc mends entries out of order, so this is bounded, not damaged, as long as it stays small.
     track = rewrite(_audio_track(chunks=4), b"stsc",
                     lambda _: FULL + struct.pack(">I", 2) + struct.pack(">III", 3, 1, 1) + struct.pack(">III", 2, 1, 1))
-    importer._check_metadata(Sparse(box(b"moov", track)))
+    importer.is_encrypted(Sparse(box(b"moov", track)))
 
 
 def test_a_segment_index_may_point_at_a_box(data_dir):

@@ -1,4 +1,4 @@
-"""Synthetic regressions for hostile import metadata, without opening native allocation bombs."""
+"""Synthetic metadata regressions: native allocation attacks run only in the limited production child."""
 
 from __future__ import annotations
 
@@ -73,18 +73,21 @@ def hostile(data, attack, occurrence=0):
 @pytest.mark.parametrize("attack", ["index", "edits", "compressed", "fragment", "misplaced", "sample_config",
                                     "descriptions"])
 @pytest.mark.parametrize("second_track", [False, True])
-def test_hostile_tables_are_refused_before_any_native_open(data_dir, monkeypatch, attack, second_track):
-    body = make_media(data_dir, seconds=2, freqs=(440, 880) if second_track else (440,))
-    body = hostile(body, attack, int(second_track))
+def test_hostile_tables_are_contained_by_the_real_decoder(data_dir, attack, second_track):
+    from modwen.audio.decoder import decode_isolated
 
-    def never_open(*a, **kw):
-        pytest.fail("untrusted allocation metadata reached av.open")
-
-    monkeypatch.setattr(av, "open", never_open)
+    body = hostile(make_media(data_dir, seconds=2, freqs=(440, 880) if second_track else (440,)),
+                   attack, int(second_track))
     with importer.SealedTempFile(data_dir) as sealed:
         sealed.append(body)
+        if attack in ("edits", "misplaced") or (attack == "index" and second_track):
+            # Repeated edits and metadata in an unselected track stay under the OS budget. The selected audio still
+            # has to be complete. Decision0003 explicitly removes estimates as a pre-native refusal contract.
+            samples = decode_isolated(sealed, ChunkWriter(data_dir / "out", "system", b"k" * 32))
+            assert samples > 32000 if attack == "edits" and not second_track else samples == pytest.approx(32000, abs=500)
+            return
         with pytest.raises(importer.ImportRefused):
-            importer.decode_media_into(sealed, ChunkWriter(data_dir / "out", "system", b"k" * 32))
+            decode_isolated(sealed, ChunkWriter(data_dir / "out", "system", b"k" * 32))
 
 
 @pytest.mark.parametrize("fragmented", [False, True])
@@ -113,10 +116,22 @@ def test_nested_box_budget_is_shared_between_tracks(data_dir, monkeypatch):
 @pytest.mark.parametrize("attack", ["index", "edits", "compressed", "fragment", "misplaced", "sample_config",
                                     "descriptions"])
 def test_metadata_refusals_use_existing_localized_errors_and_cleanup(app, data_dir, attack):
+    from modwen.audio.decoder import decode_isolated
+
     s, c = app
+    s._media_decoder_override = decode_isolated
     response = _post(c, hostile(make_media(data_dir, seconds=2), attack))
+    if attack in ("edits", "misplaced"):
+        assert response.status_code == 200
+        if attack == "edits":
+            assert response.json()["duration_ms"] > 2000
+        else:
+            # av18 keeps about5ms of AAC padding in this generated2s clip; this is complete selected audio.
+            assert response.json()["duration_ms"] == pytest.approx(2000, abs=20)
+        assert list(s.cfg.data_dir.glob("*.sealed")) == []
+        return
     assert response.status_code == 400, response.text
-    assert response.json()["detail"] in (importer.DAMAGED, importer.NOT_SUPPORTED)
+    assert response.json()["detail"] in (importer.DAMAGED, importer.NOT_SUPPORTED) or "limited to" in response.json()["detail"]
     _nothing_left(s)
 
 
@@ -180,7 +195,7 @@ def test_six_hour_pcm_sample_count_is_not_a_packet_count():
         size = len(data) + n * 4
 
     with SparseMedia(data) as sealed:
-        importer._check_metadata(sealed)
+        assert not importer.is_encrypted(sealed)
 
 
 @pytest.mark.parametrize("longest", [5, 60])
@@ -191,7 +206,7 @@ def test_low_sample_rate_cannot_expand_a_whole_frame_before_the_length_guard(mon
         resample_chunk=lambda data, **kw: sizes.append(len(data)) or np.zeros(0, dtype=np.float32)))
     monkeypatch.setattr(av, "AudioResampler", lambda **kw: SimpleNamespace(
         resample=lambda frame: [frame] if frame is not None else []))
-    frame = SimpleNamespace(sample_rate=1, layout=SimpleNamespace(name="mono"),
+    frame = SimpleNamespace(sample_rate=1, layout=SimpleNamespace(name="mono", nb_channels=1),
                             format=SimpleNamespace(name="fltp"),
                             to_ndarray=lambda: np.zeros((1, 8), dtype=np.float32))
     packet = SimpleNamespace(is_corrupt=False, dts=None, decode=lambda: [frame])

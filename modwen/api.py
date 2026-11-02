@@ -664,8 +664,7 @@ def replaced_import_removed(s: Services, mid: str) -> None:
 def import_sealed(s: Services, sealed, *, mid: str, title: str, channel: str, replaces: str | None = None) -> dict:
     """Fill the importing meeting ``mid`` from an uploaded recording (see ``modwen.audio.importer``) and queue it."""
     from modwen.audio.chunks import ChunkWriter
-    from modwen.audio.importer import (IMPORT_FAILED, ImportRefused, decode_into, decode_media_into,
-                                       is_media_container, probe)
+    from modwen.audio.importer import IMPORT_FAILED, ImportRefused, decode_into, is_media_container, probe
 
     try:
         media = is_media_container(sealed)
@@ -674,7 +673,7 @@ def import_sealed(s: Services, sealed, *, mid: str, title: str, channel: str, re
         s.store.update_meeting(mid, wrapped_key=wrapped)
         writer = ChunkWriter(s.cfg.audio_dir / mid, channel, data_key, s.cfg.capture.chunk_seconds)
         if info is None:
-            duration_ms = int(decode_media_into(sealed, writer) / 16)
+            duration_ms = int(s.media_decoder(sealed, writer) / 16)
         else:
             decode_into(sealed, writer)
             duration_ms = int(info.duration * 1000)
