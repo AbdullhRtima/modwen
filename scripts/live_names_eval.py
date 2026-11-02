@@ -1,8 +1,11 @@
 """Calibrate LIVE speaker names (thresholds and margins) on your own meetings. Reads only; changes nothing.
 
-Only people with a recorded consent (``persons.consent_at``, i.e. a consented voiceprint) are used; the number
-of linked people left out for lack of it is printed as a count. The database is opened read-only (sqlite
-``mode=ro``: no WAL change, no migration, no new file) and no key is ever created: with no master key it stops.
+A person is used only with a recorded consent (``persons.consent_at``) AND a saved voiceprint right now, and only
+in meetings where a voiceprint of theirs was saved from that meeting and the recording consent was confirmed. Your
+own voice is used when a self voiceprint exists (``ALLOW_SELF_WITHOUT_CONSENT``). Only counts of what was left out
+are printed. The database is opened read-only (sqlite ``mode=ro``: no WAL change, no migration, no new file) and no
+key is ever created: with no master key it stops. Groups with fewer than 3 people, 3 meetings or 30 trials are not
+reported.
 
 Every consented speaker you linked to a person (named in the Speakers drawer) on the system-audio channel (online
 meetings) or the Room channel (in-person meetings) is replayed line by line, as if each line were a live
@@ -12,7 +15,8 @@ person's OTHER meetings (leave one meeting out). Each line is also scored as an 
 voiceprints with that person removed (a voice nobody saved).
 
 Privacy: the output is aggregate numbers only (counts, rates, timings). No names, titles, ids, text, vectors or
-audio are printed. Nothing is written unless you pass ``--out FILE``, which gets the same aggregates as JSON.
+audio are printed. Nothing is written unless you pass ``--out FILE`` (a NEW file outside the data folder), which gets the same
+aggregates as JSON.
 
     uv run python scripts/live_names_eval.py [--max-lines 60] [--out results.json]
 
