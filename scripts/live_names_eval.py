@@ -44,6 +44,10 @@ MIN_NAMED_FOR_BAR = 50  # fewer confident captions than this cannot show a 2% ra
 NAMED_GRID = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80)
 MARGIN_GRID = (0.05, 0.10, 0.15, 0.20)
 MAYBE_GAPS = (0.10, 0.15)  # "Name?" starts this far below the named threshold
+# The user's own voice (the ``is_self`` person) is used when a saved self voiceprint exists, even though the app never
+# sets ``consent_at`` for it ("Remember my voice" is the user's own act). The CEO has NOT yet confirmed this rule.
+# Set it to False to leave the user's own voice out (the Room results then lack the user, so look better than real).
+ALLOW_SELF_WITHOUT_CONSENT = True
 
 
 @dataclass(frozen=True)
@@ -204,7 +208,7 @@ class Collected:
     selves: set = field(default_factory=set)  # person ids of the user themself (dropped online, as live does)
     utterances: dict = field(default_factory=lambda: {"online": [], "in_person": []})
     latencies: dict = field(default_factory=lambda: {"online": [], "in_person": []})
-    skipped_unconsented: int = 0  # linked people left out for lack of consent (a count, nothing else)
+    skipped: dict = field(default_factory=dict)  # reason -> how many people / (person, meeting) pairs were left out
 
 
 def _fmt(x: float | None, pct: bool = True) -> str:
@@ -273,20 +277,32 @@ def _voiceprint_rows(store: Store) -> set[tuple[str, str | None]]:
             return set()  # no table: nobody has a saved voice
 
 
-def consented_people(store: Store) -> tuple[dict[str, dict], int]:
-    """(people who may be used by id, how many other people are linked to a speaker anywhere).
+def consented_people(store: Store) -> tuple[dict[str, dict], dict[str, int]]:
+    """(people who may be used by id, counts of the other linked people by the reason they were left out).
 
     A person is used only with ``consent_at`` set AND a saved voiceprint right now: someone who used "Forget voice"
-    has no voiceprint row left and is out, even though ``consent_at`` is never cleared. Only the count of those
-    left out is ever reported."""
+    has no voiceprint row left and is out, even though ``consent_at`` is never cleared. The user's own person
+    (``is_self``) needs only the voiceprint row while ``ALLOW_SELF_WITHOUT_CONSENT`` is on. Each left-out person is
+    counted once, under the first reason that applies; nothing but these counts is ever reported."""
     with store._lock:
         cols = {r["name"] for r in store._conn.execute("PRAGMA table_info(persons)").fetchall()}
         linked = {r[0] for r in store._conn.execute(
             "SELECT DISTINCT person_id FROM speakers WHERE person_id IS NOT NULL")}
     with_voice = {pid for pid, _ in _voiceprint_rows(store)}
     people = {p["id"]: p for p in store.list_persons()}
-    ok = {pid: p for pid, p in people.items() if "consent_at" in cols and p.get("consent_at") and pid in with_voice}
-    return ok, len(linked - set(ok))
+    ok: dict[str, dict] = {}
+    skipped = {"people_no_consent": 0, "people_no_voiceprint": 0}
+    for pid in linked:
+        p = people.get(pid) or {}
+        consented = ("consent_at" in cols and bool(p.get("consent_at"))) or (
+            ALLOW_SELF_WITHOUT_CONSENT and bool(p.get("is_self")))
+        if not consented:
+            skipped["people_no_consent"] += 1
+        elif pid not in with_voice:
+            skipped["people_no_voiceprint"] += 1
+        else:
+            ok[pid] = p
+    return ok, skipped
 
 
 def existing_master_key(cfg) -> bytes | None:
@@ -317,11 +333,25 @@ def collect_from(store: Store, master: bytes, embedder, audio_dir: Path, read_ch
     from modwen.pipeline.live_names import MAX_SPEECH_S, MIN_SPEECH_S, trim_tail
     from modwen.voiceprints import MAX_SECONDS, MIN_SECONDS, kind_for, speaker_spans
 
-    persons, out_skipped = consented_people(store)
-    out = Collected(skipped_unconsented=out_skipped)
+    persons, skipped = consented_people(store)
+    skipped.update(pairs_no_voiceprint_from_meeting=0, pairs_meeting_not_confirmed=0)
+    out = Collected(skipped=skipped)
+    voice_rows = _voiceprint_rows(store)
     warmed = False
     for m in store.list_meetings(limit=1000):
         linked = [sp for sp in store.get_speakers(m["id"]) if sp.get("person_id") in persons]
+        # A (person, meeting) pair is used only if a voiceprint of that person was saved FROM this meeting and the
+        # meeting's recording consent was confirmed (imported meetings have none). Counted per pair, never named.
+        confirmed = bool((m.get("consent") or {}).get("confirmed"))
+        usable = []
+        for pid in {sp["person_id"] for sp in linked}:
+            if (pid, m["id"]) not in voice_rows:
+                skipped["pairs_no_voiceprint_from_meeting"] += 1
+            elif not confirmed:
+                skipped["pairs_meeting_not_confirmed"] += 1
+            else:
+                usable.append(pid)
+        linked = [sp for sp in linked if sp["person_id"] in usable]
         if not linked:
             continue
         try:
@@ -408,8 +438,13 @@ def main(argv: list[str] | None = None) -> int:
     got = collect(args.max_lines)
     if got is None:
         return 1
-    print(f"\n{got.skipped_unconsented} linked people were skipped because they have no saved consent.")
-    results = {"skipped_unconsented_people": got.skipped_unconsented}
+    if ALLOW_SELF_WITHOUT_CONSENT:
+        print("Note: your own voice is used when you saved it (Remember my voice), without a separate consent record. "
+              "This is not yet confirmed by you; set ALLOW_SELF_WITHOUT_CONSENT = False in this script to leave it out.")
+    print("\nLeft out (counts only):")
+    for reason, n in got.skipped.items():
+        print(f"  {reason.replace('_', ' ')}: {n}")
+    results = {"skipped": got.skipped}
     for group in ("online", "in_person"):
         # One bank for both, as in the app (remote and local prints side by side); online never uses the self print.
         samples = [x for x in got.samples if group == "in_person" or x[1] not in got.selves]
