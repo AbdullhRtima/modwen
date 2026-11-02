@@ -198,9 +198,11 @@ stateDiagram-v2
      silence so the mic and system tracks stay aligned (echo detection and line timing depend on it).
    - The same audio also goes to the VAD.
 3. **Live pass (MVP, kept simple).** VAD utterances go to the turbo model, and the text is pushed to the UI over WebSocket.
-   - Labels are "You" (mic) and "Others" (system audio). A mic utterance heard mostly while the system
-     channel is playing is the call leaking into the mic and is skipped.
-   - There is no live diarization and no live naming; real names appear only after processing.
+   - Labels are "You" (mic) and "Call" (system audio), or "Room" for the in-person mic. A mic utterance heard
+     mostly while the system channel is playing is the call leaking into the mic and is skipped.
+   - There is no live diarization and no live clustering ("Person N" appears only after processing). The one
+     live naming step is optional: a caption from someone you saved can show their name as a guess (§5.1, "Live
+     naming"). Final names always come from processing after the meeting.
    - Live text is shown only. It's never stored as the final transcript and never sent to the LLM.
    - If the machine falls behind (CPU only), the live view skips ahead and shows "live paused", and recording continues untouched.
 4. **Stop.** Status becomes `processing`, and the final pass runs on each channel:
@@ -417,6 +419,38 @@ at each threshold, so it can be set from real data (Arabic dialects, Zoom vs Mee
   per-kind, multi-sample centroid and the margin rule. Expect weaker matches across kinds.
 - Two similar voices (siblings, same accent): the margin rule leaves them unnamed instead of guessing.
 - Short speakers (a few words) can't be recognised; they stay "Person N".
+
+#### Live naming (during the meeting, `modwen/pipeline/live_names.py`)
+
+**What it does.** While a meeting records, a live caption from the system channel (online) or the room mic
+(in-person) can show the saved name of someone you already enrolled, as a provisional guess. It reuses the same
+voiceprints and the same embedder as the matching above. It is a display feature on top of the live pass (§3, step 3).
+- **Enrolled people only.** Only voiceprints saved with consent can be matched. Everyone else stays "Call"
+  (or "Room"). There is no live clustering, no automatic enrolment and no live prompt to keep a voice.
+- **You is decided by channel.** On the mic channel in an online meeting the label is "You", as before. That
+  channel is never voice-matched.
+- **In memory only.** For each caption, a few seconds of audio become one voice vector. It is scored against the
+  saved voiceprints and discarded. Only the result (a name, a name with "?", or nothing) is kept, on the live
+  line, in memory. The vector, scores and person ids are never written to disk, the database or logs, and never
+  sent to the LLM. Names are not stored in the transcript or notes: the final names replace them after processing.
+  Zeroing the arrays in memory is best effort in Python.
+- **Provisional.** Two bands: a confident match shows the name ("Sara"), an uncertain one shows "Sara?", and
+  anything below stays unnamed. The thresholds in `LiveThresholds` are placeholders until they are measured
+  with `scripts/live_names_eval.py` on consented meetings; no accuracy figure has been measured yet.
+- **Late names.** The caption appears first. If the match is not ready within 0.4 s, the name follows as a
+  `live_speaker` event (up to about 5 s after the utterance, then it is dropped). Lines carry `id`,
+  `speaker_name` and `speaker_state` (all optional, so older clients still work), and the recorder status gains
+  `live.names` (`on`, `paused` or `off`).
+- **Degrades first.** One embedding at a time, a timeout, and naming pauses while captions are paused or
+  processing runs. After 3 failures in a row it switches itself off for that meeting. Recording and captions
+  never wait for it or show its errors. No match is attempted if nobody usable is enrolled (zero embeddings).
+- **Toggles.** `diarization.live_names` is the master switch and `diarization.live_names_room` covers the in-person
+  (Room) source; both are in Settings, Transcription tab. Turning off mid-meeting takes effect with the next
+  caption and wipes the loaded voiceprints; turning on applies from the next meeting. Room voices through one
+  microphone are harder to separate, so Room is the first thing to turn off by default if it measures badly.
+  The defaults are not final (see below).
+- **Status.** The defaults, the privacy wording and the accuracy and 2 s latency targets are still to be
+  confirmed (measured accuracy: none yet).
 
 ---
 

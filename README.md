@@ -24,7 +24,7 @@
 
 *مُدوَّن* means "written down" in Arabic.
 
-- **Today: meeting notes.** Press Start in Google Meet, the Teams desktop app, or an in-person meeting. You get live captions while you talk.
+- **Today: meeting notes.** Press Start in Google Meet, the Teams desktop app, or an in-person meeting. You get live captions while you talk. Optionally, a caption from someone whose voice you saved shows their name as a guess ("Sara?" when unsure); final names come after you stop.
   - Press Stop, and Whisper transcribes Arabic, English and mixed speech (code-switching, including Gulf, Levantine and Egyptian dialects).
   - A local LLM (Qwen) writes the summary, decisions, action items with owners and deadlines, and open questions.
   - A **"Notes ready"** notification tells you when they're done.
