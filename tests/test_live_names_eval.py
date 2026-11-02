@@ -294,14 +294,16 @@ def test_meeting_without_confirmed_recording_consent_is_not_used(data_dir):
     assert got.skipped["pairs_meeting_not_confirmed"] == 1
 
 
-def test_own_voice_is_used_when_a_self_voiceprint_exists_even_without_consent_at(data_dir):
+def test_own_voice_is_used_when_the_switch_is_on_and_a_self_voiceprint_exists(data_dir, monkeypatch):
+    monkeypatch.setattr(ev, "ALLOW_SELF_WITHOUT_CONSENT", True)
     master = _synthetic_db(data_dir, me="voice")
     got = _collect(data_dir, master)
     assert "me" in {s[1] for s in got.samples}  # in m1, where the self voice was saved
     assert {s[0] for s in got.samples if s[1] == "me"} == {"m1"}
 
 
-def test_own_voice_is_left_out_without_a_self_voiceprint(data_dir):
+def test_own_voice_is_left_out_without_a_self_voiceprint(data_dir, monkeypatch):
+    monkeypatch.setattr(ev, "ALLOW_SELF_WITHOUT_CONSENT", True)
     master = _synthetic_db(data_dir, me="novoice")
     got = _collect(data_dir, master)
     assert "me" not in {s[1] for s in got.samples} and got.skipped["people_no_voiceprint"] == 1
@@ -314,8 +316,30 @@ def test_own_voice_is_left_out_when_the_switch_is_off(data_dir, monkeypatch):
     assert "me" not in {s[1] for s in got.samples} and got.skipped["people_no_consent"] == 2  # bob and me
 
 
-def test_the_self_switch_is_a_single_named_constant_defaulting_on():
-    assert ev.ALLOW_SELF_WITHOUT_CONSENT is True
+def test_own_voice_is_excluded_by_default_and_counted_in_the_skip_counts(data_dir):
+    master = _synthetic_db(data_dir, me="voice")  # a self person with a self voiceprint but no consent_at
+    got = _collect(data_dir, master)
+    assert ev.ALLOW_SELF_WITHOUT_CONSENT is False
+    assert "me" not in {s[1] for s in got.samples} and "me" not in {u[1] for u in got.utterances["in_person"]}
+    assert got.skipped["people_no_consent"] == 2  # bob and me: counts only
+
+
+def test_the_self_switch_is_a_single_named_constant_defaulting_off():
+    assert ev.ALLOW_SELF_WITHOUT_CONSENT is False
+
+
+def test_a_tiny_sample_is_only_suppressed_and_never_relaxes_the_consent_rule(data_dir):
+    master = _synthetic_db(data_dir, me="voice")
+    got = _collect(data_dir, master)  # one consented person: far below every minimum
+    assert ev.report_group(got.utterances["online"], got.samples, got.latencies["online"]) == {"suppressed": True}
+    assert "me" not in {s[1] for s in got.samples}  # the small sample did not admit anyone
+    assert (ev.MIN_PEOPLE, ev.MIN_MEETINGS, ev.MIN_TRIALS) == (3, 3, 30) and ev.ALLOW_SELF_WITHOUT_CONSENT is False
+    store = ev.ReadOnlyStore(data_dir / "ro.db")
+    try:
+        ok, skipped = ev.consented_people(store)
+    finally:
+        store.close()
+    assert set(ok) == {"ann"} and skipped["people_no_consent"] == 2  # same answer however little data there is
 
 
 # ----- --out may only create a new file, outside the data folder and the repo's tracked files ------------------

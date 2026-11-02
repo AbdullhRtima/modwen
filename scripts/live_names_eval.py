@@ -2,7 +2,8 @@
 
 A person is used only with a recorded consent (``persons.consent_at``) AND a saved voiceprint right now, and only
 in meetings where a voiceprint of theirs was saved from that meeting and the recording consent was confirmed. Your
-own voice is used when a self voiceprint exists (``ALLOW_SELF_WITHOUT_CONSENT``). Only counts of what was left out
+own voice is EXCLUDED: it is treated like any other person, and is used only if ``ALLOW_SELF_WITHOUT_CONSENT`` is
+switched on after the CEO's explicit authorisation (and a self voiceprint exists). Only counts of what was left out
 are printed. The database is opened read-only (sqlite ``mode=ro``: no WAL change, no migration, no new file) and no
 key is ever created: with no master key it stops. Groups with fewer than 3 people, 3 meetings or 30 trials are not
 reported.
@@ -55,10 +56,11 @@ MARGIN_GRID = (0.05, 0.10, 0.15, 0.20)
 MIN_PEOPLE, MIN_MEETINGS, MIN_TRIALS = 3, 3, 30
 SUPPRESSED_TEXT = "not enough data to report safely"
 MAYBE_GAPS = (0.10, 0.15)  # "Name?" starts this far below the named threshold
-# The user's own voice (the ``is_self`` person) is used when a saved self voiceprint exists, even though the app never
-# sets ``consent_at`` for it ("Remember my voice" is the user's own act). The CEO has NOT yet confirmed this rule.
-# Set it to False to leave the user's own voice out (the Room results then lack the user, so look better than real).
-ALLOW_SELF_WITHOUT_CONSENT = True
+# The user's own voice (the ``is_self`` person) is EXCLUDED by default (CEO decision, 2026-11-02): it is treated like
+# any other person and needs ``consent_at``. Switch this to True only after the CEO has explicitly authorised it; it
+# then needs only a saved self voiceprint (the app never sets ``consent_at`` for it). With it off, the Room results
+# lack the user, so they look better than real.
+ALLOW_SELF_WITHOUT_CONSENT = False
 
 
 @dataclass(frozen=True)
@@ -309,7 +311,8 @@ def consented_people(store: Store) -> tuple[dict[str, dict], dict[str, int]]:
 
     A person is used only with ``consent_at`` set AND a saved voiceprint right now: someone who used "Forget voice"
     has no voiceprint row left and is out, even though ``consent_at`` is never cleared. The user's own person
-    (``is_self``) needs only the voiceprint row while ``ALLOW_SELF_WITHOUT_CONSENT`` is on. Each left-out person is
+    (``is_self``) is treated like anyone else unless ``ALLOW_SELF_WITHOUT_CONSENT`` is on (then it needs only the
+    voiceprint row). Each left-out person is
     counted once, under the first reason that applies; nothing but these counts is ever reported."""
     with store._lock:
         cols = {r["name"] for r in store._conn.execute("PRAGMA table_info(persons)").fetchall()}
@@ -516,7 +519,7 @@ def _main(argv: list[str] | None = None) -> int:
         return 1
     if ALLOW_SELF_WITHOUT_CONSENT:
         print("Note: your own voice is used when you saved it (Remember my voice), without a separate consent record. "
-              "This is not yet confirmed by you; set ALLOW_SELF_WITHOUT_CONSENT = False in this script to leave it out.")
+              "This needs the CEO's explicit authorisation; otherwise set ALLOW_SELF_WITHOUT_CONSENT = False.")
     print("\nLeft out (counts only):")
     for reason, n in got.skipped.items():
         print(f"  {reason.replace('_', ' ')}: {n}")
