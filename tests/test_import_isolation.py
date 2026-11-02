@@ -436,3 +436,190 @@ def test_only_two_decoders_run_at_once(data_dir, monkeypatch):
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         assert [x[0] for x in pool.map(lambda _: decode(data_dir, b"dummy"), range(3))] == [1, 1, 1]
     assert peak[0] == 2 and active[0] == 0
+
+
+def hogs():
+    """As many normal-priority spinners as the PC has cores: the load that starved the child in F24."""
+    python = getattr(sys, "_base_executable", sys.executable)  # a venv's launcher would leave its spinner behind
+    return [subprocess.Popen([python, "-P", "-c", "while True: pass"]) for _ in range(psutil.cpu_count())]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="F24 was the below-normal class; macOS needs its own run")
+def test_f24_an_intact_file_survives_every_core_being_busy(data_dir, monkeypatch):
+    """Under a timer far below the real 180 s, so a child that doesn't get the CPU can't pass slowly."""
+    monkeypatch.setattr(D, "SILENCE_SECONDS", 30)
+    body, busy = make_media(data_dir, seconds=2), hogs()
+    try:
+        time.sleep(1)
+        samples, _ = decode(data_dir, body)
+    finally:
+        for hog in busy:
+            hog.kill()
+            hog.wait()
+    assert samples == pytest.approx(32000, abs=500)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows priority classes")
+def test_f24_the_child_runs_at_normal_priority(monkeypatch):
+    seen = {}
+    real = subprocess.Popen
+
+    def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return real(*args, **kwargs)
+
+    peer(monkeypatch, action="time.sleep(30)")
+    monkeypatch.setattr(subprocess, "Popen", spy)
+    child = D.Child()
+    try:
+        child.start()
+    finally:
+        child.stop()
+    assert not seen["creationflags"] & (subprocess.BELOW_NORMAL_PRIORITY_CLASS | subprocess.IDLE_PRIORITY_CLASS)
+
+
+def test_f24_posix_limits_leave_the_priority_alone(monkeypatch):
+    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, setrlimit=lambda *_: None)
+    monkeypatch.setitem(sys.modules, "resource", resource)
+    monkeypatch.setattr(C, "_set_max_alloc", lambda: True)
+    monkeypatch.setattr(os, "nice", lambda _: pytest.fail("a niced child starves as F24 did"), raising=False)
+    assert C.posix_limits(60)
+
+
+@pytest.mark.parametrize("action", ["time.sleep(60)", "while True: pass"], ids=["hung", "spinning"])
+def test_f24_a_child_that_sends_nothing_is_still_stopped_by_the_silence_timer(data_dir, monkeypatch, action):
+    monkeypatch.setattr(D, "SILENCE_SECONDS", 2.0)
+    peer(monkeypatch, action=action)
+    began = time.monotonic()
+    with pytest.raises(I.ImportRefused, match="supported"):
+        decode(data_dir, b"sealed dummy")
+    assert 1.5 < time.monotonic() - began < 15
+
+
+def test_f24_a_frozen_child_is_still_killed(data_dir, monkeypatch):
+    """Frozen by the OS mid-import: no CPU and no frames, which a starved child also shows. The timer must still fire."""
+    monkeypatch.setattr(D, "SILENCE_SECONDS", 2.0)
+    peer(monkeypatch, action="send(out,b'A',struct.pack('<f',0.0));time.sleep(60)")
+    frozen = []
+
+    class Freezes(Writer):
+        def write(self, frames):
+            frozen.extend(psutil.Process().children(recursive=True))
+            for process in frozen:
+                process.suspend()
+
+    began = time.monotonic()
+    with pytest.raises(I.ImportRefused, match="supported"):
+        decode(data_dir, b"sealed dummy", Freezes())
+    assert frozen and time.monotonic() - began < 15
+
+
+def float_pcm(codec, seconds=2.0, rate=48000, change=None):
+    """A stereo float PCM MOV holding a 440 Hz tone. ``change`` edits the samples, shaped (channels, samples)."""
+    n = int(seconds * rate)
+    wave = (0.3 * np.sin(2 * np.pi * 440 * np.arange(n) / rate)).astype(np.float32)
+    channels = np.stack([wave, wave])
+    if change:
+        change(channels)
+    out = io.BytesIO()
+    with av.open(out, "w", format="mov") as container:
+        stream = container.add_stream(codec, rate=rate, layout="stereo")
+        for at in range(0, n, 4096):
+            block = channels[:, at:at + 4096].T.reshape(1, -1).copy()
+            frame = av.AudioFrame.from_ndarray(block, format="flt", layout="stereo")
+            frame.sample_rate = rate
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
+    return out.getvalue()
+
+
+def poke(value, count=1):
+    def change(channels):
+        channels[0, 24000:24000 + count] = value
+    return change
+
+
+@pytest.mark.parametrize("codec", ["pcm_f32le", "pcm_f32be"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "+inf", "-inf"])
+def test_f26_one_bad_sample_costs_that_sample_not_the_file(data_dir, codec, value):
+    clean = np.concatenate(decode(data_dir, float_pcm(codec))[1].blocks)
+    samples, writer = decode(data_dir, float_pcm(codec, change=poke(value)))
+    audio = np.concatenate(writer.blocks)
+    assert samples == clean.size and np.isfinite(audio).all()
+    near = np.abs(np.arange(samples) - 8000) < 800  # sample 24000 at 48 kHz, plus the resampler's reach
+    assert np.abs(audio - clean)[~near].max() < 1e-3
+    assert np.abs(audio - clean)[near].max() < 0.3  # the other channel and the tone around it survive
+
+
+def test_f26_a_burst_with_no_resampling_is_cleaned_too(data_dir):
+    samples, writer = decode(data_dir, float_pcm("pcm_f32le", rate=16000, change=poke(float("nan"), 400)))
+    assert samples == 32000 and np.isfinite(np.concatenate(writer.blocks)).all()
+
+
+def test_f26_finite_values_that_overflow_the_downmix_are_cleaned(data_dir):
+    def change(channels):
+        channels[:, 24000:24100] = 3e38
+
+    samples, writer = decode(data_dir, float_pcm("pcm_f32le", change=change))
+    assert samples == pytest.approx(32000, abs=64) and np.isfinite(np.concatenate(writer.blocks)).all()
+
+
+def edit_list(data, edits):
+    entries = b"".join(struct.pack(">IiI", span, start, 1 << 16) for span, start in edits)
+    return rewrite(data, b"edts", lambda _: box(b"elst", FULL + struct.pack(">I", len(edits)) + entries))
+
+
+def lose_mdhd(data, count=None):
+    """QA 28's shape: one changed byte in the mdhd's type, so FFmpeg skips the box, and optionally the elst's count."""
+    out = bytearray(data)
+    out[data.index(b"mdhd") + 2] = 0xef
+    if count is not None:
+        out[data.index(b"elst") + 8:data.index(b"elst") + 12] = count.to_bytes(4, "big")
+    return bytes(out)
+
+
+@pytest.mark.parametrize("kw,count", [(dict(movflags="faststart"), 0xfd000001), (dict(fmt="mov", codec="pcm_s16le"), 0x8f0001)],
+                         ids=["faststart-0412", "pcm-0055"])
+def test_f28_a_lost_mdhd_is_damage_not_a_shorter_recording(data_dir, kw, count):
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, lose_mdhd(make_media(data_dir, seconds=6, **kw), count))
+
+
+def test_f28_an_elst_count_alone_loses_nothing_and_still_imports(data_dir):
+    body = bytearray(make_media(data_dir, seconds=6, movflags="faststart"))
+    at = body.index(b"elst") + 8
+    body[at:at + 4] = (0xfd000001).to_bytes(4, "big")
+    assert decode(data_dir, bytes(body))[0] / 16000 == pytest.approx(6, abs=0.1)
+
+
+def test_f28_a_zero_timescale_is_damage(data_dir):
+    body = bytearray(make_media(data_dir, seconds=6, movflags="faststart"))
+    at = body.index(b"mdhd") + 8
+    at += 16 if body[at - 4] else 8
+    assert int.from_bytes(body[at:at + 4], "big") == 48000
+    body[at:at + 4] = bytes(4)
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, bytes(body))
+
+
+def test_f28_metadata_named_like_a_track_stays_opaque(data_dir):
+    """A udta holding something called mdia, with no mdhd in it, is F22's shape: it isn't a track, so nothing is lost."""
+    tree = parse(make_media(data_dir, seconds=2))  # moov last, so no offset moves
+    find(tree, b"moov")[1].append([b"udta", ser([[b"mdia", ser([[b"free", b""]])]])])
+    assert decode(data_dir, ser(tree))[0] == pytest.approx(32000, abs=500)
+
+
+@pytest.mark.parametrize("edits,seconds", [
+    ([(20, 0)], 20), ([(15, 0)], 15), ([(15, 5)], 15), ([(2, -1), (20, 0)], 20), ([(5, 0), (5, 10)], 10),
+    ([(30, 0)], 20), ([(3, 0), (3, 5), (3, 10)], 9), ([(19.95, 0)], 19.95), ([(2, i * 2) for i in range(5)], 10),
+    ([(.2, i) for i in range(40)], 4),  # the last edits start past the 20 s of media
+], ids=["whole", "trim-end", "skip-start", "delay", "drop-middle", "past-end", "three", "tiny-trim", "five", "forty"])
+def test_f28_intact_edit_lists_import_as_before(data_dir, edits, seconds):
+    """Same cases as QA 28's matrix: the tkhd isn't updated in these, so a rule comparing it to the edits refuses them."""
+    data = make_media(data_dir, seconds=20)
+    mvhd = data.index(b"mvhd")
+    scale = int.from_bytes(data[mvhd + 16:mvhd + 20], "big")
+    changed = edit_list(data, [(int(span * scale), -1 if at < 0 else int(at * 48000)) for span, at in edits])
+    assert decode(data_dir, changed)[0] / 16000 == pytest.approx(seconds, abs=0.3)

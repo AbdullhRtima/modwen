@@ -170,7 +170,9 @@ class Child:
     def start(self) -> None:
         """Start it and have it waiting, limited. Raises RuntimeError, as nothing has touched the file."""
         windows = sys.platform == "win32"
-        flags = (subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS) if windows else 0
+        # Normal priority: a lower class gets no CPU at all while every core is busy, which the silence timer can't tell
+        # from a hang. A frozen child has no CPU either, so that timer can't excuse time the child wasn't given.
+        flags = subprocess.CREATE_NO_WINDOW if windows else 0
         try:
             self.job = WindowsJob(MEMORY_LIMIT, CPU_SECONDS) if windows else None
             env = child_env()

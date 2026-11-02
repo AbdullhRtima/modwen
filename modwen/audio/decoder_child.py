@@ -151,7 +151,6 @@ def posix_limits(cpu_seconds: int) -> bool:
     try:
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
-        os.nice(10)
     except (OSError, ValueError):
         return False
     if not _set_max_alloc():

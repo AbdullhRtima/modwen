@@ -323,10 +323,24 @@ def _check_boxes(reader, size_bytes: int, sealed: SealedTempFile) -> None:
     raise ImportRefused(DAMAGED)
 
 
-def _protected(reader, start: int, end: int, budget: list[int], depth: int, file_size: int) -> bool:
+def _check_mdhd(reader, body: int, stop: int) -> None:
+    """Without a timescale FFmpeg guesses the movie's, so an intact edit list then keeps a fraction of the audio."""
+    reader.seek(body)
+    at = 20 if reader.read(1) == b"" else 12
+    reader.seek(body + at)
+    if body + at + 4 > stop or int.from_bytes(reader.read(4), "big") == 0:
+        raise ImportRefused(DAMAGED)
+
+
+def _protected(reader, start: int, end: int, budget: list[int], depth: int, file_size: int,
+               path: tuple[bytes, ...] = ()) -> bool:
+    timed = False
     for kind, body, stop in _boxes(reader, start, end, budget):
         if kind in NOT_READ:
             return True
+        if kind == b"mdhd" and path[1:] == (b"trak", b"mdia"):
+            _check_mdhd(reader, body, stop)
+            timed = True
         if kind == b"stsz":
             # This is a completeness check, not an allocation estimate. A sample cannot contain more bytes than
             # the entire upload. In particular, FFmpeg reports ENOMEM for an oversized sample, hiding its damage.
@@ -356,8 +370,11 @@ def _protected(reader, start: int, end: int, budget: list[int], depth: int, file
         elif kind in MOV_CONTAINERS:
             if depth >= MAX_DEPTH:
                 raise ImportRefused(NOT_SUPPORTED)
-            if _protected(reader, body + (4 if kind == b"meta" else 0), stop, budget, depth + 1, file_size):
+            if _protected(reader, body + (4 if kind == b"meta" else 0), stop, budget, depth + 1, file_size,
+                          (*path, kind)):
                 return True
+    if path[1:] == (b"trak", b"mdia") and not timed:  # a box every track must have; a udta item called mdia isn't one
+        raise ImportRefused(DAMAGED)
     return False
 
 
@@ -374,11 +391,17 @@ def is_encrypted(sealed: SealedTempFile) -> bool:
                 return True
             if kind in MOV_CONTAINERS:
                 budget = moov_budget if kind in (b"moov", b"hoov") else other_budget
-                if _protected(reader, body + (4 if kind == b"meta" else 0), stop, budget, 1, sealed.size):
+                if _protected(reader, body + (4 if kind == b"meta" else 0), stop, budget, 1, sealed.size, (kind,)):
                     return True
         return False
     finally:
         reader.detach()
+
+
+def _finite(samples: np.ndarray) -> np.ndarray:
+    """Silence in place of NaN and infinity. One such sample in a float PCM file isn't damage, but the resampler would
+    spread it, and the parent rightly refuses any non-finite audio from this process."""
+    return samples if np.isfinite(samples).all() else np.nan_to_num(samples, nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _pick_audio(container):
@@ -412,7 +435,8 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float, promise
 
     def write(frame) -> None:
         nonlocal samples
-        mono = frame.to_ndarray().reshape(-1, frame.layout.nb_channels).mean(axis=1).astype(np.float32)
+        channels = _finite(frame.to_ndarray().reshape(-1, frame.layout.nb_channels))  # so one channel keeps the other
+        mono = _finite(channels.mean(axis=1).astype(np.float32))  # huge finite values can overflow the sum
         samples += mono.size
         if samples / rate > longest:
             raise TooLong(samples / rate / 3600)
@@ -420,7 +444,7 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float, promise
         block = max(1, min(rate, 16384))
         for at in range(0, mono.size, block):
             part = mono[at:at + block]
-            writer.write(rs.resample_chunk(part) if rs is not None else part)
+            writer.write(_finite(rs.resample_chunk(part)) if rs is not None else part)
 
     try:
         for packet in container.demux(track):
@@ -454,7 +478,7 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float, promise
     for plain in packed.resample(None):
         write(plain)
     if rs is not None:
-        writer.write(rs.resample_chunk(np.zeros(0, dtype=np.float32), last=True))
+        writer.write(_finite(rs.resample_chunk(np.zeros(0, dtype=np.float32), last=True)))
     return samples / rate
 
 
