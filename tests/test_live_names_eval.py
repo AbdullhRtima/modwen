@@ -145,3 +145,99 @@ def test_result_holds_no_vectors_or_ids():
     text = json.dumps(ev.evaluate(utts, samples, [1.0]))
     for secret in ("ann", "bob", "cy", "m1", "m2", "m3"):
         assert f'"{secret}"' not in text
+
+
+# ----- reading a database: consent, read-only, no key creation (synthetic data and fakes only) --------------
+
+class FakeEmbedder:
+    """Stands in for the voice model: one fixed vector per call, nothing is loaded."""
+
+    def embed(self, audio, spans, **kw):
+        return unit(0), 2.0
+
+
+def _synthetic_db(data_dir):
+    """A closed database: two meetings; ann has consent, bob does not; both linked to a speaker on 'system'."""
+    from modwen.crypto import DATA_KEY_AAD, encrypt, generate_key
+    from modwen.storage import Store
+
+    master = generate_key()
+    st = Store(data_dir / "ro.db")
+    for pid in ("ann", "bob"):
+        st.upsert_person({"id": pid, "display_name": pid.title(), "create": True})
+    st.record_consent("ann", None)
+    for mid in ("m1", "m2"):
+        st.create_meeting(mid, id=mid, wrapped_key=encrypt(master, generate_key(), DATA_KEY_AAD))
+        st.replace_speakers(mid, [{"id": "s1", "label": "A", "display_name": "A", "channel": "system", "person_id": "ann"},
+                                  {"id": "s2", "label": "B", "display_name": "B", "channel": "system", "person_id": "bob"}])
+        st.replace_segments(mid, [{"id": f"g{i}", "speaker_id": sp, "start_ms": 3000 * i, "end_ms": 3000 * i + 2500,
+                                   "text": "x"} for i, sp in enumerate(("s1", "s2", "s1", "s2"))])
+    st.close()
+    return master
+
+
+def _fake_audio(meeting_dir, channel, key):
+    return np.random.default_rng(1).uniform(-0.3, 0.3, 16000 * 14).astype(np.float32)
+
+
+def _snapshot(path: Path):
+    st = path.stat()
+    return path.read_bytes(), st.st_mtime_ns, sorted(p.name for p in path.parent.iterdir())
+
+
+def test_collect_uses_only_consented_people_and_leaves_the_database_untouched(data_dir):
+    master = _synthetic_db(data_dir)
+    db = data_dir / "ro.db"
+    before = _snapshot(db)
+    assert before[2] == ["ro.db"]  # closed cleanly: no -wal / -shm left behind
+    store = ev.ReadOnlyStore(db)
+    try:
+        got = ev.collect_from(store, master, FakeEmbedder(), data_dir / "audio", _fake_audio, max_lines=0)
+        assert _snapshot(db) == before  # while still open: nothing written, no -wal, -shm or journal file yet
+    finally:
+        store.close()
+    assert _snapshot(db) == before  # same bytes, same mtime, no -wal, -shm or journal file
+    assert {s[1] for s in got.samples} == {"ann"} and {u[1] for u in got.utterances["online"]} == {"ann"}
+    assert got.utterances["online"] and got.skipped_unconsented == 1  # bob: a count only
+
+
+def test_read_only_store_cannot_write(data_dir):
+    import sqlite3
+
+    import pytest
+
+    _synthetic_db(data_dir)
+    store = ev.ReadOnlyStore(data_dir / "ro.db")
+    with pytest.raises(sqlite3.OperationalError):
+        store.record_consent("bob", None)
+    store.close()
+
+
+def test_read_while_modwen_is_running_creates_no_new_file_and_leaves_the_database_bytes(data_dir):
+    """A live writer (the app) has a -wal file: the evaluation reads through it and adds nothing."""
+    from modwen.storage import Store
+
+    _synthetic_db(data_dir)
+    db = data_dir / "ro.db"
+    app = Store(db)  # like the running app: WAL on
+    app.record_consent("bob", None)  # an uncheckpointed change that only the -wal holds
+    names = sorted(p.name for p in data_dir.iterdir())
+    assert "ro.db-wal" in names
+    main_before = db.read_bytes()
+    store = ev.ReadOnlyStore(db)
+    ok, skipped = ev.consented_people(store)
+    store.close()
+    assert set(ok) == {"ann", "bob"} and skipped == 0  # saw the change in the -wal
+    assert sorted(p.name for p in data_dir.iterdir()) == names and db.read_bytes() == main_before
+    app.close()
+
+
+def test_no_master_key_means_stop_and_nothing_is_created(data_dir):
+    from modwen.config import Config
+
+    cfg = Config()  # data_dir comes from the fixture's MODWEN_DATA_DIR; the keystore is the file store
+    assert cfg.data_dir == data_dir
+    assert ev.existing_master_key(cfg) is None
+    assert sorted(p.name for p in data_dir.iterdir()) == [], "no key file may be created"
+    (data_dir / ".secrets.json").write_text(json.dumps({"master-key": "AAAA"}), encoding="utf-8")
+    assert ev.existing_master_key(cfg) == b"\x00\x00\x00"

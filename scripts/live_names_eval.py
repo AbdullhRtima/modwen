@@ -1,6 +1,10 @@
 """Calibrate LIVE speaker names (thresholds and margins) on your own meetings. Reads only; changes nothing.
 
-Every speaker you linked to a person (named in the Speakers drawer) on the system-audio channel (online
+Only people with a recorded consent (``persons.consent_at``, i.e. a consented voiceprint) are used; the number
+of linked people left out for lack of it is printed as a count. The database is opened read-only (sqlite
+``mode=ro``: no WAL change, no migration, no new file) and no key is ever created: with no master key it stops.
+
+Every consented speaker you linked to a person (named in the Speakers drawer) on the system-audio channel (online
 meetings) or the Room channel (in-person meetings) is replayed line by line, as if each line were a live
 utterance: same tail trimming, minimum speech, length cap and embedding call as the live identifier
 (``modwen.pipeline.live_names``), scored with the real ``classify_live`` against voiceprints built from that
@@ -19,14 +23,20 @@ with Whisper, so treat it as a best case.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import sqlite3
 import sys
+import threading
 import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 import numpy as np
 
+from modwen.crypto import DATA_KEY_AAD, KeyStore, decrypt
+from modwen.storage import Store
 from modwen.voiceprints import LiveThresholds, classify_live
 
 MAX_WRONG_RATE = 0.02  # the brief's bar: wrong names among confident ("named") captions
@@ -186,7 +196,7 @@ def evaluate(utterances: list[tuple], samples: list[tuple], latencies_ms: list[f
             "rows": rows, "best": pick_best(rows)}
 
 
-# ----- reading the real data (not unit-tested: needs a database, keys, audio and the voice model) ----------
+# ----- reading the data (collect_from is tested on a synthetic database; collect() needs the real model) -----
 
 @dataclass
 class Collected:
@@ -194,6 +204,7 @@ class Collected:
     selves: set = field(default_factory=set)  # person ids of the user themself (dropped online, as live does)
     utterances: dict = field(default_factory=lambda: {"online": [], "in_person": []})
     latencies: dict = field(default_factory=lambda: {"online": [], "in_person": []})
+    skipped_unconsented: int = 0  # linked people left out for lack of consent (a count, nothing else)
 
 
 def _fmt(x: float | None, pct: bool = True) -> str:
@@ -231,31 +242,78 @@ def _print_group(name: str, res: dict) -> None:
               f"'Name?' {_fmt(b['maybe'])}, none {_fmt(b['none'])}.")
 
 
-def collect(max_lines: int) -> Collected | None:
+class ReadOnlyStore(Store):
+    """The Store's read methods over a connection that cannot write.
+
+    Not the normal ``Store()`` constructor: that turns on WAL, migrates and writes the schema. Here the database
+    file is opened with sqlite ``mode=ro`` and ``query_only``, so any write raises instead of happening, and no
+    -wal, -shm or journal file is created by this script."""
+
+    def __init__(self, db_path):
+        self.db_path = str(db_path)
+        self._lock = threading.RLock()
+        path = Path(self.db_path).resolve()
+        # Modwen keeps the database in WAL mode. Plain mode=ro would create -wal and -shm files when none exist
+        # (nothing is running), so then the file is opened immutable: no locks, no files, and nothing to miss
+        # because there is no -wal. When a -wal file exists (Modwen is running or crashed), mode=ro reads it
+        # and creates nothing new. Closing Modwen first gives the cleanest read.
+        has_wal = path.with_name(path.name + "-wal").exists()
+        uri = path.as_uri() + ("?mode=ro" if has_wal else "?mode=ro&immutable=1")
+        self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA query_only = ON")
+
+
+def consented_people(store: Store) -> tuple[dict[str, dict], int]:
+    """(people with a consented voiceprint by id, how many other people are linked to a speaker anywhere).
+
+    A person without ``consent_at`` is never used. Only the count of those left out is ever reported."""
+    with store._lock:
+        cols = {r["name"] for r in store._conn.execute("PRAGMA table_info(persons)").fetchall()}
+        linked = {r[0] for r in store._conn.execute(
+            "SELECT DISTINCT person_id FROM speakers WHERE person_id IS NOT NULL")}
+    people = {p["id"]: p for p in store.list_persons()}
+    ok = {pid: p for pid, p in people.items() if "consent_at" in cols and p.get("consent_at")}
+    return ok, len(linked - set(ok))
+
+
+def existing_master_key(cfg) -> bytes | None:
+    """The master key if one exists, else None. Never creates, stores or migrates a key (``KeyStore.master`` would)."""
+    from modwen.crypto import LEGACY_SERVICE, SERVICE, SecretStore, _HANDED, _keystore_mode
+
+    name = KeyStore.MASTER
+    sec = SecretStore(cfg)
+    val = _HANDED.get(name) if sec.mode in ("auto", "keyring") else None
+    if not val and sec.mode in ("auto", "keyring"):
+        try:
+            import keyring
+
+            val = keyring.get_password(SERVICE, name) or keyring.get_password(LEGACY_SERVICE, name)  # read only
+        except Exception:
+            val = None
+    if not val and _keystore_mode(cfg) != "keyring":
+        try:
+            val = sec._read_file().get(name)  # a read of the 0600 file; never written here
+        except Exception:
+            val = None
+    return base64.b64decode(val) if val else None
+
+
+def collect_from(store: Store, master: bytes, embedder, audio_dir: Path, read_channel, max_lines: int) -> Collected:
+    """Replay consented people's lines. ``store`` is read-only; ``embedder`` and ``read_channel`` are injected."""
     from modwen.audio import SAMPLE_RATE
-    from modwen.audio.chunks import read_channel
-    from modwen.config import load_config
-    from modwen.crypto import KeyStore
-    from modwen.diarize import SpeakerEmbedder, sherpa_model_paths, sherpa_models_present
     from modwen.pipeline.live_names import MAX_SPEECH_S, MIN_SPEECH_S, trim_tail
-    from modwen.storage import Store
     from modwen.voiceprints import MAX_SECONDS, MIN_SECONDS, kind_for, speaker_spans
 
-    cfg = load_config()
-    if not sherpa_models_present(cfg.models_dir):
-        print("The voice model is not on disk (nothing is downloaded here). Run a meeting through Modwen first.")
-        return None
-    store, keys = Store(cfg.db_path), KeyStore(cfg)
-    embedder = SpeakerEmbedder(emb_path=str(sherpa_model_paths(cfg.models_dir)[1]), threads=2)  # as live
-    persons = {p["id"]: p for p in store.list_persons()}
-    out = Collected()
+    persons, out_skipped = consented_people(store)
+    out = Collected(skipped_unconsented=out_skipped)
     warmed = False
     for m in store.list_meetings(limit=1000):
         linked = [sp for sp in store.get_speakers(m["id"]) if sp.get("person_id") in persons]
         if not linked:
             continue
         try:
-            key = keys.unwrap(store.get_wrapped_key(m["id"]))
+            key = decrypt(master, store.get_wrapped_key(m["id"]), DATA_KEY_AAD)
         except Exception:
             continue
         segments = store.get_segments(m["id"])
@@ -271,7 +329,7 @@ def collect(max_lines: int) -> Collected | None:
                     continue  # live drops the user's own print online
             try:
                 if ch not in tracks:
-                    tracks[ch] = read_channel(cfg.audio_dir / m["id"], ch, key)
+                    tracks[ch] = read_channel(Path(audio_dir) / m["id"], ch, key)
             except Exception:
                 continue  # audio already deleted (retention)
             audio = tracks[ch]
@@ -305,6 +363,30 @@ def collect(max_lines: int) -> Collected | None:
     return out
 
 
+def collect(max_lines: int) -> Collected | None:
+    from modwen.audio.chunks import read_channel
+    from modwen.config import load_config
+    from modwen.diarize import SpeakerEmbedder, sherpa_model_paths, sherpa_models_present
+
+    cfg = load_config()
+    if not sherpa_models_present(cfg.models_dir):
+        print("The voice model is not on disk (nothing is downloaded here). Run a meeting through Modwen first.")
+        return None
+    if not Path(cfg.db_path).is_file():
+        print("There is no Modwen database to read here.")
+        return None
+    master = existing_master_key(cfg)
+    if master is None:
+        print("No master key was found, so no recording can be read. Nothing was created or changed; stopping.")
+        return None
+    store = ReadOnlyStore(cfg.db_path)
+    embedder = SpeakerEmbedder(emb_path=str(sherpa_model_paths(cfg.models_dir)[1]), threads=2)  # as live
+    try:
+        return collect_from(store, master, embedder, cfg.audio_dir, read_channel, max_lines)
+    finally:
+        store.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--max-lines", type=int, default=60,
@@ -314,7 +396,8 @@ def main(argv: list[str] | None = None) -> int:
     got = collect(args.max_lines)
     if got is None:
         return 1
-    results = {}
+    print(f"\n{got.skipped_unconsented} linked people were skipped because they have no saved consent.")
+    results = {"skipped_unconsented_people": got.skipped_unconsented}
     for group in ("online", "in_person"):
         # One bank for both, as in the app (remote and local prints side by side); online never uses the self print.
         samples = [x for x in got.samples if group == "in_person" or x[1] not in got.selves]
