@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Any, Literal
 
@@ -299,7 +300,11 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
             raise HTTPException(400, "meeting_language must be auto, ar or en")
         title = title.strip() or "Imported recording"
         # The row marks the import from its very start: a crash at any later moment leaves it to _recover_imports.
-        mid = s.store.create_meeting((filename or "").strip() or title, status="importing",
+        # Only this new filename is normalized; existing callers' meeting titles retain their behavior.
+        filename = "".join(ch for ch in (filename or "") if unicodedata.category(ch) != "Cc"
+                           and unicodedata.bidirectional(ch) not in {"LRE", "RLE", "LRO", "RLO", "PDF", "LRI",
+                                                                   "RLI", "FSI", "PDI"})[:255].strip()
+        mid = s.store.create_meeting(filename or title, status="importing",
                                      mode="online" if channel != "room" else "in_person",
                                      meeting_language=meeting_language, platform="import",
                                      summary_language=s.cfg.notes.summary_language, llm_profile=s.cfg.llm.active,
