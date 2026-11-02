@@ -106,7 +106,7 @@ def test_nested_box_budget_is_shared_between_tracks(data_dir, monkeypatch):
     monkeypatch.setattr(importer, "MAX_BOXES", 16)
     with importer.SealedTempFile(data_dir) as sealed:
         sealed.append(body)
-        with pytest.raises(importer.ImportRefused, match="damaged"):
+        with pytest.raises(importer.ImportRefused, match="supported"):
             importer.is_encrypted(sealed)
 
 
