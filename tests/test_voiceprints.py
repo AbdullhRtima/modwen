@@ -320,3 +320,21 @@ def test_processing_active_counts_running_jobs(cfg, fake_llm):
     s.enqueue_processing("nope")
     s.jobs.join()
     assert seen == [1] and s.processing_active == 0
+
+
+def test_an_undecryptable_voiceprint_is_skipped_and_its_log_line_names_nobody(cfg, data_dir, caplog):
+    import logging
+
+    from modwen.crypto import KeyStore, generate_key
+    from modwen.storage import Store
+    from modwen.voiceprints import VoiceBank
+
+    st = Store(data_dir / "v.db")
+    pid = st.upsert_person({"display_name": "Sara"})["id"]
+    VoiceBank(st, KeyStore(cfg)).add(pid, "remote", VOICES["A"], 12.0, mid="m0")
+    other = KeyStore(cfg)
+    other._master = generate_key()  # a restored database: another master key
+    with caplog.at_level(logging.WARNING, logger="modwen.voiceprints"):
+        assert VoiceBank(st, other).centroids() == {}
+    assert "Could not decrypt" in caplog.text
+    assert pid not in caplog.text and "Sara" not in caplog.text

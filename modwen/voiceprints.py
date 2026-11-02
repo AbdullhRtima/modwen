@@ -66,7 +66,7 @@ class VoiceBank:
                 vec = np.frombuffer(decrypt(self.keystore.master, row["vector"], _aad(row["person_id"])),
                                     dtype=np.float32)
             except Exception:  # wrong key (restored database) or damaged row: skip it
-                log.warning("Could not decrypt a voiceprint of %s", row["person_id"])
+                log.warning("Could not decrypt a saved voiceprint (skipped)")  # no person id: it names who is saved
                 continue
             acc.setdefault(row["person_id"], {}).setdefault(row["kind"], []).append(vec)
         out: dict[str, dict[str, np.ndarray]] = {}
