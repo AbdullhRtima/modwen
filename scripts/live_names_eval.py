@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from modwen.crypto import DATA_KEY_AAD, KeyStore, decrypt
+from modwen.crypto import DATA_KEY_AAD, KeyStore, SecretStore, decrypt
 from modwen.storage import Store
 from modwen.voiceprints import LiveThresholds, classify_live
 
@@ -330,23 +330,7 @@ def consented_people(store: Store) -> tuple[dict[str, dict], dict[str, int]]:
 
 def existing_master_key(cfg) -> bytes | None:
     """The master key if one exists, else None. Never creates, stores or migrates a key (``KeyStore.master`` would)."""
-    from modwen.crypto import LEGACY_SERVICE, SERVICE, SecretStore, _HANDED, _keystore_mode
-
-    name = KeyStore.MASTER
-    sec = SecretStore(cfg)
-    val = _HANDED.get(name) if sec.mode in ("auto", "keyring") else None
-    if not val and sec.mode in ("auto", "keyring"):
-        try:
-            import keyring
-
-            val = keyring.get_password(SERVICE, name) or keyring.get_password(LEGACY_SERVICE, name)  # read only
-        except Exception:
-            val = None
-    if not val and _keystore_mode(cfg) != "keyring":
-        try:
-            val = sec._read_file().get(name)  # a read of the 0600 file; never written here
-        except Exception:
-            val = None
+    val = SecretStore(cfg).peek(KeyStore.MASTER)
     return base64.b64decode(val) if val else None
 
 
