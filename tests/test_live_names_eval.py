@@ -451,3 +451,26 @@ def test_a_wal_without_its_shm_is_refused_and_no_file_is_created(data_dir):
     with pytest.raises(ev.UncleanShutdown):
         ev.ReadOnlyStore(crashed / "ro.db")
     assert sorted(p.name for p in crashed.iterdir()) == names  # no -shm was created
+
+
+def test_an_unexpected_error_prints_only_the_exception_class(data_dir, monkeypatch, capsys):
+    secret = "Sara /home/someone/.data/meeting-title 123456"
+
+    def boom(*a, **k):
+        raise ValueError(secret)
+
+    monkeypatch.setattr(ev, "collect", boom)
+    assert ev.main([]) == 1
+    seen = capsys.readouterr()
+    text = seen.out + seen.err
+    assert "ValueError" in text
+    assert "Sara" not in text and "/home" not in text and "Traceback" not in text and "123456" not in text
+
+
+def test_the_reminders_are_printed_first_to_stderr(data_dir, monkeypatch, capsys):
+    monkeypatch.setattr(ev, "collect", lambda *a, **k: None)
+    assert ev.main([]) == 1
+    seen = capsys.readouterr()
+    for phrase in ("close Modwen", "'Allow'", "'Always Allow'", "ulimit -c 0"):
+        assert phrase in seen.err
+    assert "ulimit" not in seen.out

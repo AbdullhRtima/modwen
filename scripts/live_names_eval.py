@@ -486,7 +486,30 @@ def collect(max_lines: int, cfg) -> Collected | None:
         store.close()
 
 
+REMINDERS = (
+    "Before this runs: close Modwen first. If the OS asks to let this program read the keychain, answer 'Allow', "
+    "not 'Always Allow'. Run 'ulimit -c 0' in this shell first (no core dump of decrypted audio)."
+)
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Run, and on any unexpected error print only the exception CLASS: a message or traceback could carry a path,
+    a name or a size from private data."""
+    try:
+        return _main(argv)
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        print("\nInterrupted. Nothing in your data was changed.", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        print(f"\nStopped by an unexpected error ({type(exc).__name__}). Nothing in your data was changed.",
+              file=sys.stderr)
+        return 1
+
+
+def _main(argv: list[str] | None = None) -> int:
+    print(REMINDERS, file=sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--max-lines", type=int, default=60,
                     help="at most this many lines per speaker per meeting, spread evenly (0 = all)")
