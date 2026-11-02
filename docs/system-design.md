@@ -37,7 +37,7 @@ The pipeline has two separate AI stages:
 | Operating systems | Windows and macOS | Both are in the MVP: WASAPI loopback on Windows, Core Audio taps on macOS (§1). |
 | Platforms | Google Meet and the Teams desktop app | Captured through system audio. The Chrome companion (Phase 4) only helps with Meet. |
 | Default summary language | English | `notes.summary_language: en`. Arabic or both stay one click away in review. |
-| Live transcript | Yes, keep it simple | In the MVP: a fast turbo pass with "You / Others" labels, no names, never sent to the LLM (§3). |
+| Live transcript | Yes, keep it simple | In the MVP: a fast turbo pass with "You / Call / Room" labels, never sent to the LLM (§3). A saved person's name can show as an optional guess (§5.1); final names come after processing. |
 | Meeting length | 2 hours, sometimes more | The design assumes 3+ hours: crash-safe chunked audio, map-reduce notes, longer processing (§3, §7, §12). |
 | Calendar | Gregorian only | Deadlines resolve to Gregorian dates only (§7). |
 | Cloud | **No.** Meeting audio and text never go to a cloud service. | `privacy.allow_cloud` is fixed to `false`. Cloud speech-to-text, cloud LLM fallback and "Arabic polish" are removed from the plan. The OpenAI-compatible interface stays, but only loopback URLs pass the egress gate (§7, §10). |
