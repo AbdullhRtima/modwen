@@ -264,16 +264,28 @@ class ReadOnlyStore(Store):
         self._conn.execute("PRAGMA query_only = ON")
 
 
-def consented_people(store: Store) -> tuple[dict[str, dict], int]:
-    """(people with a consented voiceprint by id, how many other people are linked to a speaker anywhere).
+def _voiceprint_rows(store: Store) -> set[tuple[str, str | None]]:
+    """(person id, meeting id) of every saved voiceprint right now. Ids only: no vector is read."""
+    with store._lock:
+        try:
+            return {(r[0], r[1]) for r in store._conn.execute("SELECT person_id, meeting_id FROM voiceprints")}
+        except sqlite3.Error:
+            return set()  # no table: nobody has a saved voice
 
-    A person without ``consent_at`` is never used. Only the count of those left out is ever reported."""
+
+def consented_people(store: Store) -> tuple[dict[str, dict], int]:
+    """(people who may be used by id, how many other people are linked to a speaker anywhere).
+
+    A person is used only with ``consent_at`` set AND a saved voiceprint right now: someone who used "Forget voice"
+    has no voiceprint row left and is out, even though ``consent_at`` is never cleared. Only the count of those
+    left out is ever reported."""
     with store._lock:
         cols = {r["name"] for r in store._conn.execute("PRAGMA table_info(persons)").fetchall()}
         linked = {r[0] for r in store._conn.execute(
             "SELECT DISTINCT person_id FROM speakers WHERE person_id IS NOT NULL")}
+    with_voice = {pid for pid, _ in _voiceprint_rows(store)}
     people = {p["id"]: p for p in store.list_persons()}
-    ok = {pid: p for pid, p in people.items() if "consent_at" in cols and p.get("consent_at")}
+    ok = {pid: p for pid, p in people.items() if "consent_at" in cols and p.get("consent_at") and pid in with_voice}
     return ok, len(linked - set(ok))
 
 

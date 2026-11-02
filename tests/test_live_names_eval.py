@@ -156,8 +156,9 @@ class FakeEmbedder:
         return unit(0), 2.0
 
 
-def _synthetic_db(data_dir):
-    """A closed database: two meetings; ann has consent, bob does not; both linked to a speaker on 'system'."""
+def _synthetic_db(data_dir, forget=()):
+    """A closed database: two meetings; ann has consent and a saved voice, bob does not; both linked on 'system'.
+    ``forget``: people who consented, then used "Forget voice" (consent_at stays, the voiceprint rows go)."""
     from modwen.crypto import DATA_KEY_AAD, encrypt, generate_key
     from modwen.storage import Store
 
@@ -166,6 +167,10 @@ def _synthetic_db(data_dir):
     for pid in ("ann", "bob"):
         st.upsert_person({"id": pid, "display_name": pid.title(), "create": True})
     st.record_consent("ann", None)
+    for mid in ("m1", "m2"):
+        st.add_voiceprint("ann", "remote", b"not a real vector", 20.0, mid)
+    for pid in forget:
+        st.delete_voiceprints(pid)
     for mid in ("m1", "m2"):
         st.create_meeting(mid, id=mid, wrapped_key=encrypt(master, generate_key(), DATA_KEY_AAD))
         st.replace_speakers(mid, [{"id": "s1", "label": "A", "display_name": "A", "channel": "system", "person_id": "ann"},
@@ -220,7 +225,8 @@ def test_read_while_modwen_is_running_creates_no_new_file_and_leaves_the_databas
     _synthetic_db(data_dir)
     db = data_dir / "ro.db"
     app = Store(db)  # like the running app: WAL on
-    app.record_consent("bob", None)  # an uncheckpointed change that only the -wal holds
+    app.record_consent("bob", None)  # uncheckpointed changes that only the -wal holds
+    app.add_voiceprint("bob", "remote", b"not a real vector", 20.0, "m1")
     names = sorted(p.name for p in data_dir.iterdir())
     assert "ro.db-wal" in names
     main_before = db.read_bytes()
@@ -241,3 +247,13 @@ def test_no_master_key_means_stop_and_nothing_is_created(data_dir):
     assert sorted(p.name for p in data_dir.iterdir()) == [], "no key file may be created"
     (data_dir / ".secrets.json").write_text(json.dumps({"master-key": "AAAA"}), encoding="utf-8")
     assert ev.existing_master_key(cfg) == b"\x00\x00\x00"
+
+
+def test_forgotten_voice_excludes_the_person_even_though_consent_at_stays(data_dir):
+    _synthetic_db(data_dir, forget=("ann",))
+    store = ev.ReadOnlyStore(data_dir / "ro.db")
+    ok, skipped = ev.consented_people(store)
+    consent_at = store._conn.execute("SELECT consent_at FROM persons WHERE id = 'ann'").fetchone()[0]
+    store.close()
+    assert consent_at, "consent_at is never cleared, so it alone must not admit anyone"
+    assert ok == {} and skipped == 2  # ann (no voice left) and bob (no consent): counts only
