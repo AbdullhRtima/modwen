@@ -254,11 +254,18 @@ def register(app: FastAPI, s) -> None:  # noqa: C901 - a flat list of small rout
         except ValidationError as exc:
             err = exc.errors()[0]
             raise HTTPException(400, f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}") from exc
+        before = {k: _get(s.cfg, k) for k in patch}
         for k in patch:
             _set(s.cfg, k, _get(checked, k))
+        try:
+            saved = save()
+        except BaseException:
+            for k, v in before.items():  # a failed save must not leave the running app on values the UI reverts
+                _set(s.cfg, k, v)
+            raise
         if any(k.startswith("stt.") for k in patch):
             s.reset_engines()
-        return {"saved": save(), "settings": {k: _get(s.cfg, k) for k in sorted(EDITABLE)}}
+        return {"saved": saved, "settings": {k: _get(s.cfg, k) for k in sorted(EDITABLE)}}
 
     @app.post("/api/setup/audio-test")
     def audio_test(seconds: float = 3.0):
