@@ -46,6 +46,10 @@ MAX_WRONG_RATE = 0.02  # the brief's bar: wrong names among confident ("named") 
 MIN_NAMED_FOR_BAR = 50  # fewer confident captions than this cannot show a 2% rate
 NAMED_GRID = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80)
 MARGIN_GRID = (0.05, 0.10, 0.15, 0.20)
+# A group with fewer people, meetings or trials than this is not reported at all: a rate over a handful of people
+# describes individuals, and over a handful of trials it means nothing.
+MIN_PEOPLE, MIN_MEETINGS, MIN_TRIALS = 3, 3, 30
+SUPPRESSED_TEXT = "not enough data to report safely"
 MAYBE_GAPS = (0.10, 0.15)  # "Name?" starts this far below the named threshold
 # The user's own voice (the ``is_self`` person) is used when a saved self voiceprint exists, even though the app never
 # sets ``consent_at`` for it ("Remember my voice" is the user's own act). The CEO has NOT yet confirmed this rule.
@@ -201,6 +205,16 @@ def evaluate(utterances: list[tuple], samples: list[tuple], latencies_ms: list[f
     rows = sweep(trials)
     return {"utterances": len(utterances), "trials": len(trials), "latency": latency(latencies_ms),
             "rows": rows, "best": pick_best(rows)}
+
+
+def report_group(utterances: list[tuple], samples: list[tuple], latencies_ms: list[float]) -> dict:
+    """``evaluate`` plus people/meetings counts, or just ``{"suppressed": True}`` when the group is too small."""
+    res = evaluate(utterances, samples, latencies_ms)
+    res["people"] = len({s[1] for s in samples})
+    res["meetings"] = len({s[0] for s in samples})
+    if res["people"] < MIN_PEOPLE or res["meetings"] < MIN_MEETINGS or res["trials"] < MIN_TRIALS:
+        return {"suppressed": True}
+    return res
 
 
 # ----- reading the data (collect_from is tested on a synthetic database; collect() needs the real model) -----
@@ -488,9 +502,10 @@ def main(argv: list[str] | None = None) -> int:
     for group in ("online", "in_person"):
         # One bank for both, as in the app (remote and local prints side by side); online never uses the self print.
         samples = [x for x in got.samples if group == "in_person" or x[1] not in got.selves]
-        results[group] = evaluate(got.utterances[group], samples, got.latencies[group])
-        results[group]["people"] = len({s[1] for s in samples})
-        results[group]["meetings"] = len({s[0] for s in samples})
+        results[group] = report_group(got.utterances[group], samples, got.latencies[group])
+        if results[group].get("suppressed"):
+            print(f"\n{group}: {SUPPRESSED_TEXT}")
+            continue
         print(f"\n{group}: {results[group]['people']} people, {results[group]['meetings']} meetings with audio")
         _print_group(group, results[group])
     if args.out:

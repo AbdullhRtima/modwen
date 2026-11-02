@@ -383,3 +383,49 @@ def test_main_refuses_out_pointing_at_the_database_before_doing_any_work(data_di
 
 def pytest_fail():
     raise AssertionError("collect must not run when --out is refused")
+
+
+# ----- small groups are never reported -------------------------------------------------------------------------
+
+def _separable(people, meetings, per=10):
+    rng = np.random.default_rng(0)
+    centres = np.eye(32, dtype=np.float32)
+
+    def noisy(i):
+        v = centres[i] + rng.normal(0, 0.05, 32).astype(np.float32)
+        return v / np.linalg.norm(v)
+
+    samples = [(f"m{k}", f"p{i}", "remote", noisy(i)) for i in range(people) for k in range(meetings)]
+    utts = [(f"m{k}", f"p{i}", "remote", noisy(i)) for i in range(people) for k in range(meetings) for _ in range(per)]
+    return utts, samples
+
+
+def test_a_group_with_enough_people_meetings_and_trials_is_reported():
+    res = ev.report_group(*_separable(3, 3), [1.0])
+    assert not res.get("suppressed") and res["people"] == 3 and res["meetings"] == 3 and res["trials"] >= 30
+
+
+def test_a_group_below_any_minimum_is_suppressed_to_a_bare_flag():
+    assert ev.report_group(*_separable(2, 3), [1.0]) == {"suppressed": True}  # 2 people
+    assert ev.report_group(*_separable(3, 2), [1.0]) == {"suppressed": True}  # 2 meetings
+    utts, samples = _separable(3, 3, per=1)  # 3 people, 3 meetings, but few trials
+    assert len(ev.build_trials(utts, samples)) < 30
+    assert ev.report_group(utts, samples, [1.0]) == {"suppressed": True}
+    assert ev.report_group([], [], []) == {"suppressed": True}
+
+
+def test_main_prints_and_writes_nothing_but_the_flag_for_one_person(data_dir, monkeypatch, capsys):
+    utts, samples = _separable(1, 3)
+    got = ev.Collected(samples=samples, utterances={"online": utts, "in_person": []},
+                       latencies={"online": [5.0], "in_person": []}, skipped={"people_no_consent": 4})
+    monkeypatch.setattr(ev, "collect", lambda *a, **k: got)
+    out = data_dir.parent / f"{data_dir.name}-results.json"  # outside the data folder, new
+    try:
+        assert ev.main(["--out", str(out)]) == 0
+        text = capsys.readouterr().out
+        written = json.loads(out.read_text())
+    finally:
+        out.unlink(missing_ok=True)
+    assert text.count(ev.SUPPRESSED_TEXT) == 2  # online and in_person
+    assert "people," not in text and "wrong-of-named" not in text and "embedding time" not in text
+    assert written["online"] == {"suppressed": True} and written["in_person"] == {"suppressed": True}
