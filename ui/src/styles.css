@@ -197,7 +197,11 @@ button.badge.warn { border: 1px dashed var(--warn); }
 .cap .w { font-weight: 600; font-size: 13px; }
 .cap .w .ts { display: block; font-weight: 400; }
 .cap .w .nm { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cap .w .guess { text-decoration: underline dotted; text-underline-offset: 3px; }
+.cap .w .nm.named { display: flex; }
+.cap .w .nm.named > :not(.guess) { flex: none; }
+.cap .w .guess { min-width: 0; text-decoration: underline dotted; text-underline-offset: 3px; }
+/* The name is its own block, so it takes its own direction and the ellipsis lands at the end of the name. */
+.cap .w .guess bdi { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .cap .x { font-size: clamp(16px, 1.5vw, 20px); line-height: 1.6; unicode-bidi: plaintext; color: var(--text-2); }
 .cap:last-child .x { color: var(--text); }

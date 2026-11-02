@@ -52,7 +52,7 @@ function SpeakerLabel({ line }: { line: LiveLine }) {
   const maybe = state === "maybe";
   const tip = maybe ? t("liveNameMaybe").replace("{name}", name) : t("liveNameGuess");
   return (
-    <span className="nm" title={tip}>
+    <span className="nm named" title={tip}>
       <span className="guess"><bdi>{name}</bdi></span>
       {maybe && <span>{t("liveQMark")}</span>}
       <span className="sr">, {maybe ? t("liveNameSrMaybe") : t("liveNameSrGuess")}</span>
