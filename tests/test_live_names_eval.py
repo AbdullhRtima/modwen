@@ -339,6 +339,8 @@ def test_out_refuses_paths_inside_the_data_folder_and_a_symlink_into_it(data_dir
     link = outside / "link.json"
     os.symlink(data / "new.json", link)  # dangling link whose target would be created inside the data folder
     assert ev.refuse_out_path(str(link), data, repo_root=outside) is not None
+    os.symlink(data, outside / "folder")  # a folder link into the data folder
+    assert ev.refuse_out_path(str(outside / "folder" / "new.json"), data, repo_root=outside) is not None
     assert ev.refuse_out_path(str(outside / "ok.json"), data, repo_root=outside) is None
 
 
