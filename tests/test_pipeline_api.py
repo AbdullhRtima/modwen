@@ -503,6 +503,29 @@ def test_settings_are_validated_and_typed(cfg, fake_llm):
     assert cfg.privacy.retention.audio_days == 3  # an invalid patch changes nothing
 
 
+def test_a_failed_settings_save_leaves_the_live_config_unchanged(cfg, fake_llm, tmp_path):
+    from modwen.api import create_app
+
+    s = _services(cfg, fake_llm)
+    good_path = cfg.loaded_from
+    c = TestClient(create_app(s, token="t"), raise_server_exceptions=False)
+    c.cookies.set("mw_token", "t")
+    blocker = tmp_path / "not-a-folder"
+    blocker.write_text("x")
+    cfg.loaded_from = str(blocker / "config.yaml")  # the config folder cannot be created: the save fails
+    live, tz = cfg.diarization.live_names, cfg.notes.timezone
+    r = c.put("/api/settings", json={"diarization.live_names": not live, "notes.timezone": "Asia/Muscat"})
+    assert r.status_code == 500
+    assert cfg.diarization.live_names is live and cfg.notes.timezone == tz
+    got = c.get("/api/settings").json()["settings"]
+    assert got["diarization.live_names"] is live and got["notes.timezone"] == tz
+
+    cfg.loaded_from = good_path  # a successful save still applies the change
+    r = c.put("/api/settings", json={"diarization.live_names": not live, "notes.timezone": "Asia/Muscat"})
+    assert r.status_code == 200
+    assert cfg.diarization.live_names is (not live) and cfg.notes.timezone == "Asia/Muscat"
+
+
 def test_notes_recover_from_a_gpu_out_of_memory_error(cfg, fake_llm):
     from modwen.api import import_audio
     from modwen.notes.llm_client import LLMError
