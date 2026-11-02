@@ -37,8 +37,10 @@ export default function Settings({ ctx }: { ctx: Ctx }) {
       const r = await setup.saveSettings(patch);
       setSettings(r.settings);
       ctx.toast(t("saved"));
+      return true;
     } catch (e) {
       ctx.fail(e);
+      return false;
     }
   };
   const go = (t: Tab) => {
@@ -89,7 +91,7 @@ function Appearance() {
   );
 }
 
-type SP = { settings: Record<string, unknown>; save: (p: Record<string, unknown>) => void };
+type SP = { settings: Record<string, unknown>; save: (p: Record<string, unknown>) => void | Promise<boolean> };
 
 function Select({ value, options, onChange }: { value: string; options: [string, string][]; onChange: (v: string) => void }) {
   return <select className="select" value={value} onChange={(e) => onChange(e.target.value)}>
@@ -270,8 +272,7 @@ function Transcription({ settings, save, st, ctx, go }: SP & { st: SetupStatus; 
   const namesOn = settings["diarization.live_names"] !== false;
   const roomOn = settings["diarization.live_names_room"] !== false;
   const setNames = async (key: string, on: boolean) => {
-    await save({ [key]: on });
-    setChanged({ key, on });
+    if (await save({ [key]: on })) setChanged({ key, on });
   };
   const statusLine = (key: string) => ctx.recorder.recording && changed?.key === key && (
     <p role="status" className="faint" style={{ fontSize: 12.5, margin: "4px 0 0", paddingInlineStart: 24 }}>{changed.on
