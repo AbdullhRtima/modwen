@@ -429,3 +429,25 @@ def test_main_prints_and_writes_nothing_but_the_flag_for_one_person(data_dir, mo
     assert text.count(ev.SUPPRESSED_TEXT) == 2  # online and in_person
     assert "people," not in text and "wrong-of-named" not in text and "embedding time" not in text
     assert written["online"] == {"suppressed": True} and written["in_person"] == {"suppressed": True}
+
+
+def test_a_wal_without_its_shm_is_refused_and_no_file_is_created(data_dir):
+    import pytest
+    from modwen.storage import Store
+
+    _synthetic_db(data_dir)
+    db = data_dir / "ro.db"
+    app = Store(db)
+    app.record_consent("bob", None)  # leaves -wal and -shm while the app is open
+    wal = (data_dir / "ro.db-wal").read_bytes()
+    assert wal
+    crashed = data_dir / "crashed"
+    crashed.mkdir()
+    (crashed / "ro.db").write_bytes(db.read_bytes())  # a copy as a crash would leave it: no -shm
+    (crashed / "ro.db-wal").write_bytes(wal)
+    app.close()
+    names = sorted(p.name for p in crashed.iterdir())
+    assert names == ["ro.db", "ro.db-wal"]
+    with pytest.raises(ev.UncleanShutdown):
+        ev.ReadOnlyStore(crashed / "ro.db")
+    assert sorted(p.name for p in crashed.iterdir()) == names  # no -shm was created

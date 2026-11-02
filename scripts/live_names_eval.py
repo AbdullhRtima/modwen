@@ -263,6 +263,10 @@ def _print_group(name: str, res: dict) -> None:
               f"'Name?' {_fmt(b['maybe'])}, none {_fmt(b['none'])}.")
 
 
+class UncleanShutdown(Exception):
+    """A -wal file exists without its -shm: Modwen did not close cleanly. Opening would make SQLite create -shm."""
+
+
 class ReadOnlyStore(Store):
     """The Store's read methods over a connection that cannot write.
 
@@ -279,6 +283,8 @@ class ReadOnlyStore(Store):
         # because there is no -wal. When a -wal file exists (Modwen is running or crashed), mode=ro reads it
         # and creates nothing new. Closing Modwen first gives the cleanest read.
         has_wal = path.with_name(path.name + "-wal").exists()
+        if has_wal and not path.with_name(path.name + "-shm").exists():
+            raise UncleanShutdown  # refuse: reading would create a -shm file next to your data
         uri = path.as_uri() + ("?mode=ro" if has_wal else "?mode=ro&immutable=1")
         self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -467,7 +473,12 @@ def collect(max_lines: int, cfg) -> Collected | None:
     if master is None:
         print("No master key was found, so no recording can be read. Nothing was created or changed; stopping.")
         return None
-    store = ReadOnlyStore(cfg.db_path)
+    try:
+        store = ReadOnlyStore(cfg.db_path)
+    except UncleanShutdown:
+        print("Modwen did not close cleanly (a leftover -wal file without its -shm). Start Modwen once and quit it "
+              "normally, then run this again. Nothing was changed.")
+        return None
     embedder = SpeakerEmbedder(emb_path=str(sherpa_model_paths(cfg.models_dir)[1]), threads=2)  # as live
     try:
         return collect_from(store, master, embedder, cfg.audio_dir, read_channel, max_lines)
