@@ -316,3 +316,68 @@ def test_own_voice_is_left_out_when_the_switch_is_off(data_dir, monkeypatch):
 
 def test_the_self_switch_is_a_single_named_constant_defaulting_on():
     assert ev.ALLOW_SELF_WITHOUT_CONSENT is True
+
+
+# ----- --out may only create a new file, outside the data folder and the repo's tracked files ------------------
+
+def test_out_refuses_an_existing_file_and_leaves_the_database_untouched(data_dir):
+    _synthetic_db(data_dir)
+    db = data_dir / "ro.db"
+    before = _snapshot(db)
+    assert ev.refuse_out_path(str(db), data_dir / "elsewhere", repo_root=data_dir) is not None  # exists
+    assert _snapshot(db) == before
+
+
+def test_out_refuses_paths_inside_the_data_folder_and_a_symlink_into_it(data_dir):
+    import os
+
+    data = data_dir / "data"
+    data.mkdir()
+    outside = data_dir / "outside"
+    outside.mkdir()
+    assert ev.refuse_out_path(str(data / "new.json"), data, repo_root=outside) is not None
+    link = outside / "link.json"
+    os.symlink(data / "new.json", link)  # dangling link whose target would be created inside the data folder
+    assert ev.refuse_out_path(str(link), data, repo_root=outside) is not None
+    assert ev.refuse_out_path(str(outside / "ok.json"), data, repo_root=outside) is None
+
+
+def test_out_refuses_a_tracked_file_and_a_protected_file(data_dir):
+    import subprocess
+
+    repo = data_dir / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    f = repo / "tracked.txt"
+    f.write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "tracked.txt"], check=True)
+    f.unlink()  # still tracked in the index; the file itself is gone
+    data = data_dir / "data"
+    assert ev.refuse_out_path(str(f), data, repo_root=repo) is not None
+    assert ev.refuse_out_path(str(repo / "fine.json"), data, repo_root=repo) is None
+    assert ev.refuse_out_path(str(repo / "fine.json"), data, repo_root=repo, protected=[repo / "fine.json"]) is not None
+
+
+def test_write_out_creates_exclusively(data_dir):
+    import pytest
+
+    target = data_dir / "r.json"
+    ev.write_out(str(target), {"a": 1})
+    assert json.loads(target.read_text()) == {"a": 1}
+    with pytest.raises(FileExistsError):  # the file appeared after the check: never truncated
+        ev.write_out(str(target), {"b": 2})
+    assert json.loads(target.read_text()) == {"a": 1}
+
+
+def test_main_refuses_out_pointing_at_the_database_before_doing_any_work(data_dir, monkeypatch, capsys):
+    _synthetic_db(data_dir)
+    db = data_dir / "ro.db"
+    before = _snapshot(db)
+    monkeypatch.setattr(ev, "collect", lambda *a, **k: pytest_fail())
+    assert ev.main(["--out", str(db)]) == 2
+    assert _snapshot(db) == before
+    assert str(db) not in capsys.readouterr().out
+
+
+def pytest_fail():
+    raise AssertionError("collect must not run when --out is refused")

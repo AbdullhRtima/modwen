@@ -25,7 +25,9 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import sqlite3
+import subprocess
 import sys
 import threading
 import time
@@ -39,6 +41,7 @@ from modwen.crypto import DATA_KEY_AAD, KeyStore, decrypt
 from modwen.storage import Store
 from modwen.voiceprints import LiveThresholds, classify_live
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 MAX_WRONG_RATE = 0.02  # the brief's bar: wrong names among confident ("named") captions
 MIN_NAMED_FOR_BAR = 50  # fewer confident captions than this cannot show a 2% rate
 NAMED_GRID = (0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80)
@@ -405,12 +408,41 @@ def collect_from(store: Store, master: bytes, embedder, audio_dir: Path, read_ch
     return out
 
 
-def collect(max_lines: int) -> Collected | None:
+def refuse_out_path(out: str, data_dir: Path, repo_root: Path = REPO_ROOT, protected=()) -> str | None:
+    """Why ``--out`` must not be used (a plain sentence without the path), or None if the file may be created.
+
+    Refused: a path that already exists (never overwritten), one inside the data directory, one that is a file
+    tracked by git in the repo, or one of ``protected`` (the config file). Symlinks are followed first."""
+    raw = Path(out)
+    target = Path(os.path.realpath(raw))
+    if os.path.lexists(raw) or target.exists():
+        return "--out names a file that already exists; it is never overwritten. Pick a new file name."
+    if not target.parent.is_dir():
+        return "--out is in a folder that does not exist."
+    if target.is_relative_to(Path(os.path.realpath(data_dir))):
+        return "--out is inside the Modwen data folder; the results must go somewhere else (for example .tmp/)."
+    if any(target == Path(os.path.realpath(q)) for q in protected):
+        return "--out is a Modwen settings file; pick another file name."
+    try:
+        tracked = subprocess.run(["git", "-C", str(repo_root), "ls-files", "-z"], capture_output=True, check=True,
+                                 timeout=30).stdout.decode("utf-8", "replace").split("\0")
+    except Exception:
+        tracked = []
+    if any(t and target == Path(os.path.realpath(Path(repo_root) / t)) for t in tracked):
+        return "--out is a file tracked by git in this repository; pick another file name."
+    return None
+
+
+def write_out(path: str, results: dict) -> None:
+    """Create ``path`` exclusively (fails if it exists, even if it appeared since the check) and write the JSON."""
+    with open(path, "x", encoding="utf-8") as f:
+        json.dump(results, f, indent=1)
+
+
+def collect(max_lines: int, cfg) -> Collected | None:
     from modwen.audio.chunks import read_channel
-    from modwen.config import load_config
     from modwen.diarize import SpeakerEmbedder, sherpa_model_paths, sherpa_models_present
 
-    cfg = load_config()
     if not sherpa_models_present(cfg.models_dir):
         print("The voice model is not on disk (nothing is downloaded here). Run a meeting through Modwen first.")
         return None
@@ -435,7 +467,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="at most this many lines per speaker per meeting, spread evenly (0 = all)")
     ap.add_argument("--out", help="also write the aggregate numbers (no names, ids or text) to this JSON file")
     args = ap.parse_args(argv)
-    got = collect(args.max_lines)
+    from modwen.config import load_config
+
+    cfg = load_config()
+    if args.out:  # before the hours of work, not after
+        why = refuse_out_path(args.out, cfg.data_dir, protected=[cfg.loaded_from] if cfg.loaded_from else [])
+        if why:
+            print(why)
+            return 2
+    got = collect(args.max_lines, cfg)
     if got is None:
         return 1
     if ALLOW_SELF_WITHOUT_CONSENT:
@@ -454,9 +494,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n{group}: {results[group]['people']} people, {results[group]['meetings']} meetings with audio")
         _print_group(group, results[group])
     if args.out:
-        with open(args.out, "w", encoding="utf-8") as f:
-            json.dump(results, f, indent=1)
-        print(f"\nAggregates written to {args.out}")
+        write_out(args.out, results)
+        print("\nAggregates written to the --out file.")
     return 0
 
 
