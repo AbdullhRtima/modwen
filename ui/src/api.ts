@@ -24,6 +24,12 @@ export type Meeting = {
   speaker_count?: number;
 };
 
+/** An import cut off before it finished: a named record with no audio, which can't be retried. */
+export const isFailedImport = (m: Meeting) => m.status === "failed" && Boolean(m.error?.startsWith("import:"));
+
+/** The engine's MAX_UPLOAD_BYTES. */
+export const MAX_IMPORT_BYTES = 8 * 1024 ** 3;
+
 export type Progress = {
   step: string;
   steps: Record<string, "pending" | "running" | "done" | "failed">;
@@ -142,13 +148,22 @@ export const api = {
   testLlm: (profile?: string) => req<{ ok: boolean; reply?: string; error?: string; seconds?: number;
     models?: string[]; base_url: string }>("POST", "/api/llm/test", { profile }),
   setActive: (profile: string) => req("POST", "/api/llm/active", { profile }),
-  importFile: async (file: File, title: string, language: string) => {
+  importFile: async (file: File, title: string, language: string, replaces?: string) => {
     // The file is the raw body: the server streams it into an encrypted temp file (form uploads would be
     // spooled to disk unencrypted).
-    const q = new URLSearchParams({ title, meeting_language: language });
+    const q = new URLSearchParams({ title, meeting_language: language, filename: file.name });
+    if (replaces) q.set("replaces", replaces);  // the failed-import record this one resolves, by id
     const res = await fetch(`/api/meetings/import?${q}`, { method: "POST", body: file, credentials: "same-origin",
       headers: { "content-type": file.type || "application/octet-stream", ...(envToken ? { "x-modwen-token": envToken } : {}) } });
-    if (!res.ok) throw new ApiError(res.status, (await res.json()).detail ?? res.statusText);
+    if (!res.ok) {
+      let msg = res.statusText;
+      try {
+        msg = (await res.json()).detail ?? msg;
+      } catch {
+        /* not json */
+      }
+      throw new ApiError(res.status, msg);
+    }
     return (await res.json()) as Meeting;
   },
 };

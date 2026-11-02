@@ -1,5 +1,4 @@
-import { useRef, useState } from "react";
-import { api, fmtDuration, Meeting } from "../api";
+import { api, fmtDuration, isFailedImport, Meeting } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
 import { MeetingStatus, useMeetings } from "../components/Sidebar";
@@ -15,27 +14,27 @@ export function StatusChip({ m }: { m: Meeting }) {
 export default function Home({ ctx }: { ctx: Ctx }) {
   const { t, lang } = useI18n();
   const { meetings, reload } = useMeetings(ctx);
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const upload = async (f: File) => {
-    setUploading(true);
-    try {
-      const m = await api.importFile(f, f.name.replace(/\.[^.]+$/, ""), "auto");
-      ctx.toast(t("imported"));
-      ctx.go(`#/meetings/${m.id}`);
-    } catch (e) {
-      ctx.fail(e);
-    } finally {
-      setUploading(false);
-    }
-  };
 
   const list = meetings ?? [];
   const attention = list.filter((m) => ["processing", "failed", "recording"].includes(m.status) || (m.status === "ready" && !m.opened_at));
   const recent = list.filter((m) => !attention.includes(m)).slice(0, 8);
 
-  const row = (m: Meeting) => (
+  // A div, not a link: the button can't sit inside one. The title's link is stretched over the row instead.
+  const record = (m: Meeting) => (
+    <div key={m.id} className="mrow import-failed">
+      <div style={{ minWidth: 0 }}>
+        <div className="t" dir="auto"><a href={`#/meetings/${m.id}`} aria-describedby={`rec-chip-${m.id} rec-why-${m.id}`}>{m.title}</a></div>
+        <div className="meta"><span>{fmtDate(m.started_at, lang)}</span></div>
+        <p className="why" id={`rec-why-${m.id}`}>{t("importStoppedShort")}</p>
+      </div>
+      <div className="acts-end">
+        <span className="chip rec strong" id={`rec-chip-${m.id}`}>{t("stImportFailed")}</span>
+        <button className="btn" disabled={ctx.importing} aria-label={`${t("importAgain")}: ${m.title}`} onClick={() => ctx.pickImport(m.id)}>{t("importAgain")}</button>
+      </div>
+    </div>
+  );
+
+  const row = (m: Meeting) => isFailedImport(m) ? record(m) : (
     <a key={m.id} className="mrow" href={m.status === "recording" ? "#/live" : `#/meetings/${m.id}`}>
       <div style={{ minWidth: 0 }}>
         <div className="t" dir="auto">{m.title}</div>
@@ -66,11 +65,9 @@ export default function Home({ ctx }: { ctx: Ctx }) {
         <button className="start-card rec" disabled={ctx.recorder.recording} onClick={() => ctx.go(ctx.recorder.recording ? "#/live" : "#/start")}>
           <b><I.record size={18} />{ctx.recorder.recording ? t("recordingNow") : t("record")}</b><span>{t("onlineHint")} · {t("inPerson")}</span>
         </button>
-        <button className="start-card" disabled={uploading} onClick={() => fileRef.current?.click()}>
-          <b>{uploading ? <I.spin size={18} className="spin-anim" /> : <I.importFile size={18} />}{uploading ? t("importing") : t("importRec")}</b><span>{t("importHint")}</span>
+        <button className="start-card" disabled={ctx.importing} onClick={() => ctx.pickImport()}>
+          <b>{ctx.importing ? <I.spin size={18} className="spin-anim" /> : <I.importFile size={18} />}{ctx.importing ? t("importing") : t("importRec")}</b><span>{t("importHint")}</span>
         </button>
-        <input ref={fileRef} type="file" accept="audio/*,.wav,.flac,.mp3,.ogg,.aiff" hidden
-          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) upload(f); }} />
       </div>
 
       {meetings === null && <p className="muted">{t("loading")}</p>}

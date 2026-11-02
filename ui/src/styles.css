@@ -83,11 +83,17 @@ h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; }
 .group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); padding: 12px 10px 6px; font-weight: 600; }
 [dir="rtl"] .group, [dir="rtl"] .sec-title, [dir="rtl"] .section-title { letter-spacing: 0; }
 .mitem { width: 100%; text-align: start; border: 0; background: transparent; border-radius: 8px; padding: 9px 10px; display: grid; gap: 3px; color: inherit; text-decoration: none; }
+.mitem { position: relative; }
 .mitem:hover { background: var(--surface-3); }
 .mitem.on { background: var(--amber-soft); }
 .mitem .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }
 .mitem .m { color: var(--text-3); font-size: 12px; display: flex; gap: 6px 8px; align-items: center; flex-wrap: wrap; }
-.mitem.unread .t::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); margin-inline-start: 6px; vertical-align: middle; }
+/* The dot sits at the row's end, not the title's, so an opposite-direction title still starts at the same edge.
+   Physical sides: on a dir="auto" title the logical ones would follow the title, not the interface. */
+.mitem.unread .t { padding-right: 13px; }
+.mitem.unread .t::after { content: ""; position: absolute; top: 16px; right: 10px; width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+[dir="rtl"] .mitem.unread .t { padding-right: 0; padding-left: 13px; }
+[dir="rtl"] .mitem.unread .t::after { right: auto; left: 10px; }
 .chip { font-size: 11px; border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; color: var(--text-2); line-height: 18px; white-space: nowrap; }
 .chip.warn { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
 .chip.rec { border-color: transparent; background: var(--rec-soft); color: var(--rec); }
@@ -114,7 +120,7 @@ h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; }
 .btn:hover { border-color: var(--text-3); }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--ink-fg); }
 .btn.primary:hover { opacity: .9; }
-.btn.danger { background: var(--rec); border-color: var(--rec); color: #fff; }
+.btn.danger { background: var(--rec); border-color: var(--rec); color: var(--ink-fg); }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.sm { padding: 3px 9px; font-size: 12px; }
@@ -156,8 +162,8 @@ button.badge.warn { border: 1px dashed var(--warn); }
 .banner.err { background: var(--rec-soft); color: var(--rec); }
 .banner .grow { flex: 1 1 0; min-width: 0; line-height: 1.55; }
 .notice { font-size: 13px; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px; color: var(--text-2); }
-.toast { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--ink-fg); padding: 9px 16px; border-radius: 999px; font-size: 13px; z-index: 60; box-shadow: var(--shadow); max-width: min(560px, 90vw); }
-.toast.error { background: var(--rec); color: #fff; border-radius: 12px; }
+.toast { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--ink-fg); padding: 9px 16px; border-radius: 999px; font-size: 13px; z-index: 60; box-shadow: var(--shadow); width: max-content; max-width: min(560px, 90vw); }
+.toast.error { background: var(--rec); color: var(--ink-fg); border-radius: 12px; }
 .conn { position: sticky; top: 0; z-index: 40; background: var(--warn-soft); color: var(--warn); font-size: 13px; padding: 7px 20px; text-align: center; }
 
 /* ---------- home ---------- */
@@ -306,6 +312,33 @@ button.badge.warn { border: 1px dashed var(--warn); }
 .btn .icon, .badge .icon, .chip .icon { vertical-align: 0; }
 .person .voice, .person .why { display: inline-flex; gap: 4px; align-items: center; }
 .danger-zone { margin-top: 26px; }
+
+/* ---------- failed-import record ---------- */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mrow .t, .mhead h1 { overflow-wrap: anywhere; }
+/* Position follows the interface; dir="auto" keeps each title's reading direction. */
+.mrow .t, .mitem .t, .mhead h1 { text-align: left; }
+[dir="rtl"] .mrow .t, [dir="rtl"] .mitem .t, [dir="rtl"] .mhead h1 { text-align: right; }
+.mrow .why { margin: 3px 0 0; font-size: 12.5px; color: var(--text-2); }
+.mrow.import-failed { position: relative; cursor: default; }
+.mrow.import-failed .t a { color: inherit; text-decoration: none; }
+.mrow.import-failed .t a::after { content: ""; position: absolute; inset: 0; border-radius: 10px; }
+.mrow.import-failed .t a:focus-visible { outline: none; }
+.mrow.import-failed .t a:focus-visible::after { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mrow.import-failed .acts-end { position: relative; z-index: 1; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.chip.strong, .banner.strong { color: var(--text); }
+.banner.strong > .icon { color: var(--rec); }
+.banner.confirm { display: inline-flex; max-width: 100%; }
+.confirm-acts { display: flex; gap: 8px; }
+@media (max-width: 560px) {
+  .banner.confirm { display: grid; gap: 12px; padding: 14px; font-size: 14px; line-height: 1.6; }
+  .confirm-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .confirm-acts .btn, .danger-zone.record > .btn { min-height: 44px; justify-content: center; font-size: 13px; }
+  .banner.strong > .grow { flex-basis: calc(100% - 24px); }
+  .banner.strong > .btn { flex: 1 1 100%; min-height: 44px; justify-content: center; }
+  .mrow.import-failed { grid-template-columns: minmax(0, 1fr); }
+  .mrow.import-failed .btn { min-height: 44px; flex: 1 1 100%; justify-content: center; }
+}
 
 /* ---------- people / settings ---------- */
 .pgrid { align-items: start; display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }

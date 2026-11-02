@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, fmtDuration, Meeting } from "../api";
+import { api, fmtDuration, isFailedImport, Meeting } from "../api";
 import type { Ctx } from "../App";
 import { Key, useI18n } from "../i18n";
 import { useServerEvents } from "../events";
@@ -40,6 +40,7 @@ export function MeetingStatus({ m }: { m: Meeting }) {
     const pct = m.progress && "overall" in m.progress && m.progress.overall ? ` ${Math.round(m.progress.overall * 100)}%` : "";
     return <span className="chip warn">{t("stProcessing")}{pct}</span>;
   }
+  if (isFailedImport(m)) return <span className="chip rec strong">{t("stImportFailed")}</span>;
   if (m.status === "failed") return <span className="chip rec">{t("stFailed")}</span>;
   return null;
 }
@@ -85,7 +86,7 @@ export default function Sidebar({ ctx, path, onNavigate }: { ctx: Ctx; path: str
             <div key={g}>
               <div className="group">{t(g)}</div>
               {items.map((m) => (
-                <a key={m.id} href={m.status === "recording" ? "#/live" : `#/meetings/${m.id}`} onClick={onNavigate}
+                <a key={m.id} href={m.status === "recording" ? "#/live" : `#/meetings/${m.id}`} onClick={onNavigate} title={m.title}
                   className={`mitem ${current === m.id ? "on" : ""} ${m.status === "ready" && !m.opened_at ? "unread" : ""}`}>
                   <span className="t" dir="auto">{m.title}</span>
                   <span className="m">
