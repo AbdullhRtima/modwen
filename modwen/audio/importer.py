@@ -43,12 +43,15 @@ IMPORT_FAILED = ("The import didn't finish, so the file wasn't imported. Check t
 MEDIA_BOXES = {b"ftyp", b"moov", b"mdat", b"free", b"skip", b"wide", b"pnot", b"styp", b"moof"}
 # Audio codecs Modwen takes from those files, as PyAV names their decoders.
 MEDIA_CODECS = {"aac", "alac", "mp3", "mp3float", "opus", "flac", "ac3", "eac3", "pcm_s16le", "pcm_s16be",
-                "pcm_s24le", "pcm_f32le", "pcm_alaw", "pcm_mulaw"}
+                "pcm_s24le", "pcm_s24be", "pcm_s32le", "pcm_s32be", "pcm_f32le", "pcm_f32be", "pcm_alaw",
+                "pcm_mulaw"}
 # Sample entries of encrypted tracks. ``enca`` decodes as plain "aac", so the codec can't show this.
 ENCRYPTED_ENTRIES = {b"enca", b"drms", b"drmi", b"encs", b"encv"}
 SAMPLE_TABLE_PATH = (b"moov", b"trak", b"mdia", b"minf", b"stbl")
 MAX_BOXES = 10_000  # per level, so a hostile file can't keep the check walking
-MAX_SHORTFALL_SECONDS = 1.0  # intact files decode to within 0.03 s of their declared length
+MAX_TOP_BOXES = 4_000_000  # more than two boxes per 20 ms fragment over the 6-hour limit
+MAX_SHORTFALL_SECONDS = 0.1  # the packets of intact files reach their declared end exactly
+LENGTH_SLACK_SECONDS = 1.0  # so a file of exactly 6 hours that decodes a few ms long still imports
 
 
 class ImportRefused(ValueError):
@@ -207,6 +210,26 @@ def _boxes(sealed: SealedTempFile, start: int, end: int):
         pos += size
 
 
+def check_boxes(sealed: SealedTempFile) -> None:
+    """Refuse a file whose top-level boxes don't fit it: a box running past the end means it was cut off, even
+    if all the audio is there. A size of 0 means "to the end of the file", so it can show no cut."""
+    pos = 0
+    for _ in range(MAX_TOP_BOXES):
+        if pos == sealed.size:
+            return
+        sealed.seek(pos)
+        head = sealed.read(16)
+        size, header = int.from_bytes(head[:4], "big"), 8
+        if size == 0 and len(head) >= 8:
+            return
+        if size == 1:
+            size, header = int.from_bytes(head[8:16], "big"), 16
+        if len(head) < header or size < header or pos + size > sealed.size:
+            raise ImportRefused(DAMAGED)
+        pos += size
+    raise ImportRefused(DAMAGED)
+
+
 def is_encrypted(sealed: SealedTempFile, start: int = 0, end: int | None = None, depth: int = 0) -> bool:
     """True if any track's sample entry is an encrypted one (moov/trak/mdia/minf/stbl/stsd)."""
     end = sealed.size if end is None else end
@@ -237,13 +260,17 @@ def _pick_audio(container):
     return track
 
 
-def _decode_track(container, track, writer: ChunkWriter, longest: float) -> float:
-    """Downmix and resample one track into ``writer`` as ``decode_into`` does. Returns the seconds decoded."""
+def _decode_track(container, track, writer: ChunkWriter, longest: float, promised: float | None = None) -> float:
+    """Downmix and resample one track into ``writer`` as ``decode_into`` does. Returns the seconds decoded.
+
+    A cut on a box boundary ends with no error at all: the only sign is that the packets stop before the time the
+    file ``promised``. That is measured on the file's own timeline, so a gap in the audio doesn't count as lost."""
     import av
 
     planar = av.AudioResampler(format="fltp")
     shape = rs = None
     rate = samples = 0
+    reached = 0.0
 
     def write(frame) -> None:
         nonlocal samples
@@ -257,6 +284,8 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float) -> floa
         for packet in container.demux(track):
             if packet.is_corrupt:
                 raise ImportRefused(DAMAGED)
+            if packet.dts is not None:  # the last packet is an empty one, to flush the decoder
+                reached = max(reached, float((packet.dts + (packet.duration or 0)) * packet.time_base))
             for frame in packet.decode():
                 now = (frame.sample_rate, frame.layout.name, frame.format.name)
                 if shape is None:
@@ -267,8 +296,10 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float) -> floa
                     raise ImportRefused(DAMAGED)
                 for plain in planar.resample(frame):
                     write(plain)
-    except av.error.InvalidDataError as exc:
+    except av.error.FFmpegError as exc:  # disk and memory failures on our side are Python errors, not these
         raise ImportRefused(DAMAGED) from exc
+    if promised and promised - reached > MAX_SHORTFALL_SECONDS:
+        raise ImportRefused(DAMAGED)
     if shape is None:
         return 0.0
     for plain in planar.resample(None):
@@ -286,6 +317,7 @@ def decode_media_into(sealed: SealedTempFile, writer: ChunkWriter) -> int:
 
     if is_encrypted(sealed):
         raise ImportRefused(NOT_SUPPORTED)
+    check_boxes(sealed)
     sealed.seek(0)
     try:
         container = av.open(sealed, format="mov")
@@ -297,11 +329,8 @@ def decode_media_into(sealed: SealedTempFile, writer: ChunkWriter) -> int:
         known = declared or (container.duration or 0) / 1_000_000
         if known > MAX_IMPORT_HOURS * 3600:
             raise ImportRefused(too_long_message(known / 3600))
-        decoded = _decode_track(container, track, writer, MAX_IMPORT_HOURS * 3600 + MAX_SHORTFALL_SECONDS)
-    # A cut can end with no error at all: the only sign is that less came out than the file promised.
-    if declared and declared - decoded > MAX_SHORTFALL_SECONDS:
-        raise ImportRefused(DAMAGED)
+        decoded = _decode_track(container, track, writer, MAX_IMPORT_HOURS * 3600 + LENGTH_SLACK_SECONDS, declared)
     if not decoded:
-        raise ImportRefused(EMPTY)
+        raise ImportRefused(DAMAGED if declared else EMPTY)
     writer.close()
     return writer.total_samples

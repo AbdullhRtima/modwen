@@ -645,16 +645,15 @@ def discard_import(s: Services, mid: str) -> None:
     s.store.delete_meeting(mid)
 
 
-def remove_replaced_import(s: Services, mid: str) -> None:
-    """The new import is complete, so the failed-import record it resolves can go. Only such a record, found by
-    its id; anything else, or any problem here, leaves the finished import as it is."""
+def replaced_import_removed(s: Services, mid: str) -> None:
+    """The record's row went with the commit. Any problem with the rest leaves the finished import as it is."""
+    import shutil
+
     try:
-        old = s.store.get_meeting(mid)
-        if old and is_failed_import(old):
-            discard_import(s, old["id"])
-            s.meetings_changed(old["id"], "deleted")
+        shutil.rmtree(s.cfg.audio_dir / mid, ignore_errors=True)
+        s.meetings_changed(mid, "deleted")
     except Exception as exc:
-        log.warning("Could not remove the failed-import record %s: %s", mid, type(exc).__name__)
+        log.warning("Could not finish removing the failed-import record %s: %s", mid, type(exc).__name__)
 
 
 def import_sealed(s: Services, sealed, *, mid: str, title: str, channel: str, replaces: str | None = None) -> dict:
@@ -674,7 +673,8 @@ def import_sealed(s: Services, sealed, *, mid: str, title: str, channel: str, re
         else:
             decode_into(sealed, writer)
             duration_ms = int(info.duration * 1000)
-        if not s.store.commit_import(mid, title, duration_ms):
+        committed, removed = s.store.commit_import(mid, title, duration_ms, replaces)
+        if not committed:
             raise RuntimeError("the import was marked as interrupted while it ran")
     except ImportRefused as exc:
         discard_import(s, mid)
@@ -683,8 +683,8 @@ def import_sealed(s: Services, sealed, *, mid: str, title: str, channel: str, re
         discard_import(s, mid)
         log.warning("Import %s failed: %s", mid, type(exc).__name__)  # never the message: it may hold a path
         raise HTTPException(400, IMPORT_FAILED) from exc
-    if replaces:
-        remove_replaced_import(s, replaces)
+    if removed:
+        replaced_import_removed(s, replaces)
     s.enqueue_processing(mid)
     s.meetings_changed(mid, "imported")
     return s.store.get_meeting(mid)  # type: ignore[return-value]

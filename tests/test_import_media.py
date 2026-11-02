@@ -34,6 +34,8 @@ GENERAL = ("The import didn't finish, so the file wasn't imported. Check that th
            "and that Modwen is running, then try again.")
 SEGMENTS = [(4.0, 2.0), (4.0, 2.0)]
 FRAGMENTED = "empty_moov+default_base_moof"
+_encoded: dict[tuple, bytes] = {}
+_empty_db: bytes | None = None
 
 
 # ----- synthetic media -----
@@ -60,6 +62,14 @@ def _encode_audio(out, stream, freq: float, seconds: float, *, wave=None):
 
 def make_media(where: Path, *, fmt: str = "mp4", codec: str = "aac", seconds: float = 12.0, freqs=(440.0,),
                video: bool = False, audio: bool = True, movflags: str | None = None) -> bytes:
+    """The bytes of a synthetic file. Each is encoded once per run: that is slow, and bytes can't be changed."""
+    key = (fmt, codec, seconds, tuple(freqs), video, audio, movflags)
+    if key not in _encoded:
+        _encoded[key] = _encode(where, *key)
+    return _encoded[key]
+
+
+def _encode(where, fmt, codec, seconds, freqs, video, audio, movflags) -> bytes:
     """Encode a file on disk (inside the test's folder) and return its bytes."""
     path = where / f"fixture-{os.urandom(4).hex()}.bin"
     options = {"movflags": movflags} if movflags else {}
@@ -104,12 +114,69 @@ def dominant_hz(audio: np.ndarray) -> float:
     return float(np.argmax(np.abs(np.fft.rfft(audio[:32000]))) * 16000 / 32000)
 
 
+def top_boxes(data: bytes) -> list[tuple[int, int, bytes]]:
+    """(offset, size, type) of each top-level box."""
+    at, out = 0, []
+    while at + 8 <= len(data):
+        size = int.from_bytes(data[at:at + 4], "big")
+        out.append((at, size, data[at + 4:at + 8]))
+        at += size
+    return out
+
+
+def box_of(data: bytes, kind: bytes, nth: int = 0) -> tuple[int, int, bytes]:
+    return [b for b in top_boxes(data) if b[2] == kind][nth]
+
+
+def packet_ends(data: bytes) -> list[int]:
+    with av.open(io.BytesIO(data)) as container:
+        return sorted(p.pos + p.size for p in container.demux(container.streams.audio[0]) if p.size)
+
+
+def open_ended_mdat(data: bytes) -> bytes:
+    """A moov-first file whose mdat says "to the end of the file" (size 0): its size can't show a cut."""
+    at = box_of(data, b"mdat")[0]
+    return data[:at] + bytes(4) + data[at + 4:]
+
+
+def make_gapped(where: Path, movflags: str | None = None) -> bytes:
+    """A valid file with a 3 s hole in its audio timeline, 10 s in."""
+    path = where / f"fixture-{os.urandom(4).hex()}.mp4"
+    tone = (0.3 * np.sin(2 * np.pi * 440 * np.arange(1024) / RATE)).astype(np.float32)
+    with av.open(str(path), "w", format="mp4", options={"movflags": movflags} if movflags else {}) as out:
+        st = out.add_stream("aac", rate=RATE, layout="stereo")
+        for i in range(int(20 * RATE / 1024)):
+            frame = av.AudioFrame.from_ndarray(np.stack([tone, tone]), format="fltp", layout="stereo")
+            frame.sample_rate, frame.pts = RATE, i * 1024 + (3 * RATE if i * 1024 >= 10 * RATE else 0)
+            for packet in st.encode(frame):
+                out.mux(packet)
+        for packet in st.encode(None):
+            out.mux(packet)
+    data = path.read_bytes()
+    path.unlink()
+    return data
+
+
 # ----- the app -----
+def _start_from_empty_db(cfg) -> None:
+    """Creating the database takes seconds on some disks, and nearly every test here needs a new one."""
+    global _empty_db
+    from modwen.storage import Store
+
+    if cfg.db_path.exists():
+        return
+    if _empty_db is None:
+        Store(cfg.db_path).close()
+        _empty_db = cfg.db_path.read_bytes()
+    cfg.db_path.write_bytes(_empty_db)
+
+
 def _services(cfg, fake_llm, **kw):
     from modwen.notify import Notifier
     from modwen.services import Services
     from modwen.stt.engines import FakeEngine
 
+    _start_from_empty_db(cfg)
     engine = FakeEngine([("en", "So the release is Thursday, right?"), ("ar", "أيوه، بس محتاجين الـ QA يخلص قبلها.")])
     return Services(cfg, stt_engine_factory=lambda: engine, llm_http_client=fake_llm.client(),
                     notifier=Notifier(cfg), **kw)
@@ -178,6 +245,10 @@ def _record(s, title="Budget review.mp4"):
     ("ipod", "alac", None),
     ("mov", "pcm_s16le", None),
     ("mp4", "flac", None),
+    ("mov", "pcm_s24be", None),
+    ("mov", "pcm_f32be", None),
+    ("mov", "pcm_s32le", None),
+    ("mov", "pcm_s32be", None),
 ])
 def test_supported_files_reach_ready_through_the_existing_pipeline(app, data_dir, fmt, codec, movflags):
     s, c = app
@@ -342,6 +413,213 @@ def test_a_cut_on_a_fragment_boundary_imports_as_shorter(app, data_dir):
     assert 1.0 < _audio(s, r.json()["id"]).size / 16000 < 19
 
 
+@pytest.mark.parametrize("past", [3, 8, 40])
+def test_a_cut_just_past_a_fragment_boundary_is_refused(app, data_dir, past):
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags=FRAGMENTED)
+    _refused(s, c, body[:box_of(body, b"moof", 1)[0] + past], 400, DAMAGED)
+
+
+def test_a_cut_between_a_moof_and_its_mdat_is_refused(app, data_dir):
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags=FRAGMENTED)
+    moof = box_of(body, b"moof", 1)
+    _refused(s, c, body[:moof[0] + moof[1]], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("kw", [{"fmt": "ipod"}, {"fmt": "mov", "codec": "pcm_s16le"}, {"video": True}])
+@pytest.mark.parametrize("lost", [1, 10, 47])
+def test_a_cut_on_a_packet_boundary_is_refused(app, data_dir, kw, lost):
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags="faststart", **kw)
+    _refused(s, c, body[:packet_ends(body)[-lost - 1]], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("video", [False, True])
+def test_a_cut_before_the_mdat_is_refused(app, data_dir, video):
+    """Every box ends cleanly and nothing errors: only the file's own timeline shows what is missing."""
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags="faststart", video=video)
+    _refused(s, c, body[:box_of(body, b"mdat")[0]], 400, DAMAGED)
+
+
+def test_a_very_short_file_cut_before_its_mdat_is_damaged_not_empty(app, data_dir):
+    s, c = app
+    body = make_media(data_dir, seconds=0.5, movflags="faststart")
+    _refused(s, c, body[:box_of(body, b"mdat")[0]], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("movflags", [None, FRAGMENTED])
+def test_a_cut_that_loses_no_audio_is_still_refused(app, data_dir, movflags):
+    """The end of a moov-last moov, or of the trailing mfra. The file is incomplete, so it is refused whole."""
+    s, c = app
+    body = make_media(data_dir, seconds=20, movflags=movflags)
+    _refused(s, c, body[:-1], 400, DAMAGED)
+
+
+def test_a_gap_in_the_timeline_is_not_damage(app, data_dir):
+    s, c = app
+    for body in (make_gapped(data_dir), make_gapped(data_dir, "faststart"),
+                 open_ended_mdat(make_gapped(data_dir, "faststart"))):
+        r = _post(c, body)
+        assert r.status_code == 200, r.text
+        assert abs(_audio(s, r.json()["id"]).size / 16000 - 20) < 0.2
+
+
+def test_an_open_ended_mdat_imports_when_whole(app, data_dir):
+    s, c = app
+    r = _post(c, open_ended_mdat(make_media(data_dir, seconds=20, movflags="faststart")))
+    assert r.status_code == 200, r.text
+    assert abs(_audio(s, r.json()["id"]).size / 16000 - 20) < 0.2
+
+
+@pytest.mark.parametrize("cut", ["half", "packet", "last-packets"])
+def test_an_open_ended_mdat_is_still_checked_for_cuts(app, data_dir, cut):
+    s, c = app
+    good = make_media(data_dir, seconds=20, movflags="faststart")
+    body, ends = open_ended_mdat(good), packet_ends(good)
+    at = {"half": len(body) // 2, "packet": ends[len(ends) // 2], "last-packets": ends[-11]}[cut]
+    _refused(s, c, body[:at], 400, DAMAGED)
+
+
+def _with_large_mdat(data: bytes) -> bytes:
+    """Turn ``free`` + ``mdat`` into one mdat with a 64-bit size. Nothing moves, so the sample offsets still hold."""
+    free, mdat = box_of(data, b"free"), box_of(data, b"mdat")
+    assert free[0] + 8 == mdat[0]
+    header = (1).to_bytes(4, "big") + b"mdat" + (8 + mdat[1]).to_bytes(8, "big")
+    return data[:free[0]] + header + data[mdat[0] + 8:]
+
+
+def test_a_64_bit_box_size_imports_when_whole(app, data_dir):
+    s, c = app
+    r = _post(c, _with_large_mdat(make_media(data_dir, seconds=20)))
+    assert r.status_code == 200, r.text
+    assert abs(_audio(s, r.json()["id"]).size / 16000 - 20) < 0.2
+
+
+@pytest.mark.parametrize("cut", ["body", "header"])
+def test_a_64_bit_box_size_shows_a_cut(app, data_dir, cut):
+    s, c = app
+    body = _with_large_mdat(make_media(data_dir, seconds=20))
+    at = {"body": len(body) // 2, "header": box_of(body, b"ftyp")[1] + 12}[cut]
+    _refused(s, c, body[:at], 400, DAMAGED)
+
+
+@pytest.mark.parametrize("body", [
+    b"\x00\x00\x00\x08ftyp" + b"\x00\x00\x00\x04free",  # smaller than its own header
+    b"\x00\x00\x00\x08ftyp" + b"\x00\x00\x00\x01free" + (8).to_bytes(8, "big"),  # the same, in 64 bits
+    b"\x00\x00\x00\x08ftyp" + b"\xff\xff\xff\xffjunk",
+])
+def test_impossible_box_sizes_are_damage(data_dir, body):
+    from modwen.audio import importer
+
+    sealed = importer.SealedTempFile(data_dir)
+    sealed.append(body)
+    with pytest.raises(importer.ImportRefused, match="damaged"):
+        importer.check_boxes(sealed)
+    sealed.close()
+
+
+def test_a_file_of_too_many_boxes_stops_the_walk(data_dir, monkeypatch):
+    from modwen.audio import importer
+
+    monkeypatch.setattr(importer, "MAX_TOP_BOXES", 10)
+    sealed = importer.SealedTempFile(data_dir)
+    sealed.append(b"\x00\x00\x00\x08free" * 11)
+    with pytest.raises(importer.ImportRefused, match="damaged"):
+        importer.check_boxes(sealed)
+    sealed.close()
+
+
+def test_a_long_fragmented_file_passes_the_walk(data_dir):
+    """The search for copy protection stops at 10,000 boxes; a long fragmented recording has more at the top."""
+    from modwen.audio import importer
+
+    sealed = importer.SealedTempFile(data_dir)
+    sealed.append(b"\x00\x00\x00\x08free" * 50_000)
+    importer.check_boxes(sealed)
+    sealed.close()
+
+
+def _patch_elst(data: bytes, *, trim_end: int = 0, skip: int = 0) -> bytes:
+    """Change the audio track's edit list, in samples at 48 kHz, as a lossless trim would."""
+    out = bytearray(data)
+    at, mvhd = data.index(b"elst"), data.index(b"mvhd")
+    movie_scale = int.from_bytes(data[mvhd + 16:mvhd + 20], "big")
+    span, start = at + 12, at + 16
+    duration = int.from_bytes(data[span:span + 4], "big") - (trim_end + skip) * movie_scale // RATE
+    out[span:span + 4] = duration.to_bytes(4, "big")
+    media = int.from_bytes(data[start:start + 4], "big") + skip
+    out[start:start + 4] = media.to_bytes(4, "big")
+    return bytes(out)
+
+
+@pytest.mark.parametrize("edit,seconds", [({"trim_end": 5 * RATE}, 15), ({"skip": 5 * RATE}, 15),
+                                          ({"trim_end": 3 * RATE, "skip": 4 * RATE}, 13)])
+def test_an_edit_list_that_trims_the_track_is_not_damage(app, data_dir, edit, seconds):
+    s, c = app
+    r = _post(c, _patch_elst(make_media(data_dir, seconds=20), **edit))
+    assert r.status_code == 200, r.text
+    assert _audio(s, r.json()["id"]).size / 16000 >= seconds - 0.2
+
+
+def _stsz_entry_too_large(data: bytes, index: int = 9) -> bytes:
+    """One sample claims nearly a gigabyte: the demuxer answers ENOMEM (found by fuzzing)."""
+    at = data.index(b"stsz") + 16 + 4 * index
+    return data[:at] + b"\x37" + data[at + 1:]
+
+
+def _esds_config_too_long(data: bytes) -> bytes:
+    """The decoder config claims more bytes than it has: opening the decoder answers ENOSYS (found by fuzzing)."""
+    at = data.index(b"\x05\x80\x80\x80\x05", data.index(b"esds"))
+    return data[:at + 1] + b"\x80\x48" + data[at + 3:]
+
+
+@pytest.mark.parametrize("break_it,kw", [(_stsz_entry_too_large, {"movflags": "faststart"}),
+                                         (_esds_config_too_long, {"video": True, "fmt": "mov"})])
+def test_any_decoder_error_means_damaged(app, data_dir, break_it, kw):
+    s, c = app
+    _refused(s, c, break_it(make_media(data_dir, seconds=6, **kw)), 400, DAMAGED)
+
+
+@pytest.mark.parametrize("error", [av.error.MemoryError, av.error.NotImplementedError, av.error.PatchWelcomeError])
+def test_every_ffmpeg_error_class_is_caught_while_decoding(data_dir, error):
+    from modwen.audio import importer
+    from modwen.audio.chunks import ChunkWriter
+
+    def bad():
+        raise error(1, "from the decoder")
+
+    container = SimpleNamespace(demux=lambda st: iter([SimpleNamespace(is_corrupt=False, dts=None, decode=bad)]))
+    with pytest.raises(importer.ImportRefused, match="damaged"):
+        importer._decode_track(container, None, ChunkWriter(data_dir / "m", "system", b"k" * 32), 3600)
+
+
+@pytest.mark.parametrize("error", [OSError(28, "No space left on device"), MemoryError()])
+def test_a_failure_reading_the_temp_file_is_not_damage(app, data_dir, monkeypatch, error):
+    """The disk or the memory failed, not the file: the error comes up through PyAV's read callback."""
+    from modwen.audio import importer
+    from modwen.audio.chunks import ChunkWriter
+
+    s, c = app
+    body = make_media(data_dir, seconds=20)
+    real_read, real_write = importer.SealedTempFile.read, ChunkWriter.write
+    decoding = []
+
+    def read(self, n=-1):
+        if decoding:
+            raise error
+        return real_read(self, n)
+
+    def write(self, frames):
+        decoding.append(True)
+        real_write(self, frames)
+
+    monkeypatch.setattr(importer.SealedTempFile, "read", read)
+    monkeypatch.setattr(ChunkWriter, "write", write)
+    _refused(s, c, body, 400, GENERAL)
+
+
 def test_a_change_of_format_mid_stream_is_refused(data_dir, monkeypatch):
     from modwen.audio import importer
     from modwen.audio.chunks import ChunkWriter
@@ -352,7 +630,7 @@ def test_a_change_of_format_mid_stream_is_refused(data_dir, monkeypatch):
         f.sample_rate = rate
         return f
 
-    packets = [SimpleNamespace(is_corrupt=False, decode=lambda r=r: [frame(r)]) for r in (44100, 22050)]
+    packets = [SimpleNamespace(is_corrupt=False, dts=None, decode=lambda r=r: [frame(r)]) for r in (44100, 22050)]
     container = SimpleNamespace(demux=lambda st: iter(packets))
     writer = ChunkWriter(data_dir / "m", "system", b"k" * 32)
     with pytest.raises(importer.ImportRefused, match="damaged"):
@@ -379,8 +657,7 @@ def test_declared_length_over_the_limit_is_refused(app, data_dir, monkeypatch):
 
     s, c = app
     monkeypatch.setattr(importer, "MAX_IMPORT_HOURS", 5 / 3600)
-    body = make_media(data_dir, seconds=360)
-    _refused(s, c, body, 400, importer.too_long_message(0.1))
+    _refused(s, c, make_media(data_dir, seconds=12), 400, importer.too_long_message(12 / 3600))
 
 
 def test_exactly_the_limit_imports(app, data_dir, monkeypatch):
@@ -479,9 +756,9 @@ def test_an_import_that_lost_its_row_is_not_a_success(app, data_dir, monkeypatch
     s, c = app
     real = s.store.commit_import
 
-    def stolen(mid, title, duration_ms):
+    def stolen(mid, *rest):
         s.store.update_meeting(mid, status="failed")
-        return real(mid, title, duration_ms)
+        return real(mid, *rest)
 
     monkeypatch.setattr(s.store, "commit_import", stolen)
     _refused(s, c, make_media(data_dir), 400, GENERAL)
@@ -567,7 +844,7 @@ from modwen.audio.importer import SealedTempFile
 from modwen.config import Config
 from modwen.services import Services
 
-where, body = sys.argv[1], open(sys.argv[2], "rb").read()
+where, body, replaces = sys.argv[1], open(sys.argv[2], "rb").read(), sys.argv[3]
 cfg = Config()
 s = Services(cfg, start_worker=False)
 def die(*a, **k):
@@ -586,24 +863,33 @@ elif where == "commit":
     s.store.commit_import = die
 elif where == "committed":
     s.enqueue_processing = die
+elif where == "transaction":  # the status is written, the record's removal isn't, and nothing is committed
+    s.store._conn.set_trace_callback(lambda sql: die() if sql.startswith("DELETE FROM meetings") else None)
+elif where == "removed":  # the moment after the transaction
+    real = s.store.commit_import
+    s.store.commit_import = lambda *a: (real(*a), die())
 c = TestClient(create_app(s, token="t"))
 c.cookies.set("mw_token", "t")
-c.post("/api/meetings/import", params={"title": "Clip", "filename": "Clip.mp4"}, content=body,
-       headers={"content-type": "application/octet-stream"})
+c.post("/api/meetings/import", params={"title": "Clip", "filename": "Clip.mp4", "replaces": replaces},
+       content=body, headers={"content-type": "application/octet-stream"})
 os._exit(0)
 """
 
 
-@pytest.mark.parametrize("where", ["upload", "decode", "commit", "committed"])
-def test_a_real_crash_at_each_stage(cfg, fake_llm, data_dir, where):
-    body = make_media(data_dir, seconds=30, video=True)
+def _crash(data_dir, where, replaces=""):
+    """Run one import in a process that dies at ``where``, on the same data folder."""
     path = data_dir / "input.bin"
-    path.write_bytes(body)
+    path.write_bytes(make_media(data_dir, seconds=30, video=True))
     env = {**os.environ, "PYTHONPATH": str(ROOT)}
-    p = subprocess.run([sys.executable, "-c", CRASH, where, str(path)], cwd=data_dir, env=env, capture_output=True,
-                       timeout=120)
+    p = subprocess.run([sys.executable, "-c", CRASH, where, str(path), replaces], cwd=data_dir, env=env,
+                       capture_output=True, timeout=120)
     assert p.returncode == 9, p.stderr.decode(errors="replace")
     path.unlink()
+
+
+@pytest.mark.parametrize("where", ["upload", "decode", "commit", "committed"])
+def test_a_real_crash_at_each_stage(cfg, fake_llm, data_dir, where):
+    _crash(data_dir, where)
 
     s = _services(cfg, fake_llm)
     rows = s.store.list_meetings()
@@ -616,6 +902,24 @@ def test_a_real_crash_at_each_stage(cfg, fake_llm, data_dir, where):
         assert m["title"] == "Clip.mp4" and m["status"] == "failed" and m["error"].startswith("import:")
         assert not (cfg.audio_dir / m["id"]).exists() and s.store.get_wrapped_key(m["id"]) is None
     assert not list(cfg.data_dir.glob("import-*.sealed"))
+
+
+@pytest.mark.parametrize("where,old_stays", [("transaction", True), ("removed", False)])
+def test_a_crash_never_leaves_both_the_new_import_and_the_old_record(cfg, fake_llm, data_dir, where, old_stays):
+    s = _services(cfg, fake_llm, start_worker=False)
+    old = _record(s, "Old.mp4")
+    s.store.close()
+    _crash(data_dir, where, old)
+
+    s = _services(cfg, fake_llm)
+    assert (s.store.get_meeting(old) is not None) is old_stays
+    new = [m for m in s.store.list_meetings() if m["id"] != old]
+    assert len(new) == 1
+    if old_stays:  # the import did not complete: a second record for this attempt, and the first one is kept
+        assert new[0]["title"] == "Clip.mp4" and new[0]["error"].startswith("import:")
+        assert not (cfg.audio_dir / new[0]["id"]).exists()
+    else:
+        assert new[0]["title"] == "Clip" and _wait(s, new[0]["id"])["status"] == "ready"
 
 
 def test_tab_closed_during_upload_leaves_a_record_at_once(app):
@@ -750,19 +1054,34 @@ def test_replaces_never_removes_anything_else(app, data_dir, target):
         assert s.store.get_meeting(ids[target])
 
 
-def test_replaces_failure_is_logged_by_id_and_the_import_succeeds(app, data_dir, monkeypatch, caplog):
+def test_the_commit_and_the_removal_succeed_or_fail_together(app, data_dir):
+    s, c = app
+    old = _record(s)
+    with s.store._lock:
+        s.store._conn.execute(f"CREATE TRIGGER stop BEFORE DELETE ON meetings WHEN old.id = '{old}' "
+                              "BEGIN SELECT RAISE(ABORT, 'database trouble'); END")
+        s.store._conn.commit()
+    r = _post(c, make_media(data_dir), replaces=old)
+    assert r.status_code == 400 and r.json()["detail"] == GENERAL
+    assert [m["id"] for m in s.store.list_meetings()] == [old]
+    assert s.store.get_meeting(old)["error"].startswith("import:")
+    assert not list(s.cfg.audio_dir.glob("*")) and not s.store.interrupted_imports()
+
+
+def test_trouble_after_the_commit_is_logged_by_id_and_the_import_succeeds(app, data_dir, monkeypatch, caplog):
     s, c = app
     old = _record(s, "Private name.mp4")
-    real = s.store.delete_meeting
+    real = s.meetings_changed
 
-    def boom(mid):
+    def boom(mid, change):
         if mid == old:
-            raise RuntimeError("database is locked")
-        real(mid)
+            raise RuntimeError("no listeners")
+        real(mid, change)
 
-    monkeypatch.setattr(s.store, "delete_meeting", boom)
+    monkeypatch.setattr(s, "meetings_changed", boom)
     r = _post(c, make_media(data_dir), replaces=old)
     assert r.status_code == 200, r.text
+    assert s.store.get_meeting(old) is None
     assert old in caplog.text and "Private name" not in caplog.text
 
 

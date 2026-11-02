@@ -250,11 +250,20 @@ class Store:
             rows = self._conn.execute("SELECT * FROM meetings WHERE status = 'importing'").fetchall()
         return [self._row(r) for r in rows]  # type: ignore[misc]
 
-    def commit_import(self, mid: str, title: str, duration_ms: int) -> bool:
-        """The point where an import is complete, as one write. False if the row was no longer importing."""
-        cur = self._exec("UPDATE meetings SET status = 'processing', title = ?, duration_ms = ? "
-                         "WHERE id = ? AND status = 'importing'", (title, duration_ms, mid))
-        return cur.rowcount == 1
+    def commit_import(self, mid: str, title: str, duration_ms: int, replaces: str | None = None) -> tuple[bool, bool]:
+        """The point where an import is complete, as one transaction, so no crash can leave both the new meeting
+        and the failed-import record ``replaces``. Only such a record goes, found by its id.
+        Returns (committed, removed); not committed if the row was no longer importing."""
+        with self._lock, self._conn:
+            cur = self._conn.execute("UPDATE meetings SET status = 'processing', title = ?, duration_ms = ? "
+                                     "WHERE id = ? AND status = 'importing'", (title, duration_ms, mid))
+            if cur.rowcount != 1:
+                return False, False
+            if not replaces:
+                return True, False
+            cur = self._conn.execute("DELETE FROM meetings WHERE id = ? AND status = 'failed' "
+                                     "AND substr(error, 1, 7) = 'import:'", (replaces,))
+            return True, cur.rowcount == 1
 
     def delete_meeting(self, mid: str) -> None:
         self._exec("DELETE FROM meetings WHERE id = ?", (mid,))
