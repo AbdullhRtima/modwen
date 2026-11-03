@@ -956,6 +956,110 @@ class EmailDispatch:                        # Phase 3
 
 A daily job enforces these. "Delete meeting" removes everything immediately.
 
+### 10.1 Imported recordings (MP4, MOV, M4A)
+
+User-facing summary: [install.md §5](install.md#5-import-a-recording). This section is the technical detail.
+
+**Formats.**
+- WAV, FLAC, MP3, OGG and AIFF are read by libsndfile (`soundfile`) **inside the engine**, exactly as before.
+- MP4, MOV and M4A are recognised by their first bytes, not the extension: a box size followed by `ftyp`, `moov`,
+  `mdat`, `free`, `skip`, `wide`, `pnot`, `styp` or `moof`. They are decoded by PyAV (FFmpeg's `mov` demuxer) in a
+  separate process, described below. Moov-first, moov-last and fragmented files are read.
+- Audio codecs: AAC, ALAC, MP3, Opus, FLAC, AC-3, E-AC-3, and PCM (16, 24 and 32-bit integer and 32-bit float, both
+  byte orders; A-law and µ-law). Anything else, including 8-bit unsigned and 64-bit float PCM, is refused as not
+  supported.
+- Refused unread as not supported: encrypted (DRM) tracks and compressed movie headers (`cmov`).
+- External data references and network protocols are switched off when FFmpeg opens the file.
+- Track choice: the audio track the file marks as default, otherwise the first audio track. There is no track
+  picker. All channels (7.1 and more) are mixed down to mono 16 kHz. Video is ignored and never stored.
+- Limits: 8 GB per file, 6 hours of audio per import, and a zero-byte file is refused as empty.
+- Tested with FFmpeg-written files and synthetic test media. Not tested: HE-AAC, real DRM files, files straight
+  from phones or cameras, and fragmented files from other muxers (Apple, GPAC, Bento4, Shaka).
+
+**Failure and recovery.**
+- A refused import leaves nothing behind: no meeting, no audio, no temporary file.
+- Any failure of the decoding process after it starts, including a crash, a hang or a resource limit, shows the
+  "not supported" message. A failure before it starts, or a failure in the engine such as a full disk, shows the
+  general "didn't finish" message. A file that hits a resource limit may also say damaged or no audio, depending on
+  how FFmpeg reacts.
+- If Modwen stops before an import is complete, the next start removes the partly extracted audio and the
+  encrypted upload, and shows a failed-import record ("Import didn't finish") with the original file name under
+  *Needs your attention*. Its **Import again** opens the file picker. A successful import from that record removes
+  it, matched by its id; a refused or cancelled one keeps it. The record can be deleted. It never offers Retry.
+- If Modwen stops after the import is complete, the meeting continues through the normal recovery.
+
+**The decoding process.** Each MP4, MOV or M4A import starts one child process (`python -P -m
+modwen.audio.decoder_child`, the engine's own interpreter). At most two run at once; a third import waits.
+- The upload is kept encrypted on disk. The child gets that upload's key over stdin, and only after it has
+  confirmed its limits. It never receives the storage keys or the master key from the engine. This holds only
+  while the child is not compromised: see "Not a sandbox" below.
+- The child sends back mono 16 kHz audio in bounded frames (at most 128 KiB each) over a pipe. The engine checks
+  every frame, enforces the 6-hour cap itself, and alone writes the encrypted audio chunks.
+- The child's environment is an allowlist with no tokens or secrets, and it inherits no other handles.
+- Limits: 1 GiB of memory, 3,600 s of CPU, 5,400 s of wall time, and 180 s without sending anything. The child runs
+  at normal priority.
+
+| | Windows | macOS |
+|---|---|---|
+| How limits are enforced | A Job Object, set up and checked by the engine before the key is sent. Killing the engine kills the child. | No job object: `RLIMIT_AS`/`RLIMIT_DATA` aren't usable. The engine polls the child's physical footprint every 20 ms and kills it above 1 GiB. FFmpeg allocations are capped at 512 MiB each (`av_max_alloc`), plus `RLIMIT_CPU`, no core dumps, and a pipe that ends the child when the engine dies. |
+| What the memory limit means | A hard limit on **committed** memory, not on RAM (RSS). Measured: the job's charge never exceeded 1,024 MiB; RSS reached about 1,030 MiB, because shared mappings count in RSS. | Not a hard limit. A 20 ms poll can be overshot; on Windows a fast allocator was measured filling a few hundred MiB in that time. |
+| CPU limit | Counts user-mode time only and is checked periodically: in a test with a 3 s limit, a user-mode load was stopped at about 8 s. The wall timer is the backstop. | `RLIMIT_CPU`. |
+| Child processes | The job stops the child from starting new processes (unless it is compromised, see below). | No process-count limit or process group: only the child's own pid is measured and killed. |
+| Status | Tested from source on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2). | Implemented, **not verified** on a Mac. |
+
+**Not a sandbox.**
+- The separate process contains crashes, hangs and resource exhaustion caused by a damaged or hostile file. It does
+  not protect your data from an attacker.
+- The decoding process runs as your user account. It has the same access to your files, your network and the
+  running Modwen process as Modwen itself. There is no OS sandbox on Windows or macOS.
+- If a file exploits a security flaw in FFmpeg, the attacker's code runs with your rights. It could read your
+  recordings, transcripts and Modwen's keys, including from the running Modwen app's memory, and send them over the
+  network. It could also lift its own resource limits. Keeping the master key in the OS keychain doesn't prevent this,
+  because the running app holds it in memory. Import files only from
+  sources you trust.
+- WAV, FLAC, MP3, OGG and AIFF are still parsed inside Modwen itself, as before, with the same exposure to a flaw in
+  libsndfile.
+- FFmpeg's version is fixed by `uv.lock`, so FFmpeg security fixes reach users only through a Modwen release
+  ([releasing.md §1](releasing.md#ffmpeg-and-pyav-security-check)).
+
+**What corruption Modwen can't detect.** MP4 has no checksums, so some damage looks exactly like a valid file. A
+cut mid-box or mid-packet, missing packets, broken fragment headers and audio with no finite sample are refused as
+damaged. These cases are not:
+- A fragmented file cut exactly on a fragment boundary imports as a shorter recording.
+- A cut that removes only trailing metadata or padding, with all audio intact, imports.
+- A changed movie or media timescale (or edit value) can import as a shorter recording. It looks exactly like a
+  real trim.
+- In a fragmented file, changed fragment values with no structural defect, such as default sample sizes, flags or
+  the decode time, can make FFmpeg skip a whole fragment, so the file imports shorter.
+- A fragment decode-time box (`tfdt`) too short for its version isn't refused. In tests no audio was lost; one such
+  file was refused as too long, with a wrong length in the message.
+- Changed audio bytes that still decode can't be detected.
+- The other way round: a malformed fragmented file whose last box inside a `moof` or `traf` has size 1 (a 64-bit
+  size) with no room left for that size is refused as damaged, even though no audio would be lost.
+
+**Known low-severity issues.**
+
+| Issue | Impact | Follow-up |
+|---|---|---|
+| A file with a size-0 `mdat` whose video runs past its audio, cut in the video part, imports. | No audio is lost; only video, which Modwen doesn't keep anyway. | Compare every track's end with the file size, if wanted. |
+| Some messages are imprecise: a few corrupt files say "no audio" instead of "damaged", a one-sample file says "not supported", and a corrupt fragment length can give a false "too long" length. | Wording only. Nothing is imported. | Fix where cheap. |
+| A compromised decoder that hands its pipe to another process keeps the engine waiting after the wall timer kills it, so one import slot is lost until Modwen restarts. | Needs code execution in the child, which already has your full rights (above). | Read the pipe with a timeout. |
+| Two slow hostile files, such as a small file that decodes to nearly 6 hours of audio, can hold both import slots for up to the wall or CPU limit. A third import waits with no message. | Availability only; you must choose the files. | None now. |
+| On Windows the job's CPU limit counts user-mode time only and is checked periodically; the engine also opens the child with more access rights than it needs. | Time spent in the kernel doesn't count towards the CPU limit; the 90-minute wall timer still applies. | Narrow the access rights. |
+
+The extra walk over a fragmented file's top-level boxes, which could add over a minute on a hostile file, is fixed:
+the fragment check reuses the `moov` it was given.
+
+**Verification status.**
+
+| Where | Status |
+|---|---|
+| Windows, from source | Tested: Python 3.11 / PyAV 18.1 and Python 3.12 / PyAV 19.0.1, full test suites and a real engine. |
+| macOS | **Not verified.** Waiting for a run of `bash scripts/verify-macos-import.sh` on a Mac ([testing-guide.md](testing-guide.md#a9-verify-mp4-mov-and-m4a-import-on-a-mac)). |
+| CI | Not verified for this change. |
+| Packaged apps (installers, desktop app, release zip) | Not verified. |
+| Intel Macs | Not tested. |
+
 ---
 
 ## 11. Notification now, email later
@@ -1021,6 +1125,8 @@ A daily job enforces these. "Delete meeting" removes everything immediately.
 | Crash mid-meeting | Lost audio | 30-second encrypted chunks written as recording happens; resume on restart |
 | Wrong recipients or data leak | Confidential notes sent to the wrong people | Approval required, external-domain warning, recipients never taken from the LLM, no transcript attachment |
 | Recording without consent | Legal or trust problem | Consent step, visible indicator, logging |
+| Hostile or damaged MP4, MOV or M4A file | A crash, hang or memory bomb; with an FFmpeg exploit, code running with your rights | Decoding in a separate, resource-limited process (not a sandbox), FFmpeg updates through releases, import only trusted files (§10.1) |
+| Undetectable corruption in an imported file | A shorter recording with no warning | Structural checks; the remaining cases are listed in §10.1 |
 
 ---
 

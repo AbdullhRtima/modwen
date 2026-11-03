@@ -31,6 +31,45 @@ uv run ruff check --select E9,F modwen tests # no errors
 gh run list --limit 3                        # the last CI run on main is green (macOS + Windows)
 ```
 
+### FFmpeg and PyAV security check
+
+**Required on every release.** MP4, MOV and M4A imports are decoded by the FFmpeg inside PyAV's wheels, and
+`uv.lock` fixes which version users get. A fix in FFmpeg reaches users only through a Modwen release. The decoder
+runs in a resource-limited process but not in a sandbox (see
+[system-design.md §10.1](system-design.md#101-imported-recordings-mp4-mov-m4a)), so an FFmpeg flaw that a crafted
+file can reach matters.
+
+1. Record what ships, for each supported Python (the lock holds a different `av` for each). Separate environments
+   under `.tmp/` keep your `.venv` as it is:
+
+   ```bash
+   for PY in 3.11 3.12; do
+     UV_PROJECT_ENVIRONMENT=.tmp/venv-$PY uv run --frozen --python $PY \
+       python -c "import sys, av; print(sys.version.split()[0], av.__version__, av.ffmpeg_version_info)"
+   done
+   ```
+
+   At the time of writing that is PyAV 18.1.0 with FFmpeg 8.1.2 on Python 3.11, and PyAV 19.0.1 with FFmpeg 9.0.2
+   on Python 3.12.
+2. Check [FFmpeg's security page](https://ffmpeg.org/security.html) and
+   [PyAV's releases](https://github.com/PyAV-Org/PyAV/releases) for fixes after those versions, especially in the
+   mov/mp4 demuxer and the decoders Modwen accepts: AAC, ALAC, MP3, Opus, FLAC, AC-3/E-AC-3 and PCM.
+3. If a fix applies, run `uvx --from 'uv>=0.9' uv lock --upgrade-package av`, rerun the full test suite on both
+   Python 3.11 and 3.12 (the import tests run real FFmpeg), and release. The `uv lock` in step 2 below only updates
+   Modwen's own version; it does not upgrade `av`.
+4. If no fixed `av` wheel exists yet, say so in the release notes; the maintainer decides whether to ship.
+5. Between releases too: when an advisory names a fixed FFmpeg version above the locked one, a release with the
+   bump should follow. The timing is the maintainer's call.
+6. Optional: the same check for libsndfile in the `soundfile` wheel, which still parses WAV, FLAC, MP3, OGG and
+   AIFF inside the engine.
+
+Record the versions you checked in the release notes. Don't claim a version is free of known flaws unless you
+checked a primary source for it.
+
+MP4, MOV and M4A import on macOS is **not verified** until `bash scripts/verify-macos-import.sh` has passed on a Mac
+([testing-guide.md](testing-guide.md#a9-verify-mp4-mov-and-m4a-import-on-a-mac)). Windows results don't stand in for
+it, and release notes must not say otherwise.
+
 ## 2. Bump the version
 
 The version lives in five places (the desktop app's `tauri.conf.json`, `Cargo.toml` and `package.json` too).

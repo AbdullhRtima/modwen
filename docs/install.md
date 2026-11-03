@@ -40,6 +40,41 @@ You can change any of this later in **Settings**.
 
 **Tip:** use headphones in online meetings, so other people's voices don't leak into your microphone.
 
+## 5. Import a recording
+
+Press **Import recording** on Home and choose a file. Modwen transcribes it and writes the notes, the same as a
+meeting you recorded.
+
+- **Audio files:** WAV, FLAC, MP3, OGG and AIFF.
+- **Video and audio files:** MP4, MOV and M4A. Modwen takes the audio and ignores the video; no video is kept.
+  It reads AAC, ALAC, MP3, Opus, FLAC, AC-3, E-AC-3 and common PCM audio. If a file has several audio tracks,
+  Modwen uses the one the file marks as default, or else the first.
+- **Limits:** up to 8 GB per file and 6 hours of audio. Copy-protected (DRM) files can't be imported.
+- **Local only:** the file is read on your computer, with no internet needed, and kept encrypted while it's imported.
+
+**If a file is refused,** Modwen says why (not supported, no audio, damaged, empty, too long or too large) and
+imports nothing. Try another copy of the file, or export it as WAV or MP3.
+
+**If Modwen stops during an import,** for example because the computer shut down, the next start removes the partial
+import and shows an **Import didn't finish** entry under *Needs your attention*. Press **Import again** and choose
+the same file, or delete the entry. Your original file is never changed.
+
+**Damaged files.** Modwen refuses files it can tell are damaged or cut off, but MP4 has no checksums, so some damage
+can't be detected: a damaged file can occasionally import as a shorter recording. Details:
+[system-design.md §10.1](system-design.md#101-imported-recordings-mp4-mov-m4a).
+
+**Security of video files.** MP4, MOV and M4A files are decoded by FFmpeg in a separate process with memory, CPU and
+time limits. That contains crashes, hangs and runaway memory use caused by a damaged or hostile file. It is **not a
+sandbox**: the process runs as your user account, with the same access to your files, your network and the running
+Modwen app as Modwen itself. A file that exploits a security flaw in FFmpeg could read your recordings, transcripts
+and Modwen's keys, including from the running Modwen app, and send them over the network. **Import files only from
+sources you trust.** WAV, FLAC, MP3, OGG and AIFF are read inside Modwen itself, as before. FFmpeg's version is
+fixed in each Modwen release, so FFmpeg security fixes reach you only through a Modwen update.
+
+- **Windows:** the limits are enforced by a job object and have been tested.
+- **macOS:** the limits are implemented but **not verified** on a Mac yet.
+- Neither platform runs the decoder in an OS sandbox.
+
 ## Where your data lives
 
 | | Location |
@@ -59,3 +94,4 @@ It contains the database, encrypted recordings and downloaded models. Delete tha
 | "AI model offline" | Settings → AI model → *Start* (managed), or start your own server and press *Test* |
 | Notes failed | The transcript is saved. Fix the AI model, then press **Retry notes** on the meeting. |
 | Port 8080 already in use | Another AI server is running. Use it via "Use my own local AI server", or stop it. |
+| macOS 13: the first start fails while setting up, with an error that a package "only has wheels for `macosx_14_0_arm64`" | A known setup problem on Apple Silicon Macs running macOS 13, older than video import: some packages Modwen locks (such as [MLX](https://ml-explore.github.io/mlx/build/html/install.html), PyAV, ONNX Runtime and PyTorch) only publish Mac builds for macOS 14 and later. It is being investigated; there is no workaround in this release. |
