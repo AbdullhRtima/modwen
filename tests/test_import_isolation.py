@@ -24,7 +24,7 @@ import pytest
 
 from modwen.audio import decoder as D, decoder_child as C, importer as I
 from modwen.audio.chunks import ChunkWriter
-from tests.test_import_media import _encode_audio, make_media
+from tests.test_import_media import FRAGMENTED, _encode_audio, make_media, top_boxes
 from tests.test_import_preflight import (FULL, find, parse, put, ser, sound_entry, stbl, stco, stsc_bomb, trak)
 from tests.test_import_safety import box, rewrite
 
@@ -623,3 +623,101 @@ def test_f28_intact_edit_lists_import_as_before(data_dir, edits, seconds):
     scale = int.from_bytes(data[mvhd + 16:mvhd + 20], "big")
     changed = edit_list(data, [(int(span * scale), -1 if at < 0 else int(at * 48000)) for span, at in edits])
     assert decode(data_dir, changed)[0] / 16000 == pytest.approx(seconds, abs=0.3)
+
+
+def every(value, channels=(0, 1)):
+    def change(samples):
+        samples[list(channels)] = value
+    return change
+
+
+@pytest.mark.parametrize("codec", ["pcm_f32le", "pcm_f32be"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "+inf", "-inf"])
+def test_f29_audio_with_no_finite_sample_is_damage_not_silence(data_dir, codec, value):
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, float_pcm(codec, change=every(value)))
+
+
+def test_f29_holds_without_resampling_too(data_dir):
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, float_pcm("pcm_f32le", rate=16000, change=every(float("nan"))))
+
+
+def test_f29_one_lost_channel_still_imports_the_other(data_dir):
+    samples, writer = decode(data_dir, float_pcm("pcm_f32le", change=every(float("nan"), [0])))
+    audio = np.concatenate(writer.blocks)
+    assert samples == pytest.approx(32000, abs=64) and np.isfinite(audio).all()
+    assert np.abs(audio).max() == pytest.approx(0.15, abs=0.01)  # the right channel's tone, halved by the downmix
+
+
+def test_f29_only_a_few_finite_samples_still_import(data_dir):
+    def change(channels):
+        channels[:, :] = float("nan")
+        channels[:, 50000:50010] = 0.3
+
+    assert decode(data_dir, float_pcm("pcm_f32le", change=change))[0] == pytest.approx(32000, abs=64)
+
+
+# QA 31's F30 files: QA 28's mutations of this same 6-second fragmented file, as {offset from the first tfhd: byte}.
+# Each loses the first of three fragments with every byte present, and imported 4.03 s before task 33.
+QA_F30 = {
+    "0025-tfhd-past-traf": {0: 0x7f, 1: 0xff, 2: 0xff, 3: 0xff},
+    "0214-tfhd-past-traf-2^32": {0: 0xff, 1: 0xff, 2: 0xff, 3: 0xff},  # 0472 is the same
+    "0296-tfhd-64-bit-size-past-traf": {3: 0x01},
+    "0194-tfdt-past-traf": {8: 0xb3, 29: 0xf4, 38: 0x5d, 41: 0xf1},
+    "0042-tfhd-flags-overread": {8: 0x96, 11: 0xeb, 21: 0xc2, 24: 0x53, 47: 0x82},
+    "0315-tfhd-names-no-track": {11: 0xa6, 12: 0x77, 25: 0xfc, 31: 0xd9, 34: 0x83, 47: 0x84},
+    "0121-tfhd-size-0-swallows-trun": {3: 0x00},  # 0350 is the same
+}
+
+
+def first_tfhd(data):
+    at = data.index(b"tfhd", [at for at, _, kind in top_boxes(data) if kind == b"moof"][0]) - 4
+    assert data[at:at + 16] == bytes.fromhex("0000001c746668640002003800000001")  # QA's base, on both av versions
+    return at
+
+
+def qa_f30(data, name):
+    out, at = bytearray(data), first_tfhd(data)
+    for offset, value in QA_F30[name].items():
+        out[at + offset] = value
+    return bytes(out)
+
+
+@pytest.mark.parametrize("name", list(QA_F30))
+def test_f30_a_broken_fragment_header_is_damage_not_a_shorter_recording(data_dir, name):
+    data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
+    assert decode(data_dir, data)[0] / 16000 == pytest.approx(6, abs=0.1)
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, qa_f30(data, name))
+
+
+@pytest.mark.parametrize("offset,value,seconds", [(8, 150, 6), (12, 0x77, None), (15, 0x02, None)],
+                         ids=["version-only-loses-nothing", "track-1996488705-alone", "track-2-alone"])
+def test_f30_what_ffmpeg_reads_decides(data_dir, offset, value, seconds):
+    """FFmpeg skips a tfhd's version, so changing only that loses nothing and still imports. A tfhd naming no track
+    followed by an intact trun is an error in FFmpeg itself, so it was refused before task 33 and still is."""
+    data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
+    out = bytearray(data)
+    out[first_tfhd(data) + offset] = value
+    if seconds is None:
+        with pytest.raises(I.ImportRefused, match="damaged"):
+            decode(data_dir, bytes(out))
+    else:
+        assert decode(data_dir, bytes(out))[0] / 16000 == pytest.approx(seconds, abs=0.1)
+
+
+FRAG = "empty_moov+default_base_moof+frag_keyframe"
+
+
+@pytest.mark.parametrize("fmt,flags,video", [
+    ("mp4", FRAGMENTED, False), ("mp4", FRAGMENTED, True), ("mp4", FRAG, False), ("mp4", "cmaf", False),
+    ("mp4", "dash", False), ("mp4", "dash+global_sidx", False), ("mp4", FRAG + "+separate_moof", True),
+    ("mp4", "delay_moov+frag_keyframe", False), ("mp4", FRAG + "+omit_tfhd_offset", False), ("mov", FRAG, False),
+    ("ismv", None, False), ("ismv", None, True),
+], ids=["frag", "frag-video", "frag_keyframe", "cmaf", "dash", "global_sidx", "separate_moof-video", "delay_moov",
+        "omit_tfhd_offset", "frag-mov", "ismv", "ismv-video"])
+def test_f30_valid_fragmented_files_import_whole(data_dir, fmt, flags, video):
+    data = make_media(data_dir, seconds=6, fmt=fmt, movflags=flags, video=video)
+    assert b"moof" in data
+    assert decode(data_dir, data)[0] / 16000 == pytest.approx(6, abs=0.1)

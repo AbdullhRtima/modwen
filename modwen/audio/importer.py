@@ -65,6 +65,9 @@ LENGTH_SLACK_SECONDS = 1.0  # so a file of exactly 6 hours that decodes a few ms
 MAX_PLAIN_HOURS = 10_000  # 8 GB of the leanest speech is about 4,000 hours; beyond this the length itself is false
 # Top-level boxes of these files. One running past the end was cut off; anything else there is trailing junk.
 KNOWN_BOXES = {b"moov", b"mdat", b"moof", b"mfra", b"free", b"skip", b"uuid", b"udta", b"ftyp", b"wide", b"meta"}
+# Bytes a tfhd's flags add after its track id: base data offset, sample description, default duration, size and flags.
+# FFmpeg's mov_read_tfhd reads these, in this order, whatever the box's own size says.
+TFHD_FIELDS = {0x01: 8, 0x02: 4, 0x08: 4, 0x10: 4, 0x20: 4}
 
 
 # The decoder child sends these numbers, never text.
@@ -241,9 +244,12 @@ def is_media_container(sealed: SealedTempFile) -> bool:
     return head[4:] in MEDIA_BOXES
 
 
-def _boxes(sealed, start: int, end: int, budget: list[int] | None = None, limit: int | None = None):
+def _boxes(sealed, start: int, end: int, budget: list[int] | None = None, limit: int | None = None,
+           declared: bool = False):
     """(type, body start, box end) of each box between two offsets. Stops quietly at a broken one, as FFmpeg does.
-    Running out of budget or ``limit`` refuses the file, as a safety limit rather than as damage."""
+    Running out of budget or ``limit`` refuses the file, as a safety limit rather than as damage.
+
+    With ``declared``, the box end is the one its size claims, even past ``end``, and None for a size of 0."""
     pos = start
     for _ in range(MAX_BOXES if limit is None else limit):
         if pos + 8 > end:
@@ -255,13 +261,17 @@ def _boxes(sealed, start: int, end: int, budget: list[int] | None = None, limit:
         sealed.seek(pos)
         head = sealed.read(16)
         size, kind, body = int.from_bytes(head[:4], "big"), head[4:8], pos + 8
+        to_end = size == 0
         if size == 1:  # the real size follows, in 64 bits
             size, body = int.from_bytes(head[8:16], "big"), pos + 16
-        elif size == 0:  # to the end of the file
+        elif to_end:  # to the end of the file
             size = end - pos
         if size < body - pos:
             return
-        yield kind, body, min(pos + size, end)
+        if declared:
+            yield kind, body, None if to_end else pos + size
+        else:
+            yield kind, body, min(pos + size, end)
         pos += size
     if pos + 8 <= end:
         raise ImportRefused(NOT_SUPPORTED)
@@ -326,7 +336,7 @@ def _check_boxes(reader, size_bytes: int, sealed: SealedTempFile) -> None:
 def _check_mdhd(reader, body: int, stop: int) -> None:
     """Without a timescale FFmpeg guesses the movie's, so an intact edit list then keeps a fraction of the audio."""
     reader.seek(body)
-    at = 20 if reader.read(1) == b"" else 12
+    at = 20 if reader.read(1) == b"\x01" else 12
     reader.seek(body + at)
     if body + at + 4 > stop or int.from_bytes(reader.read(4), "big") == 0:
         raise ImportRefused(DAMAGED)
@@ -398,6 +408,59 @@ def is_encrypted(sealed: SealedTempFile) -> bool:
         reader.detach()
 
 
+def check_fragments(sealed: SealedTempFile) -> None:
+    """Refuse a fragment whose header FFmpeg can't read whole: it skips that fragment with no error, so the file
+    would import shorter, every byte of it present. Valid files never have these; a damaged header that still looks
+    valid, such as a changed decode time, can't be told apart and isn't caught here."""
+    moov = _find_moov(sealed)
+    if moov is None:
+        return
+    reader = io.BufferedReader(sealed, buffer_size=64 * 1024)  # detached below: the caller owns the sealed file
+    try:
+        tracks = _track_ids(reader, *moov)
+        budget = [MAX_FRAGMENT_BOXES]
+        for kind, body, stop in _boxes(reader, 0, sealed.size, None, MAX_TOP_BOXES):
+            if kind == b"moof":
+                for inner, start, end in _boxes(reader, body, stop, budget):
+                    if inner == b"traf":
+                        _check_traf(reader, start, end, budget, tracks)
+    finally:
+        reader.detach()
+
+
+def _track_ids(reader, start: int, end: int) -> set[int]:
+    """The track ids the moov's tkhd boxes give, which FFmpeg matches a fragment's tfhd against."""
+    ids = set()
+    for kind, body, stop in _boxes(reader, start, end):
+        if kind == b"trak":
+            for inner, at, _ in _boxes(reader, body, stop):
+                if inner == b"tkhd":
+                    reader.seek(at)
+                    head = reader.read(24)
+                    where = 20 if head[:1] == b"\x01" else 12
+                    if len(head) >= where + 4:
+                        ids.add(int.from_bytes(head[where:where + 4], "big"))
+    return ids
+
+
+def _check_traf(reader, start: int, end: int, budget: list[int], tracks: set[int]) -> None:
+    """A tfhd or tfdt that runs past its traf, or to its end with a size of 0, takes the trun after it along; a tfhd too
+    short for the fields its flags declare makes FFmpeg read the next box as those fields; one naming no track is
+    skipped. Any of these loses the fragment. The tfhd's version is left alone, as FFmpeg skips it."""
+    for kind, body, ends in _boxes(reader, start, end, budget, declared=True):
+        if kind not in (b"tfhd", b"tfdt"):
+            continue
+        if ends is None or ends > end:
+            raise ImportRefused(DAMAGED)
+        if kind == b"tfhd":
+            reader.seek(body)
+            head = reader.read(8)
+            flags = int.from_bytes(head[1:4], "big")
+            needs = 8 + sum(size for bit, size in TFHD_FIELDS.items() if flags & bit)
+            if len(head) < 8 or body + needs > ends or int.from_bytes(head[4:8], "big") not in tracks:
+                raise ImportRefused(DAMAGED)
+
+
 def _finite(samples: np.ndarray) -> np.ndarray:
     """Silence in place of NaN and infinity. One such sample in a float PCM file isn't damage, but the resampler would
     spread it, and the parent rightly refuses any non-finite audio from this process."""
@@ -432,10 +495,13 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float, promise
     shape = rs = None
     rate = samples = arrived = 0
     reached = 0.0
+    heard = False  # any finite sample at all, before cleaning
 
     def write(frame) -> None:
-        nonlocal samples
-        channels = _finite(frame.to_ndarray().reshape(-1, frame.layout.nb_channels))  # so one channel keeps the other
+        nonlocal samples, heard
+        raw = frame.to_ndarray().reshape(-1, frame.layout.nb_channels)
+        heard = heard or bool(np.isfinite(raw).any())  # checked only until the first finite sample
+        channels = _finite(raw)  # so one channel keeps the other
         mono = _finite(channels.mean(axis=1).astype(np.float32))  # huge finite values can overflow the sum
         samples += mono.size
         if samples / rate > longest:
@@ -479,6 +545,8 @@ def _decode_track(container, track, writer: ChunkWriter, longest: float, promise
         write(plain)
     if rs is not None:
         writer.write(_finite(rs.resample_chunk(np.zeros(0, dtype=np.float32), last=True)))
+    if samples and not heard:  # NaN or infinity throughout: no audio to clean, only damage that would import as silence
+        raise ImportRefused(DAMAGED)
     return samples / rate
 
 
@@ -498,6 +566,9 @@ def decode_media_into(sealed: SealedTempFile, writer: ChunkWriter, beat=lambda: 
     if _find_moov(sealed) is None:  # with no moov, FFmpeg looks inside free boxes for one
         raise ImportRefused(DAMAGED)
     fragmented = is_fragmented(sealed)
+    if fragmented:
+        check_fragments(sealed)
+        beat()
     sealed.seek(0)
     try:
         kwargs = {"metadata_errors": "replace"} if int(av.__version__.split(".")[0]) < 19 else {}
