@@ -16,6 +16,7 @@ from tests.test_import_media import (FRAGMENTED, _nothing_left, _post, app as ap
 
 av = pytest.importorskip("av")
 CONTAINERS = {b"moov", b"trak", b"mdia", b"minf", b"stbl", b"edts", b"dinf"}
+MDHD = struct.pack(">I4s", 32, b"mdhd") + bytes(12) + struct.pack(">II", 48000, 0) + bytes(4)  # every track has one
 
 
 def box(kind, body):
@@ -105,7 +106,7 @@ def test_padding_cannot_skip_drm_or_fragment_checks(data_dir, monkeypatch, fragm
 
 def test_nested_box_budget_is_shared_between_tracks(data_dir, monkeypatch):
     # Each individual level has fewer than MAX_BOXES; total work must still be bounded.
-    body = box(b"moov", box(b"trak", box(b"mdia", b"") * 8) * 8)
+    body = box(b"moov", box(b"trak", box(b"mdia", MDHD) * 8) * 8)
     monkeypatch.setattr(importer, "MAX_BOXES", 16)
     with importer.SealedTempFile(data_dir) as sealed:
         sealed.append(body)
@@ -187,7 +188,7 @@ def test_six_hour_pcm_sample_count_is_not_a_packet_count():
               box(b"stts", struct.pack(">IIII", 0, 1, n, 1)) +
               box(b"stsc", struct.pack(">IIIII", 0, 1, 1, n, 1)) +
               box(b"stco", struct.pack(">III", 0, 1, 100)))
-    data = box(b"moov", box(b"trak", box(b"mdia", box(b"hdlr", bytes(8) + b"soun") +
+    data = box(b"moov", box(b"trak", box(b"mdia", MDHD + box(b"hdlr", bytes(8) + b"soun") +
                box(b"minf", box(b"stbl", tables)))))
     data += struct.pack(">I4s", n * 4 + 8, b"mdat")
 

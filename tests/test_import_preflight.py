@@ -371,13 +371,17 @@ def test_message_says_limit_or_damage_truthfully(data_dir, monkeypatch, attack, 
     assert refused(data_dir, monkeypatch, REFUSED[attack](make_media(data_dir, seconds=2))) == message
 
 
+# Every track has one (task 30): without it FFmpeg guesses the timescale.
+MDHD = box(b"mdhd", FULL + bytes(8) + struct.pack(">II", 48000, 0) + bytes(4))
+
+
 def _audio_track(sub=b"soun", tag=b"mp4a", samples=1, delta=1024, chunks=1, per=1, edits=0):
     tables = box(b"stsd", FULL + struct.pack(">I", 1) + box(tag, bytes(28))) + \
         box(b"stts", FULL + struct.pack(">III", 1, samples, delta)) + \
         box(b"stsc", FULL + struct.pack(">IIII", 1, 1, per, 1)) + \
         box(b"stsz", FULL + struct.pack(">II", 1, samples)) + \
         box(b"stco", FULL + struct.pack(">I", chunks) + bytes(4 * chunks))
-    body = box(b"mdia", box(b"hdlr", bytes(8) + sub + bytes(12)) + box(b"minf", box(b"stbl", tables)))
+    body = box(b"mdia", MDHD + box(b"hdlr", bytes(8) + sub + bytes(12)) + box(b"minf", box(b"stbl", tables)))
     if edits:
         body = box(b"edts", box(b"elst", FULL + struct.pack(">I", edits) + bytes(12 * edits))) + body
     return box(b"trak", body)
