@@ -245,11 +245,13 @@ def is_media_container(sealed: SealedTempFile) -> bool:
 
 
 def _boxes(sealed, start: int, end: int, budget: list[int] | None = None, limit: int | None = None,
-           declared: bool = False):
+           declared: bool = False, strict: bool = False):
     """(type, body start, box end) of each box between two offsets. Stops quietly at a broken one, as FFmpeg does.
     Running out of budget or ``limit`` refuses the file, as a safety limit rather than as damage.
 
-    With ``declared``, the box end is the one its size claims, even past ``end``, and None for a size of 0."""
+    With ``declared``, the box end is the one its size claims, even past ``end``, and None for a size of 0. With
+    ``strict``, a box too small for its own header, or a 64-bit size with no room for it, is damage when bytes follow
+    its first eight: FFmpeg stops reading the parent there, skipping whatever comes after."""
     pos = start
     for _ in range(MAX_BOXES if limit is None else limit):
         if pos + 8 > end:
@@ -266,7 +268,9 @@ def _boxes(sealed, start: int, end: int, budget: list[int] | None = None, limit:
             size, body = int.from_bytes(head[8:16], "big"), pos + 16
         elif to_end:  # to the end of the file
             size = end - pos
-        if size < body - pos:
+        if size < body - pos or (strict and body > end):
+            if strict and pos + 8 < end:
+                raise ImportRefused(DAMAGED)
             return
         if declared:
             yield kind, body, None if to_end else pos + size
@@ -319,6 +323,8 @@ def _check_boxes(reader, size_bytes: int, sealed: SealedTempFile) -> None:
             return end_of_boxes()
         size, header, kind = int.from_bytes(head[:4], "big"), 8, head[4:8]
         if size == 0:
+            if kind not in KNOWN_BOXES and is_fragmented(sealed):  # FFmpeg skips it, and every fragment after it
+                raise ImportRefused(DAMAGED)
             return
         if size == 1:
             size, header = int.from_bytes(head[8:16], "big"), 16
@@ -408,11 +414,13 @@ def is_encrypted(sealed: SealedTempFile) -> bool:
         reader.detach()
 
 
-def check_fragments(sealed: SealedTempFile) -> None:
+def check_fragments(sealed: SealedTempFile, moov: tuple[int, int] | None) -> None:
     """Refuse a fragment whose header FFmpeg can't read whole: it skips that fragment with no error, so the file
     would import shorter, every byte of it present. Valid files never have these; a damaged header that still looks
-    valid, such as a changed decode time, can't be told apart and isn't caught here."""
-    moov = _find_moov(sealed)
+    valid, such as a changed decode time, can't be told apart and isn't caught here.
+
+    ``moov`` is the one the caller found. In a moof, a box of size 0 runs to the moof's end, which loses nothing only
+    if it is the traf itself."""
     if moov is None:
         return
     reader = io.BufferedReader(sealed, buffer_size=64 * 1024)  # detached below: the caller owns the sealed file
@@ -421,9 +429,11 @@ def check_fragments(sealed: SealedTempFile) -> None:
         budget = [MAX_FRAGMENT_BOXES]
         for kind, body, stop in _boxes(reader, 0, sealed.size, None, MAX_TOP_BOXES):
             if kind == b"moof":
-                for inner, start, end in _boxes(reader, body, stop, budget):
+                for inner, start, end in _boxes(reader, body, stop, budget, declared=True, strict=True):
+                    if end is None and inner != b"traf":
+                        raise ImportRefused(DAMAGED)
                     if inner == b"traf":
-                        _check_traf(reader, start, end, budget, tracks)
+                        _check_traf(reader, start, stop if end is None else min(end, stop), budget, tracks)
     finally:
         reader.detach()
 
@@ -447,7 +457,7 @@ def _check_traf(reader, start: int, end: int, budget: list[int], tracks: set[int
     """A tfhd or tfdt that runs past its traf, or to its end with a size of 0, takes the trun after it along; a tfhd too
     short for the fields its flags declare makes FFmpeg read the next box as those fields; one naming no track is
     skipped. Any of these loses the fragment. The tfhd's version is left alone, as FFmpeg skips it."""
-    for kind, body, ends in _boxes(reader, start, end, budget, declared=True):
+    for kind, body, ends in _boxes(reader, start, end, budget, declared=True, strict=True):
         if kind not in (b"tfhd", b"tfdt"):
             continue
         if ends is None or ends > end:
@@ -563,11 +573,12 @@ def decode_media_into(sealed: SealedTempFile, writer: ChunkWriter, beat=lambda: 
     beat()
     check_boxes(sealed)
     beat()
-    if _find_moov(sealed) is None:  # with no moov, FFmpeg looks inside free boxes for one
+    moov = _find_moov(sealed)
+    if moov is None:  # with no moov, FFmpeg looks inside free boxes for one
         raise ImportRefused(DAMAGED)
     fragmented = is_fragmented(sealed)
     if fragmented:
-        check_fragments(sealed)
+        check_fragments(sealed, moov)
         beat()
     sealed.seek(0)
     try:

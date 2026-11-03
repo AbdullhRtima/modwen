@@ -721,3 +721,117 @@ def test_f30_valid_fragmented_files_import_whole(data_dir, fmt, flags, video):
     data = make_media(data_dir, seconds=6, fmt=fmt, movflags=flags, video=video)
     assert b"moof" in data
     assert decode(data_dir, data)[0] / 16000 == pytest.approx(6, abs=0.1)
+
+
+# Security 34's rules B, E and A: fragment shapes FFmpeg reads without an error while skipping a fragment's audio.
+def children(data, start, end):
+    """(offset, size, type) of each box between two offsets of an intact file."""
+    at, out = start, []
+    while at + 8 <= end:
+        size = int.from_bytes(data[at:at + 4], "big")
+        out.append((at, size, data[at + 4:at + 8]))
+        at += size
+    return out
+
+
+def fragment(data, nth=0):
+    """(moof offset, moof size, traf offset, traf size) of the nth fragment of an intact file."""
+    moof, size, _ = [b for b in top_boxes(data) if b[2] == b"moof"][nth]
+    traf, traf_size, _ = [b for b in children(data, moof + 8, moof + size) if b[2] == b"traf"][0]
+    return moof, size, traf, traf_size
+
+
+def in_fragment(data, kind, nth=0):
+    moof, size, traf, traf_size = fragment(data, nth)
+    return [at for at, _, name in children(data, moof + 8, moof + size) + children(data, traf + 8, traf + traf_size)
+            if name == kind][0]
+
+
+def set_size(data, kind, value, large=None, nth=0):
+    out, at = bytearray(data), in_fragment(data, kind, nth)
+    out[at:at + 4] = value.to_bytes(4, "big")
+    if large is not None:
+        out[at + 8:at + 16] = large.to_bytes(8, "big")
+    return bytes(out)
+
+
+def zero(data, at, count):
+    return data[:at] + bytes(count) + data[at + count:]
+
+
+def append_to_traf(data, blob):
+    """``blob`` as the first traf's last child, with the moof, the traf and the trun's data offset grown to match."""
+    out = bytearray(data)
+    moof, size, traf, traf_size = fragment(data)
+    trun = in_fragment(data, b"trun")
+    assert int.from_bytes(data[trun + 8:trun + 12], "big") & 1  # the trun gives a data offset, from the moof
+    for at, grow in ((moof, len(blob)), (traf, len(blob)), (trun + 16, len(blob))):
+        out[at:at + 4] = (int.from_bytes(out[at:at + 4], "big") + grow).to_bytes(4, "big")
+    return bytes(out[:traf + traf_size] + blob + out[traf + traf_size:])
+
+
+def frag_0015(data):
+    """QA 28's frag-0015 on 3.11: a zero run from the second moof's mfhd over the next mdat's header."""
+    return zero(data, fragment(data, 1)[0] + 8, 2002)
+
+
+def mdat_header_zeroed(data):
+    mdat = [at for at, _, kind in top_boxes(data) if kind == b"mdat" and at > fragment(data, 1)[0]][0]
+    return zero(data, mdat, 8)
+
+
+LOSES_A_FRAGMENT = {
+    "B-tfdt-size-4": lambda d: set_size(d, b"tfdt", 4),
+    "B-tfdt-size-7": lambda d: set_size(d, b"tfdt", 7),
+    "B-tfdt-size-2": lambda d: set_size(d, b"tfdt", 2),
+    "B-tfhd-size-4": lambda d: set_size(d, b"tfhd", 4),
+    "B-trun-size-6": lambda d: set_size(d, b"trun", 6),
+    "B-tfdt-size-1-largesize-12": lambda d: set_size(d, b"tfdt", 1, 12),
+    "B-mfhd-size-4": lambda d: set_size(d, b"mfhd", 4),
+    "A-mfhd-size-0": lambda d: set_size(d, b"mfhd", 0),
+    "A+E-frag-0015": frag_0015,
+    "E-top-level-size-0-unknown": mdat_header_zeroed,
+}
+
+
+@pytest.mark.parametrize("name", list(LOSES_A_FRAGMENT))
+def test_f30_rules_b_e_a_a_lost_fragment_is_damage_not_a_shorter_recording(data_dir, name):
+    data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, LOSES_A_FRAGMENT[name](data))
+
+
+def test_f30_rule_b_a_64_bit_size_with_no_room_for_it_is_damage(data_dir):
+    """Size 1 with fewer than 16 bytes left in its traf: FFmpeg stops reading that traf there, and the importer
+    used to read the 64-bit size from beyond the traf."""
+    data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
+    with pytest.raises(I.ImportRefused, match="damaged"):
+        decode(data_dir, append_to_traf(data, bytes.fromhex("00000001") + b"free" + bytes(4)))
+
+
+@pytest.mark.parametrize("name", ["trun-size-0-frag-0264", "traf-size-0", "last-mdat-size-0", "padding-box-in-traf",
+                                  "plain-file-trailing-size-0"])
+def test_f30_rules_b_e_a_leave_readable_shapes_alone(data_dir, name):
+    """A size of 0 on a last box reaches its parent's end, where it ends anyway, so FFmpeg loses nothing: frag-0264's
+    last trun, the moof's last traf and the last mdat. Rule E is for fragmented files only."""
+    data = make_media(data_dir, seconds=6, movflags=None if name.startswith("plain") else FRAGMENTED)
+    changed = {
+        "trun-size-0-frag-0264": lambda d: set_size(d, b"trun", 0),
+        "traf-size-0": lambda d: set_size(d, b"traf", 0),
+        "last-mdat-size-0": lambda d: zero(d, [at for at, _, kind in top_boxes(d) if kind == b"mdat"][-1], 4),
+        "padding-box-in-traf": lambda d: append_to_traf(d, bytes.fromhex("00000010") + b"free" + bytes(8)),
+        "plain-file-trailing-size-0": lambda d: d + bytes(8),
+    }[name](data)
+    assert changed != data
+    assert decode(data_dir, changed)[0] / 16000 == pytest.approx(6, abs=0.1)
+
+
+def test_l10_the_fragment_check_reuses_the_moov_it_is_given(data_dir, monkeypatch):
+    """L10: the moov is found once for the fragment checks, not walked for again over the whole file."""
+    data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
+    walks, find = [], I._find_moov
+    monkeypatch.setattr(I, "_find_moov", lambda sealed: walks.append(1) or find(sealed))
+    with I.SealedTempFile(data_dir) as sealed:
+        sealed.append(data)
+        assert I.decode_media_into(sealed, Writer()) / 16000 == pytest.approx(6, abs=0.1)
+    assert len(walks) == 2  # the moov check and is_fragmented; check_fragments no longer walks for its own
