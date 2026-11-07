@@ -4,6 +4,7 @@ import { api, fmtTs, LiveLine, LiveSpeakerState } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
 import { useI18n } from "../i18n";
+import { liveSpeakerTooltip } from "../liveSpeakerTooltip";
 
 const NAMES_DEBOUNCE_MS = 5000;
 
@@ -50,7 +51,7 @@ function SpeakerLabel({ line }: { line: LiveLine }) {
   // The self person is saved as the literal "You"; show the translated label, as Review does.
   const name = raw === "You" ? t("you") : raw;
   const maybe = state === "maybe";
-  const tip = maybe ? t("liveNameMaybe").replace("{name}", name) : t("liveNameGuess");
+  const tip = liveSpeakerTooltip(maybe, name, t("liveNameMaybe"), t("liveNameGuess"));
   return (
     <span className="nm named" title={tip}>
       <span className="guess"><bdi>{name}</bdi></span>
