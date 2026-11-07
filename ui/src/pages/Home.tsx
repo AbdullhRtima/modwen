@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { api, fmtDuration, Meeting } from "../api";
 import type { Ctx } from "../App";
 import { I } from "../components/icons";
+import LiveNamesNotice from "../components/LiveNamesNotice";
 import { MeetingStatus, useMeetings } from "../components/Sidebar";
 import { fmtDate, useI18n } from "../i18n";
 
@@ -59,6 +60,7 @@ export default function Home({ ctx }: { ctx: Ctx }) {
 
   return (
     <>
+      <LiveNamesNotice ctx={ctx} />
       <div className="hero">
         <div><h1 className="page-title">{t("homeTitle")}</h1><p className="lead">{t("homeLead")}</p></div>
       </div>

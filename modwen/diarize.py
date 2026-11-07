@@ -108,19 +108,31 @@ def shutdown_worker() -> None:
             _POOL = None
 
 
-def _call(fn, *args):
-    """Run ``fn(*args)`` in the worker; restart it once if it died (e.g. out of memory)."""
+def _call(fn, *args, timeout: float | None = None):
+    """Run ``fn(*args)`` in the worker; restart it once if it died (e.g. out of memory).
+
+    ``timeout`` (seconds) bounds the wait for the result: on expiry the job is cancelled if it has not started
+    and ``TimeoutError`` is raised (a job already running in the worker cannot be stopped). If the worker is
+    shut down meanwhile, ``concurrent.futures.CancelledError`` is raised; callers off the main path must catch it.
+    The pool is reset only if it is still the broken one, so two threads that see the same dead pool start
+    one new pool, not two."""
     global _POOL
     from concurrent.futures.process import BrokenProcessPool
 
     for attempt in (1, 2):
+        pool = _pool()
+        future = pool.submit(fn, *args)
         try:
-            return _pool().submit(fn, *args).result()
+            return future.result(timeout)
         except BrokenProcessPool:
             with _POOL_LOCK:
-                _POOL = None
+                if _POOL is pool:
+                    _POOL = None
             if attempt == 2:
                 raise
+        except TimeoutError:
+            future.cancel()
+            raise
     return None
 
 
@@ -254,10 +266,12 @@ class SpeakerEmbedder:
         self._emb = emb_path
 
     def embed(self, audio: np.ndarray, spans: list[tuple[float, float]], *, max_seconds: float = 60.0,
-              min_seconds: float = 10.0, min_piece: float = 1.0) -> tuple[np.ndarray | None, float]:
+              min_seconds: float = 10.0, min_piece: float = 1.0,
+              timeout: float | None = None) -> tuple[np.ndarray | None, float]:
         """Mean normalised embedding of the longest ``spans`` (seconds) up to ``max_seconds``.
 
-        Returns (None, seconds) when there is less than ``min_seconds`` of usable speech."""
+        Returns (None, seconds) when there is less than ``min_seconds`` of usable speech. ``timeout`` bounds the
+        wait for the worker (live use); ``TimeoutError`` or ``CancelledError`` is raised when it is exceeded."""
         pieces, used = [], 0.0
         for a, b in sorted(spans, key=lambda s: s[0] - s[1]):
             if b - a < min_piece or used >= max_seconds:
@@ -267,7 +281,7 @@ class SpeakerEmbedder:
                 continue
             pieces.append(piece)
             used += piece.size / SAMPLE_RATE
-        vecs = [v / (np.linalg.norm(v) or 1.0) for v in (_call(_w_embed, self._emb, self.threads, pieces)
+        vecs = [v / (np.linalg.norm(v) or 1.0) for v in (_call(_w_embed, self._emb, self.threads, pieces, timeout=timeout)
                                                          if pieces else []) if v is not None]
         if not vecs or used < min_seconds:
             return None, used

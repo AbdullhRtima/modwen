@@ -107,6 +107,10 @@ class DiarizationConfig(BaseModel):
     voiceprint_margin: float = 0.05
     voiceprint_suggest: float = 0.60
     remember_my_voice: bool = False  # keep a voiceprint of you (from the mic) to find you in in-person meetings
+    # Live speaker names on the live captions: a guess from saved voiceprints, kept in memory only. The master
+    # switch covers both sources; the second one is for in-person (Room) meetings, which are harder to tell apart.
+    live_names: bool = True
+    live_names_room: bool = True
 
 
 class LLMProfile(BaseModel):

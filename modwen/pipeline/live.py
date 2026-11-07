@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 
 LABELS = {"mic": "You", "system": "Others", "room": "Room"}
 ECHO_COVERAGE = 0.6  # share of a mic utterance during which the remote side was audible
+NAME_WAIT_S = 0.4  # how long a line waits for its name before it is shown without one
 ECHO_PAD = int(0.3 * SAMPLE_RATE)  # the echo reaches the mic a little after the system audio
 
 
@@ -67,7 +68,7 @@ class _Endpointer:
 class LiveTranscriber:
     def __init__(self, engine_factory: Callable[[], object] | None, publish: Callable[[dict], None],
                  meeting_id: str, *, mode: str = "auto", allowed=("ar", "en"), arabic_threshold: float = 0.2,
-                 prompt: str | None = None, max_backlog: int = 4):
+                 prompt: str | None = None, max_backlog: int = 4, identifier=None):
         self.engine_factory = engine_factory
         self.engine = None
         self.publish = publish
@@ -77,6 +78,8 @@ class LiveTranscriber:
         self.th = arabic_threshold
         self.prompt = prompt
         self.max_backlog = max_backlog
+        self.identifier = identifier  # LiveIdentifier or None: provisional speaker names (display only)
+        self._next_id = 0
         self.lines: deque[dict] = deque(maxlen=5000)
         self.paused = False
         self.enabled = engine_factory is not None
@@ -147,6 +150,7 @@ class LiveTranscriber:
                     self.publish({"type": "live_status", "meeting_id": self.meeting_id, "paused": False})
                 continue
             t0 = time.monotonic()
+            name_future = self._submit_name(channel, utt)  # runs beside Whisper; the wait below is short
             try:
                 probs = self.engine.detect_language(utt) if self.mode == "auto" else None
                 lang = choose_language(probs, self.mode, self.allowed, self.th)
@@ -157,11 +161,58 @@ class LiveTranscriber:
             text = clean_text(" ".join(s.text.strip() for s in segs))[0]
             if not text or is_hallucination(text):
                 continue
-            line = {"channel": channel, "speaker": LABELS.get(channel, channel), "start_ms": int(start / 16),
+            self._next_id += 1
+            line = {"id": self._next_id, "channel": channel, "speaker": LABELS.get(channel, channel),
+                    "speaker_name": None, "speaker_state": None, "start_ms": int(start / 16),
                     "text": text, "language": script_language(text),
                     "latency_ms": int((time.monotonic() - t0) * 1000)}
+            if name_future is not None:
+                self._attach_name(line, name_future, t0)
             self.lines.append(line)
             self.publish({"type": "live_line", "meeting_id": self.meeting_id, "line": line})
 
+    def _submit_name(self, channel: str, utt: np.ndarray):
+        if self.identifier is None or self.paused:  # naming is the first thing to give way
+            return None
+        try:
+            return self.identifier.submit(channel, utt)
+        except Exception as exc:
+            log.warning("live names error (%s)", type(exc).__name__)
+            return None
+
+    def _attach_name(self, line: dict, fut, t0: float) -> None:
+        """Put the name on the line if it is ready within NAME_WAIT_S, else send it as a follow-up event."""
+        try:
+            self._apply_name(line, fut.result(timeout=NAME_WAIT_S), t0)
+        except TimeoutError:
+            fut.add_done_callback(lambda f: self._late_name(line, f, t0))
+        except Exception as exc:  # cancelled or failed: the line simply stays unnamed
+            log.warning("live names error (%s)", type(exc).__name__)
+
+    def _apply_name(self, line: dict, name, t0: float) -> bool:
+        if name.name is None or name.state == "other" or not self._running:
+            return False
+        line.update(speaker_name=name.name, speaker_state=name.state,
+                    name_latency_ms=int((time.monotonic() - t0) * 1000))
+        return True
+
+    def _late_name(self, line: dict, fut, t0: float) -> None:
+        try:
+            applied = self._apply_name(line, fut.result(), t0)
+        except Exception:
+            return
+        if applied:
+            self.publish({"type": "live_speaker", "meeting_id": self.meeting_id, "id": line["id"],
+                          "speaker_name": line["speaker_name"], "speaker_state": line["speaker_state"]})
+
+    def names_status(self) -> str:
+        """"on" | "paused" | "off" for the recorder status (no personal data)."""
+        if self.identifier is None:
+            return "off"
+        state = self.identifier.status()
+        return "paused" if state == "on" and self.paused else state
+
     def stop(self) -> None:
         self._running = False
+        if self.identifier is not None:
+            self.identifier.close()

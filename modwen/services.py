@@ -64,6 +64,7 @@ class Services:
         self._job_seq = itertools.count()
         self._pending: dict[str, int] = {}  # meeting id -> jobs queued or running for it
         self._pending_lock = threading.Lock()
+        self._active_jobs = 0  # post-meeting jobs running now; live naming steps aside while this is above 0
         from modwen.runtime.jobs import JobManager
         from modwen.runtime.llm_manager import ManagedLLM
 
@@ -87,7 +88,7 @@ class Services:
         self.recorder = Recorder(cfg, self.store, self.keystore, self.bus.publish,
                                  on_stopped=self.enqueue_processing,
                                  live_engine_factory=self.live_engine if cfg.stt.live.provider != "none" else None,
-                                 source_factory=source_factory)
+                                 source_factory=source_factory, identifier_factory=self.live_identifier)
         self._worker = threading.Thread(target=self._run_jobs, name="processing", daemon=True)
         if start_worker:
             self._worker.start()
@@ -241,6 +242,33 @@ class Services:
             log.warning("Voiceprints unavailable: %s", exc)
             return None
 
+    def live_identifier(self, mode: str, mid: str):
+        """Live speaker names for a meeting that is starting, or None (setting off, nobody saved, no model).
+
+        Never downloads a model: if the voice model is not on disk there are simply no live names."""
+        d = self.cfg.diarization
+        online = mode != "in_person"
+        if not d.live_names or (not online and not d.live_names_room):
+            return None
+        from modwen.pipeline.live_names import LiveIdentifier
+        from modwen.voiceprints import VoiceBank
+
+        bank = VoiceBank(self.store, self.keystore)
+        if bank.empty():
+            return None
+        if self._embedder_factory_override:
+            embedder = self._embedder_factory_override()
+        else:
+            from modwen.diarize import SpeakerEmbedder, sherpa_model_paths, sherpa_models_present
+
+            if d.provider == "none" or not sherpa_models_present(self.cfg.models_dir):
+                return None
+            embedder = SpeakerEmbedder(emb_path=str(sherpa_model_paths(self.cfg.models_dir)[1]), threads=2)
+        if embedder is None:
+            return None
+        return LiveIdentifier(bank, embedder, online=online, defer=lambda: self.processing_active > 0,
+                              enabled=lambda: d.live_names and (online or d.live_names_room))
+
     def llm(self, profile: str | None = None):
         from modwen.notes.llm_client import make_client
 
@@ -321,9 +349,16 @@ class Services:
         self.store.update_meeting(meeting_id, status="processing", error=None)
         self._enqueue("redetect", meeting_id, kw)
 
+    @property
+    def processing_active(self) -> int:
+        """Post-meeting jobs running right now (best effort: a job can start just after this is read)."""
+        return self._active_jobs
+
     def _run_jobs(self) -> None:
         while True:
             _, _, kind, mid, kw = self.jobs.get()
+            with self._pending_lock:
+                self._active_jobs += 1
             try:
                 if not self.store.get_meeting(mid):
                     log.info("Skipping %s for meeting %s: it was deleted", kind, mid)
@@ -340,6 +375,7 @@ class Services:
                     log.info("Meeting %s was deleted while %s ran; its result was discarded", mid, kind)
             finally:
                 with self._pending_lock:
+                    self._active_jobs -= 1
                     left = self._pending.get(mid, 1) - 1
                     if left > 0:
                         self._pending[mid] = left
