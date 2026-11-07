@@ -540,7 +540,7 @@ function Privacy({ settings, save }: SP) {
     [<I.voice size={16} />, tr("Voiceprints are kept only for people you chose to remember (with their consent), encrypted, until you delete them.",
       "تُحفظ بصمات الصوت فقط لمن اخترت تذكّرهم (بموافقتهم)، مشفّرة، حتى تحذفها.")],
     [<I.voice size={16} />, tr("Live speaker names compare voices in memory only, and the comparison is discarded at once. Nothing about a voice is saved or sent.",
-      "أسماء المتحدثين المباشرة تقارن الأصوات في الذاكرة فقط، ويُتلَف ناتج المقارنة فوراً. لا يُحفظ ولا يُرسل أي شيء عن الصوت.")],
+      "التعرّف المباشر على المتحدثين يقارن الأصوات في الذاكرة فقط، ويُتلَف ناتج المقارنة فوراً. لا يُحفظ ولا يُرسل أي شيء عن الصوت.")],
     [<I.trash size={16} />, tr(`Old data is deleted automatically: audio after ${days("audio")} days, transcripts after ${days("transcript")}, notes after ${days("notes")} (0 = keep forever). Pinned meetings are always kept.`,
       `تُحذف البيانات القديمة تلقائياً: الصوت بعد ${days("audio")} يوماً، النصوص بعد ${days("transcript")}، الملاحظات بعد ${days("notes")} (0 = الاحتفاظ دائماً). الاجتماعات المثبّتة تبقى دائماً.`)],
   ];
@@ -553,7 +553,7 @@ function Privacy({ settings, save }: SP) {
           "Keeps a voiceprint of you, taken from your microphone in online meetings, so Modwen can tell which voice is you in in-person meetings. Delete it any time on the People page.",
           "يحتفظ ببصمة صوتك من الميكروفون في الاجتماعات عبر الإنترنت، ليعرف مُدوَّن صوتك في الاجتماعات الحضورية. احذفها متى شئت من صفحة الأشخاص.")}</p>
       </Section>
-      <Section title={tr("Live speaker names", "أسماء المتحدثين المباشرة")}>
+      <Section title={tr("Live speaker names", "التعرّف المباشر على المتحدثين")}>
         <div id="live-names-disclosure" style={{ display: "grid", gap: 10, fontSize: 13.5 }}>
           {tr(
             `**While a meeting is recording, Modwen compares each speaker's voice with the voices you saved in People.**
