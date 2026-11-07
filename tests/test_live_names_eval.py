@@ -368,6 +368,31 @@ def test_out_refuses_paths_inside_the_data_folder_and_a_symlink_into_it(data_dir
     assert ev.refuse_out_path(str(outside / "ok.json"), data, repo_root=outside) is None
 
 
+def test_out_refuses_an_ntfs_junction_into_the_data_folder(data_dir):
+    """Same protection as the symlink case above, exercised with an NTFS junction instead.
+
+    Unlike ``os.symlink`` (needs ``SeCreateSymbolicLinkPrivilege``, which this machine's token lacks — see the
+    symlink test above and reports/02-security.md finding 3), an NTFS junction needs no elevated privilege on
+    Windows and is the realistic unprivileged way to redirect a path into the data folder. ``refuse_out_path``'s
+    ``os.path.realpath`` call resolves junctions the same way it resolves symlinks, so this should pass here even
+    though the symlink test above does not. Junctions only target directories, so this covers the "folder link
+    into the data folder" shape, not the dangling-file-link shape."""
+    import pytest
+
+    if sys.platform != "win32":
+        pytest.skip("NTFS junctions are a Windows-only concept")
+    import _winapi
+
+    data = data_dir / "data"
+    data.mkdir()
+    outside = data_dir / "outside"
+    outside.mkdir()
+    junction = outside / "folder"
+    _winapi.CreateJunction(str(data), str(junction))  # no SeCreateSymbolicLinkPrivilege needed, unlike os.symlink
+    assert ev.refuse_out_path(str(junction / "new.json"), data, repo_root=outside) is not None
+    assert ev.refuse_out_path(str(outside / "ok.json"), data, repo_root=outside) is None
+
+
 def test_out_refuses_a_tracked_file_and_a_protected_file(data_dir):
     import subprocess
 
@@ -495,6 +520,49 @@ def test_the_reminders_are_printed_first_to_stderr(data_dir, monkeypatch, capsys
     monkeypatch.setattr(ev, "collect", lambda *a, **k: None)
     assert ev.main([]) == 1
     seen = capsys.readouterr()
-    for phrase in ("close Modwen", "'Allow'", "'Always Allow'", "ulimit -c 0"):
+    for phrase in ("close Modwen", "'Allow'", "'Always Allow'"):
         assert phrase in seen.err
+    # The crash-dump instruction itself is OS-specific: whichever one matches the OS actually running this test.
+    if sys.platform == "win32":
+        assert "Windows Error Reporting" in seen.err
+        assert "ulimit" not in seen.err
+    else:
+        assert "ulimit -c 0" in seen.err
+        assert "Windows Error Reporting" not in seen.err
     assert "ulimit" not in seen.out
+
+
+# ----- Windows-specific crash-dump safety: reminder text + the SetErrorMode runtime mitigation -----------------
+
+def test_reminders_text_branches_on_platform(monkeypatch):
+    monkeypatch.setattr(ev.sys, "platform", "win32")
+    win_text = ev.reminders_text()
+    assert "Windows Error Reporting" in win_text and "ulimit" not in win_text
+
+    monkeypatch.setattr(ev.sys, "platform", "linux")
+    posix_text = ev.reminders_text()
+    assert "ulimit -c 0" in posix_text and "Windows Error Reporting" not in posix_text
+
+
+class _FakeKernel32:
+    def __init__(self):
+        self.calls: list[int] = []
+
+    def SetErrorMode(self, mode: int) -> int:
+        self.calls.append(mode)
+        return 0  # the "previous mode" SetErrorMode would normally return
+
+
+def test_windows_crash_dump_mitigation_calls_set_error_mode_on_windows(monkeypatch):
+    fake_kernel32 = _FakeKernel32()
+    fake_windll = type("FakeWindll", (), {"kernel32": fake_kernel32})()
+    monkeypatch.setattr(ev.sys, "platform", "win32")
+    monkeypatch.setattr(ev.ctypes, "windll", fake_windll, raising=False)  # ctypes.windll only exists on real Windows
+    assert ev._apply_windows_crash_dump_mitigation() is True
+    assert fake_kernel32.calls  # SetErrorMode was actually reached, not just planned
+    assert fake_kernel32.calls[-1] & 0x0002  # SEM_NOGPFAULTERRORBOX requested
+
+
+def test_windows_crash_dump_mitigation_is_a_no_op_off_windows(monkeypatch):
+    monkeypatch.setattr(ev.sys, "platform", "linux")
+    assert ev._apply_windows_crash_dump_mitigation() is False

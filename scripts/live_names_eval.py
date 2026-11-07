@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
 import json
 import os
 import sqlite3
@@ -477,15 +478,51 @@ def collect(max_lines: int, cfg) -> Collected | None:
         store.close()
 
 
-REMINDERS = (
+REMINDERS_POSIX = (
     "Before this runs: close Modwen first. If the OS asks to let this program read the keychain, answer 'Allow', "
     "not 'Always Allow'. Run 'ulimit -c 0' in this shell first (no core dump of decrypted audio)."
 )
+REMINDERS_WINDOWS = (
+    "Before this runs: close Modwen first. If the OS asks to let this program read the keychain, answer 'Allow', "
+    "not 'Always Allow'. On Windows, decrypted audio/embeddings could appear in a Windows Error Reporting crash "
+    "dump if this process crashes. Check Settings -> Privacy & security -> Windows Error Reporting (or disable "
+    "WER local dumps for this process) before running this on real data."
+)
+
+
+def reminders_text() -> str:
+    """The operator-facing safety reminder, branched on the OS actually running this process.
+
+    POSIX keeps the ``ulimit -c 0`` instruction (there is no Windows equivalent of a POSIX core dump). Windows gets
+    its own instruction instead, since the real risk there is a Windows Error Reporting (WER) crash dump of this
+    process, not a core file."""
+    return REMINDERS_WINDOWS if sys.platform == "win32" else REMINDERS_POSIX
+
+
+def _apply_windows_crash_dump_mitigation() -> bool:
+    """Best-effort: ask Windows not to show the crash dialog / write a WER local dump for THIS process.
+
+    This only changes this process's own error mode (``SetErrorMode``, stdlib ``ctypes``, no new dependency); it
+    never touches any machine-wide registry setting (that is a system-level change, not something this script does
+    silently). It cannot stop every possible dump (WER's machine-wide ``LocalDumps`` policy, if an administrator has
+    turned it on, still applies regardless of this flag), but it suppresses the default unattended-crash behaviour
+    for a scripted run like this one. Returns True if the call was made (Windows only), False otherwise."""
+    if sys.platform != "win32":
+        return False
+    try:
+        sem_nogpfaulterrorbox = 0x0002
+        kernel32 = ctypes.windll.kernel32
+        previous = kernel32.SetErrorMode(sem_nogpfaulterrorbox)
+        kernel32.SetErrorMode(previous | sem_nogpfaulterrorbox)
+        return True
+    except Exception:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
     """Run, and on any unexpected error print only the exception CLASS: a message or traceback could carry a path,
     a name or a size from private data."""
+    _apply_windows_crash_dump_mitigation()
     try:
         return _main(argv)
     except SystemExit:
@@ -500,7 +537,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _main(argv: list[str] | None = None) -> int:
-    print(REMINDERS, file=sys.stderr)
+    print(reminders_text(), file=sys.stderr)
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--max-lines", type=int, default=60,
                     help="at most this many lines per speaker per meeting, spread evenly (0 = all)")
