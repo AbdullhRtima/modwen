@@ -989,10 +989,11 @@ User-facing summary: [install.md §5](install.md#5-import-a-recording). This sec
 - If Modwen stops after the import is complete, the meeting continues through the normal recovery.
 
 **The decoding process.** Each MP4, MOV or M4A import starts one child process (`python -P -m
-modwen.audio.decoder_child`, the engine's own interpreter). At most two run at once; a third import waits.
+modwen.audio.decoder_child`, the engine's own interpreter; on macOS under `sandbox-exec`, see "Sandbox" below). At
+most two run at once; a third import waits.
 - The upload is kept encrypted on disk. The child gets that upload's key over stdin, and only after it has
-  confirmed its limits. It never receives the storage keys or the master key from the engine. This holds only
-  while the child is not compromised: see "Not a sandbox" below.
+  confirmed its limits. It never receives the storage keys or the master key from the engine. On Windows this holds
+  only while the child is not compromised: see "Sandbox" below.
 - The child sends back mono 16 kHz audio in bounded frames (at most 128 KiB each) over a pipe. The engine checks
   every frame, enforces the 6-hour cap itself, and alone writes the encrypted audio chunks.
 - The child's environment is an allowlist with no tokens or secrets, and it inherits no other handles.
@@ -1008,19 +1009,38 @@ modwen.audio.decoder_child`, the engine's own interpreter). At most two run at o
 | How limits are enforced | A Job Object, set up and checked by the engine before the key is sent. Killing the engine kills the child. | No job object: `RLIMIT_AS`/`RLIMIT_DATA` aren't usable. The engine polls the child's physical footprint every 20 ms and kills it above 1 GiB. FFmpeg allocations are capped at 512 MiB each (`av_max_alloc`), plus `RLIMIT_CPU`, no core dumps, and a pipe that ends the child when the engine dies. |
 | What the memory limit means | A hard limit on **committed** memory, not on RAM (RSS). Measured: the job's charge never exceeded 1,024 MiB; RSS reached about 1,030 MiB, because shared mappings count in RSS. | Not a hard limit. A 20 ms poll can be overshot; on Windows a fast allocator was measured filling a few hundred MiB in that time. |
 | CPU limit | Counts user-mode time only and is checked periodically: in a test with a 3 s limit, a user-mode load was stopped at about 8 s. The wall timer is the backstop. | `RLIMIT_CPU`. |
-| Child processes | The job stops the child from starting new processes (unless it is compromised, see below). | `RLIMIT_NPROC` is set to 0 before the key is sent, so the child can't start a process (unless it is compromised, see below). It runs in its own process group, and a kill ends the whole group. Only the child's own pid is measured. |
+| Child processes | The job stops the child from starting new processes (unless it is compromised, see below). | The sandbox denies fork and exec, and `RLIMIT_NPROC` is set to 0 before the key is sent. It runs in its own process group, and a kill ends the whole group. Only the child's own pid is measured. |
+| Sandbox | None: the child has your user account's access (see below). | `sandbox-exec` with a deny-by-default profile, confirmed by the engine with the kernel's `sandbox_check` before the key is sent; if it can't be applied or confirmed, the import fails and nothing is decoded (see below). |
 | Status | Tested from source on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2). | Tested from source on one Mac (Apple M1, macOS 15.6.1) on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2), with `scripts/verify-macos-import.sh`: 110 PASS, 0 FAIL. A real breach overshot the 1 GiB limit by up to 93 MiB before the watchdog stopped it. |
 
-**Not a sandbox.**
-- The separate process contains crashes, hangs and resource exhaustion caused by a damaged or hostile file. It does
-  not protect your data from an attacker.
-- The decoding process runs as your user account. It has the same access to your files, your network and the
-  running Modwen process as Modwen itself. There is no OS sandbox on Windows or macOS.
-- If a file exploits a security flaw in FFmpeg, the attacker's code runs with your rights. It could read your
-  recordings, transcripts and Modwen's keys, including from the running Modwen app's memory, and send them over the
-  network. It could also lift its own resource limits. Keeping the master key in the OS keychain doesn't prevent this,
-  because the running app holds it in memory. Import files only from
-  sources you trust.
+**Sandbox.**
+- **Windows: not a sandbox.** The separate process contains crashes, hangs and resource exhaustion caused by a damaged
+  or hostile file. It does not protect your data from an attacker. The decoding process runs as your user account,
+  with the same access to your files, your network and the running Modwen process as Modwen itself. If a file
+  exploits a security flaw in FFmpeg, the attacker's code runs with your rights. It could read your recordings,
+  transcripts and Modwen's keys, including from the running Modwen app's memory, and send them over the network. It
+  could also lift its own resource limits. Keeping the master key in the OS keychain doesn't prevent this, because
+  the running app holds it in memory. Import files only from sources you trust.
+- **macOS: `sandbox-exec`.** The engine starts the child as `/usr/bin/sandbox-exec -p <profile> -D ... python -P -m
+  modwen.audio.decoder_child` (`modwen/audio/decoder.py`). The profile denies everything by default and allows only:
+  reading `/System`, `/usr/lib`, the engine's Python and venv (`sys.prefix`, `sys.base_prefix`, site-packages, with
+  PyAV's FFmpeg libraries), the `modwen` package, any library the engine itself has loaded from elsewhere, and the
+  one sealed upload; reading file metadata (stat) anywhere; `/dev/null`; `sysctl` reads; and the one exec of its own
+  Python. So the child can't open a network connection (loopback and Unix sockets included), write any file, start
+  or become another program, look up system services (so no Keychain), signal other processes, or read the data
+  folder, other uploads or your files. Paths are passed as `-D` parameters, never as profile text, and are computed
+  from the running interpreter, so the desktop app's Python under the Modwen data folder works the same as a
+  checkout. If a read tree would contain the data folder, the import is refused.
+- **Fail closed on macOS.** If `sandbox-exec` is missing or rejects the profile, the child never says it's ready. After
+  it does, and before it gets the upload's key, the engine asks the kernel (`sandbox_check`) whether that pid is
+  sandboxed and whether network, fork, file writes and service lookups are denied. Any other answer is "the decoder
+  could not be limited": the import fails with the general error, and nothing is decoded outside the sandbox.
+- **What the macOS sandbox doesn't change.** A compromised child can still send wrong audio into that one import, learn
+  which files exist (metadata), and change its own in-process FFmpeg allocation cap (the 1 GiB watchdog stays). Getting
+  out would also need a flaw in the macOS sandbox. `sandbox-exec` is deprecated by Apple and its profile language is
+  undocumented; it still works on macOS 15, and Apple's own services use the same language, but a macOS update could
+  break it. Then video imports fail closed (above) until Modwen is updated; `scripts/verify-macos-import.sh` and
+  `tests/test_import_isolation.py` check it on each Mac they run on. Decision record: eleven/decisions/0003.
 - WAV, FLAC, MP3, OGG and AIFF are still parsed inside Modwen itself, as before, with the same exposure to a flaw in
   libsndfile.
 - FFmpeg's version is fixed by `uv.lock`, so FFmpeg security fixes reach users only through a Modwen release
@@ -1129,7 +1149,7 @@ the fragment check reuses the `moov` it was given.
 | Crash mid-meeting | Lost audio | 30-second encrypted chunks written as recording happens; resume on restart |
 | Wrong recipients or data leak | Confidential notes sent to the wrong people | Approval required, external-domain warning, recipients never taken from the LLM, no transcript attachment |
 | Recording without consent | Legal or trust problem | Consent step, visible indicator, logging |
-| Hostile or damaged MP4, MOV or M4A file | A crash, hang or memory bomb; with an FFmpeg exploit, code running with your rights | Decoding in a separate, resource-limited process (not a sandbox), FFmpeg updates through releases, import only trusted files (§10.1) |
+| Hostile or damaged MP4, MOV or M4A file | A crash, hang or memory bomb; with an FFmpeg exploit, code running with your rights (on Windows) | Decoding in a separate, resource-limited process (sandboxed on macOS, not on Windows), FFmpeg updates through releases, import only trusted files (§10.1) |
 | Undetectable corruption in an imported file | A shorter recording with no warning | Structural checks; the remaining cases are listed in §10.1 |
 
 ---

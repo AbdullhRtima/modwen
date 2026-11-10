@@ -29,7 +29,8 @@
   - A local LLM (Qwen) writes the summary, decisions, action items with owners and deadlines, and open questions.
   - A **"Notes ready"** notification tells you when they're done.
   - Or import a recording: WAV, FLAC, MP3, OGG, AIFF, or the audio of an MP4, MOV or M4A file. Video files are
-    decoded in a separate, resource-limited process, which is not a sandbox: import only files you trust. See
+    decoded in a separate, resource-limited process (sandboxed on macOS, not yet on Windows): import only files you
+    trust. See
     [Import a recording](docs/install.md#5-import-a-recording).
 - **Next: voice to artifacts.** Say *"show me a chart of the gold price this year"* and a slide appears, live. See the [roadmap](#roadmap).
 

@@ -35,7 +35,7 @@ gh run list --limit 3                        # the last CI run on main is green 
 
 **Required on every release.** MP4, MOV and M4A imports are decoded by the FFmpeg inside PyAV's wheels, and
 `uv.lock` fixes which version users get. A fix in FFmpeg reaches users only through a Modwen release. The decoder
-runs in a resource-limited process but not in a sandbox (see
+runs in a resource-limited process, sandboxed on macOS but not on Windows (see
 [system-design.md §10.1](system-design.md#101-imported-recordings-mp4-mov-m4a)), so an FFmpeg flaw that a crafted
 file can reach matters.
 

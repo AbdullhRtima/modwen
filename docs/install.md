@@ -64,17 +64,19 @@ can't be detected: a damaged file can occasionally import as a shorter recording
 [system-design.md §10.1](system-design.md#101-imported-recordings-mp4-mov-m4a).
 
 **Security of video files.** MP4, MOV and M4A files are decoded by FFmpeg in a separate process with memory, CPU and
-time limits. That contains crashes, hangs and runaway memory use caused by a damaged or hostile file. It is **not a
-sandbox**: the process runs as your user account, with the same access to your files, your network and the running
-Modwen app as Modwen itself. A file that exploits a security flaw in FFmpeg could read your recordings, transcripts
-and Modwen's keys, including from the running Modwen app, and send them over the network. **Import files only from
-sources you trust.** WAV, FLAC, MP3, OGG and AIFF are read inside Modwen itself, as before. FFmpeg's version is
+time limits. That contains crashes, hangs and runaway memory use caused by a damaged or hostile file. On Windows it
+is **not a sandbox**: the process runs as your user account, with the same access to your files, your network and the
+running Modwen app as Modwen itself. A file that exploits a security flaw in FFmpeg could read your recordings,
+transcripts and Modwen's keys, including from the running Modwen app, and send them over the network. On macOS the
+process also runs in an OS sandbox that blocks the network, file writes, other programs and reading anything but the
+one file being imported. **Import files only from sources you trust.** WAV, FLAC, MP3, OGG and AIFF are read inside Modwen itself, as before. FFmpeg's version is
 fixed in each Modwen release, so FFmpeg security fixes reach you only through a Modwen update.
 
 - **Windows:** the limits are enforced by a job object and have been tested.
 - **macOS:** the limits have been tested from source on one Apple Silicon Mac. Memory is watched rather than held
   by the kernel, so a fast allocation can briefly go past the limit before the decoder is stopped.
-- Neither platform runs the decoder in an OS sandbox.
+- **macOS sandbox:** the decoder runs under `sandbox-exec`. If macOS can't apply it, video imports fail with an
+  error rather than run without it. Windows has no sandbox yet.
 
 ## Where your data lives
 
