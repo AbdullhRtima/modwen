@@ -199,24 +199,75 @@ def _fake_audio(meeting_dir, channel, key):
 
 
 def _snapshot(path: Path):
+    """Database bytes and mtime, the folder listing, and the -wal file's bytes and mtime if there is one.
+    The -shm file is left out on purpose: it is SQLite's shared-memory index, and every reader of a WAL
+    database (mode=ro included) updates it; it never holds data."""
     st = path.stat()
-    return path.read_bytes(), st.st_mtime_ns, sorted(p.name for p in path.parent.iterdir())
+    wal = path.with_name(path.name + "-wal")
+    wal_state = (wal.read_bytes(), wal.stat().st_mtime_ns) if wal.exists() else None
+    return path.read_bytes(), st.st_mtime_ns, sorted(p.name for p in path.parent.iterdir()), wal_state
+
+
+def _assert_closed_cleanly(db: Path):
+    """After the last connection closes, everything is checkpointed into the database file. Stock SQLite then
+    deletes -wal and -shm; Apple's system SQLite (persistent WAL) keeps both, with the -wal truncated to 0 bytes.
+    Either is a clean close; anything else (a non-empty -wal, a lone -wal or -shm, a journal) is not."""
+    names = sorted(p.name for p in db.parent.iterdir())
+    wal = db.with_name(db.name + "-wal")
+    assert names in (["ro.db"], ["ro.db", "ro.db-shm", "ro.db-wal"]), names
+    assert not wal.exists() or wal.stat().st_size == 0, "un-checkpointed changes left in the -wal"
 
 
 def test_collect_uses_only_consented_people_and_leaves_the_database_untouched(data_dir):
     master = _synthetic_db(data_dir)
     db = data_dir / "ro.db"
+    _assert_closed_cleanly(db)
     before = _snapshot(db)
-    assert before[2] == ["ro.db"]  # closed cleanly: no -wal / -shm left behind
     store = ev.ReadOnlyStore(db)
     try:
         got = ev.collect_from(store, master, FakeEmbedder(), data_dir / "audio", _fake_audio, max_lines=0)
-        assert _snapshot(db) == before  # while still open: nothing written, no -wal, -shm or journal file yet
+        assert _snapshot(db) == before  # while still open: nothing written, no new -wal, -shm or journal file
     finally:
         store.close()
-    assert _snapshot(db) == before  # same bytes, same mtime, no -wal, -shm or journal file
+    assert _snapshot(db) == before  # same bytes, same mtime, same files, the -wal (if any) untouched
     assert {s[1] for s in got.samples} == {"ann"} and {u[1] for u in got.utterances["online"]} == {"ann"}
     assert got.utterances["online"] and got.skipped["people_no_consent"] == 1  # bob: a count only
+
+
+def test_with_no_wal_file_the_database_is_opened_immutable_and_nothing_is_created(data_dir, monkeypatch):
+    """Forces the immutable=1 branch on every OS. With Apple's system SQLite a 0-byte -wal stays after a clean
+    close, so the test above takes the mode=ro branch there; removing the empty -wal and its -shm is what stock
+    SQLite does on close, and loses nothing (everything is already in the database file)."""
+    import sqlite3
+
+    import pytest
+
+    master = _synthetic_db(data_dir)
+    db = data_dir / "ro.db"
+    _assert_closed_cleanly(db)
+    for extra in ("ro.db-wal", "ro.db-shm"):
+        (data_dir / extra).unlink(missing_ok=True)
+    before = _snapshot(db)
+    assert before[2] == ["ro.db"] and before[3] is None
+    uris = []
+    real_connect = sqlite3.connect
+
+    def spy(database, *a, **kw):
+        uris.append(database)
+        return real_connect(database, *a, **kw)
+
+    monkeypatch.setattr(ev.sqlite3, "connect", spy)
+    store = ev.ReadOnlyStore(db)
+    try:
+        got = ev.collect_from(store, master, FakeEmbedder(), data_dir / "audio", _fake_audio, max_lines=0)
+        assert _snapshot(db) == before  # while still open: no -wal, -shm or journal file created
+        with pytest.raises(sqlite3.OperationalError):
+            store.record_consent("bob", None)  # still cannot write
+    finally:
+        store.close()
+    assert len(uris) == 1 and uris[0].endswith("?mode=ro&immutable=1"), uris
+    assert _snapshot(db) == before
+    assert {s[1] for s in got.samples} == {"ann"} and got.skipped["people_no_consent"] == 1
 
 
 def test_read_only_store_cannot_write(data_dir):
