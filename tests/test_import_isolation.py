@@ -381,7 +381,15 @@ def test_platform_abi_layouts():
         assert C.JobLimits.job_memory.offset == 120
 
 
-def test_macos_footprint_uses_the_documented_struct_and_fails_closed(monkeypatch):
+@pytest.fixture
+def libproc():
+    """The handle is cached; a test that fakes it must not leave its fake to the real watchdog."""
+    D._proc_pid_rusage.cache_clear()
+    yield D._proc_pid_rusage.cache_clear
+    D._proc_pid_rusage.cache_clear()
+
+
+def test_macos_footprint_uses_the_documented_struct_and_fails_closed(monkeypatch, libproc):
     # ABI/call wiring only; this is deliberately not a Mac runtime resource proof.
     monkeypatch.setattr(D, "sys", SimpleNamespace(platform="darwin"))
     monkeypatch.setattr(psutil, "Process", lambda pid: SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=100)))
@@ -399,9 +407,59 @@ def test_macos_footprint_uses_the_documented_struct_and_fails_closed(monkeypatch
         def __call__(self, *args):
             return -1
 
+    libproc()
     monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: SimpleNamespace(proc_pid_rusage=Failed()))
     with pytest.raises(OSError):
         D.footprint(42)
+
+
+def test_macos_footprint_loads_libproc_once(monkeypatch, libproc):
+    # The watchdog reads the footprint every 20 ms; loading the library each time is work the child gets to race.
+    monkeypatch.setattr(D, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(psutil, "Process", lambda pid: SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=100)))
+    loads = []
+
+    def load(*args, **kwargs):
+        loads.append(args)
+        return SimpleNamespace(proc_pid_rusage=lambda pid, flavor, info: 0)
+
+    monkeypatch.setattr(ctypes, "CDLL", load)
+    assert [D.footprint(42) for _ in range(5)] == [100] * 5
+    assert len(loads) == 1
+
+
+@pytest.mark.parametrize("gone", [psutil.NoSuchProcess, psutil.ZombieProcess])
+def test_watchdog_reads_a_child_that_has_exited_as_exited(monkeypatch, gone):
+    # A child that has answered and exited, not yet reaped, is a zombie: it holds no memory, so that is no stop reason.
+    monkeypatch.setattr(D, "sys", SimpleNamespace(platform="darwin"))
+
+    def footprint(pid):
+        raise gone(pid)
+
+    monkeypatch.setattr(D, "footprint", footprint)
+    child, killed = D.Child(), []
+    child.pid = 42
+    monkeypatch.setattr(child, "kill", lambda: killed.append(True))
+    child.watcher.start()
+    time.sleep(.2)  # about ten polls
+    child.done.set()
+    child.watcher.join(2)
+    assert child.reason is None and not killed
+
+
+def test_watchdog_still_stops_a_child_whose_memory_cannot_be_read(monkeypatch):
+    monkeypatch.setattr(D, "sys", SimpleNamespace(platform="darwin"))
+
+    def footprint(pid):
+        raise OSError("no footprint")
+
+    monkeypatch.setattr(D, "footprint", footprint)
+    child, killed = D.Child(), []
+    child.pid = 42
+    monkeypatch.setattr(child, "kill", lambda: killed.append(True))
+    child.watcher.start()
+    child.watcher.join(2)
+    assert child.reason == "memory not readable" and killed
 
 
 def test_posix_limits_fail_closed_without_allocation_guard(monkeypatch):

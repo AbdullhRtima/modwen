@@ -17,6 +17,7 @@ is the general failure. This module must never fall back to decoding in the engi
 from __future__ import annotations
 
 import ctypes
+import functools
 import json
 import logging
 import math
@@ -132,6 +133,14 @@ class RusageInfoV0(ctypes.Structure):
         "phys_footprint", "proc_start_abstime", "proc_exit_abstime")]
 
 
+@functools.cache
+def _proc_pid_rusage():
+    """Loaded once: the watchdog reads the footprint every 20 ms. A failed load isn't cached, so it fails closed."""
+    proc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True).proc_pid_rusage
+    proc.argtypes, proc.restype = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int
+    return proc
+
+
 def footprint(pid: int) -> int:
     """What the child holds, or an exception if that can't be read: the watchdog then stops it."""
     import psutil
@@ -139,9 +148,7 @@ def footprint(pid: int) -> int:
     used = psutil.Process(pid).memory_info().rss
     if sys.platform == "darwin":
         info = RusageInfoV0()
-        proc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True).proc_pid_rusage
-        proc.argtypes, proc.restype = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p], ctypes.c_int
-        if proc(pid, 0, ctypes.byref(info)) != 0:
+        if _proc_pid_rusage()(pid, 0, ctypes.byref(info)) != 0:
             raise OSError("no footprint")
         used = max(used, info.phys_footprint)
     return used
@@ -286,6 +293,8 @@ class Child:
         return b"".join(parts)
 
     def watch(self) -> None:
+        import psutil
+
         polling = sys.platform != "win32"  # a kernel limit there; a watchdog everywhere else
         while not self.done.wait(MEMORY_POLL_SECONDS if polling else TICK_SECONDS):
             now, waiting = time.monotonic(), self.waiting
@@ -298,6 +307,8 @@ class Child:
                 try:
                     if footprint(self.pid) > MEMORY_LIMIT:
                         reason = "memory limit"
+                except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                    pass  # it has exited, so it holds nothing; the timers still run until the parent is done
                 except Exception:
                     reason = "memory not readable"
             if reason:
