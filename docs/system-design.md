@@ -1009,7 +1009,7 @@ modwen.audio.decoder_child`, the engine's own interpreter). At most two run at o
 | What the memory limit means | A hard limit on **committed** memory, not on RAM (RSS). Measured: the job's charge never exceeded 1,024 MiB; RSS reached about 1,030 MiB, because shared mappings count in RSS. | Not a hard limit. A 20 ms poll can be overshot; on Windows a fast allocator was measured filling a few hundred MiB in that time. |
 | CPU limit | Counts user-mode time only and is checked periodically: in a test with a 3 s limit, a user-mode load was stopped at about 8 s. The wall timer is the backstop. | `RLIMIT_CPU`. |
 | Child processes | The job stops the child from starting new processes (unless it is compromised, see below). | `RLIMIT_NPROC` is set to 0 before the key is sent, so the child can't start a process (unless it is compromised, see below). It runs in its own process group, and a kill ends the whole group. Only the child's own pid is measured. |
-| Status | Tested from source on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2). | Implemented, **not verified** on a Mac. |
+| Status | Tested from source on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2). | Tested from source on one Mac (Apple M1, macOS 15.6.1) on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2), with `scripts/verify-macos-import.sh`: 110 PASS, 0 FAIL. A real breach overshot the 1 GiB limit by up to 93 MiB before the watchdog stopped it. |
 
 **Not a sandbox.**
 - The separate process contains crashes, hangs and resource exhaustion caused by a damaged or hostile file. It does
@@ -1059,7 +1059,7 @@ the fragment check reuses the `moov` it was given.
 | Where | Status |
 |---|---|
 | Windows, from source | Tested: Python 3.11 / PyAV 18.1 and Python 3.12 / PyAV 19.0.1, full test suites and a real engine. |
-| macOS | **Not verified.** Waiting for a run of `bash scripts/verify-macos-import.sh` on a Mac ([testing-guide.md](testing-guide.md#a9-verify-mp4-mov-and-m4a-import-on-a-mac)). |
+| macOS, from source | Tested on one Mac (Apple M1, macOS 15.6.1): Python 3.11 / PyAV 18.1 and Python 3.12 / PyAV 19.0.1, full test suites and a real engine, with `bash scripts/verify-macos-import.sh` ([testing-guide.md](testing-guide.md#a9-verify-mp4-mov-and-m4a-import-on-a-mac)). |
 | CI | Not verified for this change. |
 | Packaged apps (installers, desktop app, release zip) | Not verified. |
 | Intel Macs | Not tested. |

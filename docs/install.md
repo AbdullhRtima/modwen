@@ -72,7 +72,8 @@ sources you trust.** WAV, FLAC, MP3, OGG and AIFF are read inside Modwen itself,
 fixed in each Modwen release, so FFmpeg security fixes reach you only through a Modwen update.
 
 - **Windows:** the limits are enforced by a job object and have been tested.
-- **macOS:** the limits are implemented but **not verified** on a Mac yet.
+- **macOS:** the limits have been tested from source on one Apple Silicon Mac. Memory is watched rather than held
+  by the kernel, so a fast allocation can briefly go past the limit before the decoder is stopped.
 - Neither platform runs the decoder in an OS sandbox.
 
 ## Where your data lives
