@@ -10,6 +10,7 @@ import ctypes
 import io
 import json
 import os
+import socket
 import struct
 import subprocess
 import sys
@@ -304,20 +305,19 @@ def test_parent_death_leaves_no_decoder(data_dir, stage):
 import json,os,sys,time
 from pathlib import Path
 from modwen.audio import decoder as D,importer as I
-child=D.Child()
 class Writer:
     def write(self,frames):
         print(json.dumps([os.getpid(),child.pid]),flush=True)
         time.sleep(30)
     def close(self):pass
-child.start()
-if sys.argv[1]=='startup':
-    print(json.dumps([os.getpid(),child.pid]),flush=True)
-    time.sleep(30)
-else:
-    with I.SealedTempFile(Path(sys.argv[2]).parent) as sealed:
-        sealed.append(Path(sys.argv[2]).read_bytes())
-        child.decode(sealed,Writer())
+with I.SealedTempFile(Path(sys.argv[2]).parent) as sealed:
+    child=D.Child(sealed.path)
+    child.start()
+    if sys.argv[1]=='startup':
+        print(json.dumps([os.getpid(),child.pid]),flush=True)
+        time.sleep(30)
+    sealed.append(Path(sys.argv[2]).read_bytes())
+    child.decode(sealed,Writer())
 '''
     env = {**os.environ, "PYTHONPATH": str(source)}
     process = subprocess.Popen([sys.executable, "-P", "-c", script, stage, str(media)], env=env,
@@ -506,11 +506,129 @@ except OSError:
     assert out.stdout.strip() == "refused", out.stderr
 
 
+# A peer under the real macOS sandbox, with no RLIMIT_NPROC of its own: it answers with one good sample only if every
+# attempt is refused, so a child that could do any of these fails the import instead.
+REFUSED = "send(out,b'A',bytes(4));send(out,b'D',struct.pack('<Q',1))"
+mac_sandbox = pytest.mark.skipif(sys.platform != "darwin", reason="the real macOS sandbox")
+
+
+def attempts(*tries: str) -> str:
+    """Each try must raise OSError; one that doesn't ends the peer with no answer."""
+    return "".join(f"try:\n    {attempt}\nexcept OSError: pass\nelse: os._exit(10)\n" for attempt in tries)
+
+
+@mac_sandbox
+def test_the_macos_decoder_child_cannot_reach_the_network(data_dir, monkeypatch):
+    listener = socket.create_server(("127.0.0.1", 0))  # loopback, so the test needs no network
+    port = listener.getsockname()[1]
+    try:
+        peer(monkeypatch, action="import socket\n" + attempts(
+            f"socket.create_connection(('127.0.0.1', {port}), timeout=5).close()",
+            f"socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b'x', ('127.0.0.1', {port}))",
+            "socket.create_server(('127.0.0.1', 0)).close()",
+            "socket.socket(socket.AF_UNIX).connect('/var/run/mDNSResponder')") + REFUSED)
+        assert decode(data_dir, b"sealed dummy")[0] == 1
+    finally:
+        listener.close()
+
+
+@mac_sandbox
+def test_the_macos_decoder_child_cannot_start_or_become_another_program(data_dir, monkeypatch):
+    peer(monkeypatch, action="import subprocess\n" + attempts(
+        "pid = os.fork()\n    pid or os._exit(0)",
+        "subprocess.run(['/bin/sh', '-c', 'exit 0'])",
+        "os.execv('/bin/sh', ['sh', '-c', 'exit 0'])") + REFUSED)  # exec replaces it: no answer, the import fails
+    assert decode(data_dir, b"sealed dummy")[0] == 1
+
+
+@mac_sandbox
+def test_the_macos_decoder_child_cannot_write_or_read_beyond_its_file(data_dir, monkeypatch):
+    (data_dir / "modwen.db").write_bytes(b"synthetic meeting")
+    leak = data_dir / "leak.txt"
+    peer(monkeypatch, action="import tempfile\n" + attempts(
+        f"open({str(leak)!r}, 'w').write('x')",
+        "open(request['path'], 'r+b').write(b'x')",  # its own upload: read, never write
+        "tempfile.mkstemp()",
+        f"open({str(data_dir / 'modwen.db')!r}, 'rb').read()",
+        f"os.listdir({str(data_dir)!r})",
+        f"open({str(Path.home() / '.zshrc')!r}, 'rb').read()",
+        f"open({str(Path(D.__file__).resolve())!r}, 'a')")  # its own source: read, never write
+        + "open(request['path'], 'rb').read(1)\n" + REFUSED)  # and the one file it was given stays readable
+    with I.SealedTempFile(data_dir) as sealed:
+        sealed.append(b"sealed dummy")
+        assert D.decode_isolated(sealed, Writer()) == 1
+    assert not leak.exists()
+
+
+@mac_sandbox
+def test_the_macos_decoder_child_cannot_ask_for_the_keychain(data_dir, monkeypatch):
+    # bootstrap_look_up is how a process reaches securityd: denied, it returns 1100 (not privileged), not 0.
+    peer(monkeypatch, action="""
+lib = ctypes.CDLL('/usr/lib/libSystem.B.dylib')
+port, bootstrap = ctypes.c_uint(0), ctypes.c_uint.in_dll(lib, 'bootstrap_port')
+for name in (b'com.apple.SecurityServer', b'com.apple.securityd.xpc', b'com.apple.cfprefsd.daemon'):
+    if lib.bootstrap_look_up(bootstrap, name, ctypes.byref(port)) == 0: os._exit(10)
+""" + REFUSED)
+    assert decode(data_dir, b"sealed dummy")[0] == 1
+
+
+@mac_sandbox
+def test_a_normal_macos_import_still_decodes_under_the_sandbox(data_dir, monkeypatch):
+    started, confirmed = [], []
+    real_popen, real_confirm = subprocess.Popen, D.confirm_sandboxed
+
+    def popen(command, **kwargs):
+        started.append(command)
+        return real_popen(command, **kwargs)
+
+    monkeypatch.setattr(D.subprocess, "Popen", popen)
+    monkeypatch.setattr(D, "confirm_sandboxed", lambda pid: (real_confirm(pid), confirmed.append(pid)))
+    samples, writer = decode(data_dir, make_media(data_dir, seconds=2))
+    assert samples == pytest.approx(32000, abs=500) and writer.closed
+    assert started[0][0] == D.SANDBOX_EXEC and started[0][-3:] == D.child_command()[-3:]
+    assert len(confirmed) == 1
+
+
+@mac_sandbox
+@pytest.mark.parametrize("how", ["no sandbox-exec", "profile rejected", "not sandboxed", "data folder in reach"])
+def test_a_macos_child_that_cannot_be_sandboxed_never_gets_the_file(data_dir, monkeypatch, how):
+    """The child can't be started or limited: the general failure, and the key never crosses."""
+    if how == "no sandbox-exec":
+        monkeypatch.setattr(D, "SANDBOX_EXEC", str(data_dir / "sandbox-exec"))
+    elif how == "profile rejected":
+        monkeypatch.setattr(D, "SANDBOX_PROFILE", "(version 1)(deny default)(allow no-such-operation)")
+    elif how == "not sandboxed":
+        monkeypatch.setattr(D, "sandboxed", lambda command, sealed_path: command)
+    else:
+        monkeypatch.setattr(D.sys, "prefix", str(data_dir.parent))  # a read tree that holds the data folder
+    with I.SealedTempFile(data_dir) as sealed:
+        sealed.append(make_media(data_dir, seconds=1))
+        monkeypatch.setattr(sealed, "handoff", lambda: pytest.fail("key sent to an unsandboxed child"))
+        with pytest.raises(RuntimeError):
+            D.decode_isolated(sealed, Writer())
+
+
+def test_the_sandbox_profile_takes_paths_only_as_parameters(tmp_path, monkeypatch):
+    monkeypatch.setattr(D, "_loaded_libraries", lambda: [])  # dyld is macOS only; the profile is built anywhere
+    upload = tmp_path / 'a "quoted" (path)' / "upload.sealed"
+    command = D.sandboxed([sys.executable, "-P", "-m", "x"], upload)
+    profile, defines = command[2], dict(arg.split("=", 1) for arg in command[4:-4:2])
+    assert command[0] == D.SANDBOX_EXEC and command[3:-4:2] == ["-D"] * len(defines)
+    assert command[-4:] == [sys.executable, "-P", "-m", "x"]
+    assert "quoted" not in profile and str(tmp_path) not in profile
+    assert os.path.realpath(upload) in defines.values()
+    assert all(f'(param "{name}")' in profile for name in defines)
+    assert profile.startswith("(version 1)\n(deny default)\n")
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="the Windows job holds every process the child starts")
 @pytest.mark.parametrize("pipe", ["closed", "held"])
 def test_a_child_that_exits_takes_what_it_started_along(data_dir, monkeypatch, pipe):
-    # A peer has no RLIMIT_NPROC, as a child that got past it wouldn't: its own process group is the second layer.
-    # "held": the leftover keeps the child's stdout open, so without a sweep the parent waits for the silence timer.
+    # A peer has no RLIMIT_NPROC and, here, no macOS sandbox, as a child that got past both wouldn't: its own process
+    # group is the layer under them. "held": the leftover keeps the child's stdout open, so without a sweep the parent
+    # waits for the silence timer.
+    monkeypatch.setattr(D, "sandboxed", lambda command, sealed_path: command)
+    monkeypatch.setattr(D, "confirm_sandboxed", lambda pid: None)
     where = data_dir / "grandchild"
     io = "" if pipe == "held" else ", stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL"
     peer(monkeypatch, action=f"""

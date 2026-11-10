@@ -7,7 +7,9 @@ it sends is untrusted.
 
 Limits: on Windows a Job Object holds memory, CPU and process count in the kernel. On macOS nothing usable does
 (RLIMIT_AS and RLIMIT_DATA are refused at these sizes), so memory is a watchdog here plus FFmpeg's own single-allocation
-ceiling: a race, not a hard limit. Wall-clock and silence timers run here on both.
+ceiling: a race, not a hard limit. Wall-clock and silence timers run here on both. On macOS the child also runs under
+sandbox-exec (no network, writes, exec, fork or service lookups; reads only its Python and the one sealed file), and
+the kernel must confirm that before it gets the key.
 
 A child that fails after it started means the file was the trouble, as far as anyone can tell: not supported, whose
 "a format Modwen can't read" stays true. A child that can't be started or limited means the file wasn't tried, so that
@@ -158,6 +160,71 @@ def child_command() -> list[str]:
     return [sys.executable, "-P", "-m", "modwen.audio.decoder_child"]  # -P: nothing in the working folder is imported
 
 
+SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+# macOS: nothing but reading its own Python, the packages and the one sealed file. Paths come in as -D parameters, so
+# no path is ever parsed as profile text. No network (loopback and Unix sockets too), no writes but /dev/null, no exec
+# but the one sandbox-exec makes, no fork, no mach-lookup (so no Keychain), no signals to others. Metadata (stat) is
+# open: Python and dyld stat many folders, and with no way out that tells nothing to anyone.
+SANDBOX_PROFILE = """(version 1)
+(deny default)
+(allow process-exec (literal (param "PYTHON")))
+(allow file-read-metadata)
+(allow sysctl-read)
+(allow file-read* (literal "/") (subpath "/System") (subpath "/usr/lib"))
+(allow file-read-data file-write-data (literal "/dev/null"))
+(allow file-read-data (literal (param "SOURCE")))
+"""
+# Asked of the kernel about the running child: each must be denied, or it isn't under the profile above. Not
+# process-exec: with one exec allowed, the unfiltered question has no answer (-1). Tests prove that one.
+SANDBOX_DENIES = ("network-outbound", "network-inbound", "process-fork", "file-write-data", "mach-lookup")
+_SYSTEM_TREES = ("/System/", "/usr/lib/")
+
+
+def _loaded_libraries() -> list[str]:
+    """Every image dyld has loaded in this engine. The child's Python loads the same ones, wherever they live."""
+    dyld = ctypes.CDLL(None)
+    dyld._dyld_get_image_name.restype, dyld._dyld_get_image_name.argtypes = ctypes.c_char_p, [ctypes.c_uint32]
+    names = (dyld._dyld_get_image_name(i) for i in range(dyld._dyld_image_count()))
+    return [os.fsdecode(name) for name in names if name]
+
+
+def _inside(path: str, tree: str) -> bool:
+    return os.path.commonpath([tree, path]) == tree
+
+
+def sandboxed(command: list[str], sealed_path) -> list[str]:
+    """``command`` under sandbox-exec, reading only what this Python needs and ``sealed_path``. Raises OSError if the
+    reads can't be drawn without taking in the folder the sealed file is in, which is the data folder."""
+    import site
+
+    real = os.path.realpath
+    package = real(Path(modwen.__file__).parent)
+    trees = sorted({real(p) for p in (sys.prefix, sys.base_prefix, package, *site.getsitepackages()) if os.path.isdir(p)})
+    sealed = [real(sealed_path)] if sealed_path else []
+    if any(_inside(os.path.dirname(path), tree) for path in sealed for tree in trees):
+        raise OSError("the decoder's reads would include the data folder")
+    libraries = sorted(p for p in {real(name) for name in [command[0], *_loaded_libraries()]}
+                       if not p.startswith(_SYSTEM_TREES) and not any(_inside(p, tree) for tree in trees))
+    params = {"PYTHON": real(command[0]), "SOURCE": os.path.dirname(package)}  # -P: the path finder lists SOURCE
+    rules = [SANDBOX_PROFILE]
+    for kind, paths in (("subpath", trees), ("literal", libraries), ("literal", sealed)):
+        for path in paths:
+            name = f"P{len(params)}"
+            params[name] = path
+            rules.append(f'(allow file-read* ({kind} (param "{name}")))\n')
+    defines = [arg for name, value in params.items() for arg in ("-D", f"{name}={value}")]
+    return [SANDBOX_EXEC, "-p", "".join(rules), *defines, *command]
+
+
+def confirm_sandboxed(pid: int) -> None:
+    """Asks the kernel, not the child, whether ``pid`` is under the profile. Raises OSError if anything says no."""
+    check = ctypes.CDLL("/usr/lib/libSystem.B.dylib").sandbox_check
+    # Only the unfiltered form: the path-filtered one is variadic, which ctypes doesn't pass right on arm64.
+    check.argtypes, check.restype = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int], ctypes.c_int
+    if check(pid, None, 0) != 1 or any(check(pid, op.encode(), 0) != 1 for op in SANDBOX_DENIES):
+        raise OSError("decoder not sandboxed")
+
+
 def child_env() -> dict[str, str]:
     env = {name: os.environ[name] for name in KEPT_ENV if name in os.environ}
     # This same source, however the engine found it. -m would otherwise take whatever the venv has installed.
@@ -168,7 +235,8 @@ def child_env() -> dict[str, str]:
 
 
 class Child:
-    def __init__(self):
+    def __init__(self, sealed_path=None):
+        self.sealed_path = sealed_path  # macOS: the one file the sandbox lets it read; none, and it can read no upload
         self.process = self.job = self.pid = self.reason = None
         self.began = self.waiting = time.monotonic()
         self.done = threading.Event()
@@ -176,7 +244,7 @@ class Child:
 
     def start(self) -> None:
         """Start it and have it waiting, limited. Raises RuntimeError, as nothing has touched the file."""
-        windows = sys.platform == "win32"
+        windows, mac = sys.platform == "win32", sys.platform == "darwin"
         # Normal priority: a lower class gets no CPU at all while every core is busy, which the silence timer can't tell
         # from a hang. A frozen child has no CPU either, so that timer can't excuse time the child wasn't given.
         flags = subprocess.CREATE_NO_WINDOW if windows else 0
@@ -187,8 +255,12 @@ class Child:
                 # Child joins before imports and closes its handle. If the parent has already died, opening the job
                 # fails and it exits. This also avoids leaving a suspended process across a spawn/assignment race.
                 env["MODWEN_DECODER_JOB"] = self.job.name
+            command = child_command()
+            if mac:  # no sandbox-exec, or a profile it rejects, means no H frame: the decoder did not start
+                command = sandboxed(command, self.sealed_path)
+                env["PYTHONDONTWRITEBYTECODE"] = "1"  # it can't, and each try would be a logged denial
             # Elsewhere its own process group, so a kill takes anything it started too. Windows: the job holds them.
-            self.process = subprocess.Popen(child_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                             stderr=subprocess.DEVNULL, bufsize=0, env=env, creationflags=flags,
                                             close_fds=True, start_new_session=not windows)
             self.watcher.start()
@@ -197,6 +269,8 @@ class Child:
                 raise RuntimeError("the decoder did not start")
             self.pid = struct.unpack("<I", frame[1])[0]
             self.check_identity()
+            if mac:
+                confirm_sandboxed(self.pid)
             if self.job:
                 self.job.adopt(self.pid)
             self.process.stdin.write(json.dumps({"memory": MEMORY_LIMIT, "cpu": CPU_SECONDS}).encode() + b"\n")
@@ -366,7 +440,7 @@ def decode_isolated(sealed, writer) -> int:
 
     Raises ImportRefused with a message for the user, or RuntimeError if the child couldn't be started or limited."""
     with _slots:
-        child = Child()
+        child = Child(sealed.path)
         try:
             child.start()
             return child.decode(sealed, writer)
