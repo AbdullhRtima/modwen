@@ -43,11 +43,10 @@ GUARD_BYTES = 2304 * MIB  # the outer cap QA used on Windows: if it fires, the p
 TOKEN = "verify-synthetic-token"
 IMPORT_FILES = ["tests/test_import_isolation.py", "tests/test_import_media.py", "tests/test_import_preflight.py",
                 "tests/test_import_safety.py", "tests/test_import_ui_text.py"]
-# Skipped off Windows by design (skipif in tests/test_import_isolation.py). Each has an engine check below instead,
-# except the descendant half of the CPU test: the product sets no process-count limit on macOS.
+# Skipped off Windows by design (skipif in tests/test_import_isolation.py). Each has an engine check below instead.
 WINDOWS_ONLY = {
     "test_a_real_kernel_limit_breach_does_not_terminate_the_engine": "engine: limits.memory-breach-fast",
-    "test_cpu_and_descendant_limits_hold": "engine: limits.cpu (descendants: no macOS limit exists)",
+    "test_cpu_and_descendant_limits_hold": "engine: limits.cpu, limits.descendants",
     "test_f24_an_intact_file_survives_every_core_being_busy": "engine: timers.busy-cores",
     "test_f24_the_child_runs_at_normal_priority": "engine: timers.priority",
 }
@@ -531,15 +530,20 @@ HOSTILE = {
 }
 
 
+def _write_peer(gen: Path, kind: str, body: str) -> None:
+    (gen / f"verify-peer-{kind}.py").write_text(
+        f"# verify-peer-{kind}\nfrom modwen.audio import importer\n" + body + "importer.decode_media_into = dec\n"
+        "import runpy\nrunpy.run_module('modwen.audio.decoder_child', run_name='__main__')\n")
+
+
 def _hostile_wrapper(work: Path) -> Path:
-    """An engine whose decoder child is the real ``decoder_child`` (handshake, limits, timers) with only its decode step
-    replaced. Kind ``cpu`` is ``spin`` under a 10 s CPU limit instead of the real 3,600 s."""
+    """An engine whose decoder child is the real ``decoder_child`` (handshake, limits, timers, and on macOS the
+    sandbox) with only its decode step replaced. Kind ``cpu`` is ``spin`` under a 10 s CPU limit instead of the real
+    3,600 s. The peer goes in as ``-c`` source, read when the child starts: the sandbox lets it read no folder of ours."""
     gen = work / "gen"
     gen.mkdir(exist_ok=True)
     for kind, body in HOSTILE.items():
-        (gen / f"verify-peer-{kind}.py").write_text(
-            "from modwen.audio import importer\n" + body + "importer.decode_media_into = dec\n"
-            "import runpy\nrunpy.run_module('modwen.audio.decoder_child', run_name='__main__')\n")
+        _write_peer(gen, kind, body)
     path = gen / "verify-engine.py"
     path.write_text(
         "import os, runpy, sys\n"
@@ -547,7 +551,7 @@ def _hostile_wrapper(work: Path) -> Path:
         "peer = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'verify-peer-%s.py' % "
         "('spin' if kind == 'cpu' else kind))\n"
         "from modwen.audio import decoder\n"
-        "decoder.child_command = lambda: [sys.executable, '-P', peer]\n"
+        "decoder.child_command = lambda: [sys.executable, '-P', '-c', open(peer).read()]\n"
         "if kind == 'cpu':\n    decoder.CPU_SECONDS = 10\n"
         "runpy.run_module('modwen', run_name='__main__', alter_sys=True)\n")
     return path
@@ -771,10 +775,52 @@ class Checks:
             self.out.add("limits.cpu", "PASS" if ok else "FAIL",
                          f"spinning child under a 10 s CPU limit: {show(r)} after {spent:.1f} s, child CPU seen "
                          f"{most:.1f} s, stop reason {e.stop_reasons() or 'none (the OS ended it)'}, {e.clean_state()}")
-        if MAC:
-            self.out.add("limits.descendants", "NOT RUN",
-                         "the product sets no process-count limit on the macOS child (by reading decoder_child.py); "
-                         "nothing to verify")
+
+    ESCAPES = ("fork", "exec", "connect to the engine's port", "write in the data folder", "read the database",
+               "read the key file")
+    ESCAPE = """import os, socket, subprocess
+real = importer.decode_media_into
+def fork():
+    if os.fork() == 0:
+        os._exit(0)
+TRIES = (fork, lambda: subprocess.run(['/bin/sh', '-c', 'exit 0']),
+         lambda: socket.create_connection(('127.0.0.1', {port}), timeout=5).close(),
+         lambda: open({mark!r}, 'w').write('x'), lambda: open({db!r}, 'rb').read(1),
+         lambda: open({secrets!r}, 'rb').read(1))
+def dec(sealed, writer, beat):
+    got = 0
+    for bit, attempt in enumerate(TRIES):
+        try:
+            attempt()
+        except OSError:
+            continue
+        got |= 1 << bit
+    if got:
+        os._exit(64 + got)  # no answer: the engine logs this exit code
+    return real(sealed, writer, beat)
+"""
+
+    def escape(self):
+        """macOS: a child that tries to get out (the RLIMIT_NPROC and the sandbox) and then decodes an intact file."""
+        if not MAC:
+            self.out.add("limits.descendants", "NOT RUN", "macOS only; on Windows the job's process limit holds them")
+            return
+        e = self.engine("escape", hostile="escape")
+        mark = e.work / "escaped.txt"
+        _write_peer(self.runs / "gen", "escape", self.ESCAPE.format(
+            port=e.port, mark=str(mark), db=str(e.work / "modwen.db"), secrets=str(e.work / ".secrets.json")))
+        with e:
+            r = e.post(self.short(), "escape.mp4")
+            codes = [int(c, 16) - 64 for c in re.findall(r"\(exit (0x[0-9a-f]+)\)", e.console())]
+            got = {name for bit, name in enumerate(self.ESCAPES) for code in codes if 0 < code < 64 and code >> bit & 1}
+            state, wrote = e.clean_state(), mark.exists()
+        imported = show(r) == "200 2.00s"
+        for check, names in (("limits.descendants", self.ESCAPES[:2]), ("limits.sandbox", self.ESCAPES[2:])):
+            done = sorted((got | ({"write in the data folder"} if wrote else set())) & set(names))
+            ok = imported and not done and not any(state.values())
+            self.out.add(check, "PASS" if ok else "FAIL",
+                         f"decoder child tried: {', '.join(names)}; managed: {', '.join(done) or 'none'}; then the "
+                         f"intact file: {show(r)}, {state}")
 
     # -- timers --
     def busy_cores(self):
@@ -948,7 +994,7 @@ class Checks:
                      f"decoder processes left {len(alive)}, sealed uploads left {len(sealed)}")
 
     ORDER = ["mac_apis", "basic_import", "seven_point_one", "f15_to_f20", "f21_to_f23", "memory_breach_fast",
-             "cpu_limit", "busy_cores", "priority_and_concurrency", "engine_kill", "valid_media", "frozen_child",
+             "cpu_limit", "escape", "busy_cores", "priority_and_concurrency", "engine_kill", "valid_media", "frozen_child",
              "spinning_child", "leftovers"]
 
 
