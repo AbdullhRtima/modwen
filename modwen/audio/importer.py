@@ -60,6 +60,10 @@ MAX_DEPTH = 16
 MAX_TOP_BOXES = 4_000_000  # more than two boxes per 20 ms fragment over the 6-hour limit
 MAX_FRAGMENT_BOXES = 6_000_000  # shared across every moof: five boxes per 20 ms fragment over the 6-hour limit
 MAX_INDEX_ENTRIES = 16_000_000  # counted after opening, across tracks: about 600 MiB, past eight 6-hour AAC tracks
+# FFmpeg builds its fragment index while it opens the file, before any check after opening can run: one entry per
+# top-level moof, each with a record of about 64 bytes for every track. A trak makes a track even when it is empty,
+# both in the moov and at the top level. So the product is what costs memory, with or without an mvex.
+MAX_FRAGMENT_TRACKS = 4_000_000  # moofs x traks: about 250 MiB; 20 ms fragments for 6 hours with three tracks fit
 MAX_SHORTFALL_SECONDS = 0.1  # fragmented files only: their packets reach the declared end exactly when intact
 LENGTH_SLACK_SECONDS = 1.0  # so a file of exactly 6 hours that decodes a few ms long still imports
 MAX_PLAIN_HOURS = 10_000  # 8 GB of the leanest speech is about 4,000 hours; beyond this the length itself is false
@@ -306,23 +310,34 @@ def _check_boxes(reader, size_bytes: int, sealed: SealedTempFile) -> None:
     if all the audio is there. A size of 0 means "to the end of the file", so it can show no cut.
 
     Devices and tools can leave bytes after the last box. Once the moov and the mdat are whole those are ignored if
-    they are too short to be a box or don't name one, but not in a fragmented file, where they can be a lost fragment."""
+    they are too short to be a box or don't name one, but not in a fragmented file, where they can be a lost fragment.
+
+    This walk also counts the moofs and traks for ``MAX_FRAGMENT_TRACKS``, whatever else it finds."""
     seen: set[bytes] = set()
+    moofs = traks = 0
+
+    def fragment_index() -> None:
+        if moofs * max(traks, 1) > MAX_FRAGMENT_TRACKS:
+            raise ImportRefused(NOT_SUPPORTED)  # a safety limit, as the box budgets are
 
     def end_of_boxes() -> None:
+        fragment_index()
         if not {b"moov", b"mdat"} <= seen or b"moof" in seen or is_fragmented(sealed):
             raise ImportRefused(DAMAGED)
 
     pos = 0
     for _ in range(MAX_TOP_BOXES):
         if pos == size_bytes:
-            return
+            return fragment_index()
         reader.seek(pos)
         head = reader.read(16)
         if len(head) < 8:
             return end_of_boxes()
         size, header, kind = int.from_bytes(head[:4], "big"), 8, head[4:8]
+        moofs += kind == b"moof"
+        traks += kind == b"trak"
         if size == 0:
+            fragment_index()
             if kind not in KNOWN_BOXES and is_fragmented(sealed):  # FFmpeg skips it, and every fragment after it
                 raise ImportRefused(DAMAGED)
             return
@@ -332,8 +347,10 @@ def _check_boxes(reader, size_bytes: int, sealed: SealedTempFile) -> None:
             if kind in KNOWN_BOXES:
                 raise ImportRefused(DAMAGED)
             return end_of_boxes()
-        if kind == b"moov" and kind in seen:
-            raise ImportRefused(DAMAGED)
+        if kind == b"moov":
+            if kind in seen:
+                raise ImportRefused(DAMAGED)
+            traks += sum(inner == b"trak" for inner, _, _ in _boxes(reader, pos + header, pos + size))
         seen.add(kind)
         pos += size
     raise ImportRefused(DAMAGED)

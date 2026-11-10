@@ -491,3 +491,37 @@ def test_a_meta_box_does_not_change_the_tracks_handler(data_dir, where):
     data = rewrite(pcm_file(data_dir, "mov", "pcm_s16le", 170), b"trak",
                    lambda t: meta + t if where == "before" else t + meta)
     assert judge(data_dir, data) == pytest.approx(170 * 16000, abs=2000)
+
+
+def _empty_traks_and_moofs(base, traks, moofs, mvex=False, top=False):
+    """The F15 moof attack: empty traks (in the moov, or at the top level) and empty top-level moofs."""
+    tree = parse(base)
+    moov = find(tree, b"moov")[1]
+    if not top:
+        moov.extend([[b"trak", []] for _ in range(traks)])
+    if mvex:
+        moov.append([b"mvex", []])
+    return ser(tree) + (box(b"trak", b"") * traks if top else b"") + box(b"moof", b"") * moofs
+
+
+@pytest.mark.parametrize("moofs,mvex,top", [(20_000, False, False), (100_000, False, False), (20_000, True, False),
+                                            (20_000, False, True)],
+                         ids=["moof_20000", "moof_100000", "moof_20000+mvex", "moof_20000+top_traks"])
+def test_a_fragment_index_too_big_to_build_never_reaches_av_open(data_dir, monkeypatch, moofs, mvex, top):
+    # FFmpeg builds this index inside av.open, so only the preflight can refuse it: the watchdog would be a race.
+    data = _empty_traks_and_moofs(make_media(data_dir, seconds=2), 999, moofs, mvex, top)
+    assert refused(data_dir, monkeypatch, data) == importer.NOT_SUPPORTED
+
+
+def test_the_fragment_index_bound_is_a_product_of_moofs_and_traks(data_dir):
+    def walk(data):
+        with importer.SealedTempFile(data_dir) as sealed:
+            sealed.append(data)
+            importer.check_boxes(sealed)
+
+    moov = box(b"moov", box(b"trak", b"") * 3) + box(b"mdat", b"")
+    walk(moov + box(b"moof", b"") * 1_080_000)  # 20 ms fragments for 6 hours, three tracks: 3.24M pairs
+    walk(box(b"moov", b"") + box(b"mdat", b"") + box(b"moof", b"") * 1_200_000)  # no trak still counts as one
+    with pytest.raises(importer.ImportRefused) as caught:
+        walk(moov + box(b"trak", b"") + box(b"moof", b"") * 1_000_001)  # a top-level trak makes a track too
+    assert str(caught.value) == importer.NOT_SUPPORTED
