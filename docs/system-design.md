@@ -998,13 +998,17 @@ modwen.audio.decoder_child`, the engine's own interpreter). At most two run at o
 - The child's environment is an allowlist with no tokens or secrets, and it inherits no other handles.
 - Limits: 1 GiB of memory, 3,600 s of CPU, 5,400 s of wall time, and 180 s without sending anything. The child runs
   at normal priority.
+- FFmpeg builds a fragmented file's fragment index while it opens the file, before any check after opening can run:
+  about 64 bytes for every top-level `moof` times every track (an empty `trak` in the `moov` or at the top level
+  counts). The child refuses the file as not supported, before FFmpeg opens it, when that product is over 4,000,000
+  (about 250 MiB). 20 ms fragments for 6 hours with three tracks come to 3.24 million.
 
 | | Windows | macOS |
 |---|---|---|
 | How limits are enforced | A Job Object, set up and checked by the engine before the key is sent. Killing the engine kills the child. | No job object: `RLIMIT_AS`/`RLIMIT_DATA` aren't usable. The engine polls the child's physical footprint every 20 ms and kills it above 1 GiB. FFmpeg allocations are capped at 512 MiB each (`av_max_alloc`), plus `RLIMIT_CPU`, no core dumps, and a pipe that ends the child when the engine dies. |
 | What the memory limit means | A hard limit on **committed** memory, not on RAM (RSS). Measured: the job's charge never exceeded 1,024 MiB; RSS reached about 1,030 MiB, because shared mappings count in RSS. | Not a hard limit. A 20 ms poll can be overshot; on Windows a fast allocator was measured filling a few hundred MiB in that time. |
 | CPU limit | Counts user-mode time only and is checked periodically: in a test with a 3 s limit, a user-mode load was stopped at about 8 s. The wall timer is the backstop. | `RLIMIT_CPU`. |
-| Child processes | The job stops the child from starting new processes (unless it is compromised, see below). | No process-count limit or process group: only the child's own pid is measured and killed. |
+| Child processes | The job stops the child from starting new processes (unless it is compromised, see below). | `RLIMIT_NPROC` is set to 0 before the key is sent, so the child can't start a process (unless it is compromised, see below). It runs in its own process group, and a kill ends the whole group. Only the child's own pid is measured. |
 | Status | Tested from source on Python 3.11 / PyAV 18.1 (FFmpeg 8.1.2) and Python 3.12 / PyAV 19.0.1 (FFmpeg 9.0.2). | Implemented, **not verified** on a Mac. |
 
 **Not a sandbox.**
