@@ -187,9 +187,10 @@ class Child:
                 # Child joins before imports and closes its handle. If the parent has already died, opening the job
                 # fails and it exits. This also avoids leaving a suspended process across a spawn/assignment race.
                 env["MODWEN_DECODER_JOB"] = self.job.name
+            # Elsewhere its own process group, so a kill takes anything it started too. Windows: the job holds them.
             self.process = subprocess.Popen(child_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                             stderr=subprocess.DEVNULL, bufsize=0, env=env, creationflags=flags,
-                                            close_fds=True)
+                                            close_fds=True, start_new_session=not windows)
             self.watcher.start()
             frame = self.read()
             if frame is None or frame[0] != b"H" or len(frame[1]) != 4:
@@ -308,7 +309,10 @@ class Child:
                     if footprint(self.pid) > MEMORY_LIMIT:
                         reason = "memory limit"
                 except (psutil.NoSuchProcess, psutil.ZombieProcess):
-                    pass  # it has exited, so it holds nothing; the timers still run until the parent is done
+                    # It has exited, which is no stop reason. What it sent stays readable in the pipe; this only ends
+                    # anything left in its group, which could hold the pipe open until the silence timer.
+                    self.kill()
+                    return
                 except Exception:
                     reason = "memory not readable"
             if reason:
@@ -319,9 +323,10 @@ class Child:
     def kill(self) -> None:
         if self.job:
             self.job.terminate()
-        elif self.pid and self.process and self.pid == self.process.pid:
+        elif self.process and sys.platform != "win32":
             try:
-                os.kill(self.pid, signal.SIGKILL)
+                # The group outlives its leader while anything in it runs, so its id can't be reused until then.
+                os.killpg(self.process.pid, signal.SIGKILL)
             except OSError:
                 pass
         if self.process:

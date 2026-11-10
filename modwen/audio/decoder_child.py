@@ -145,12 +145,17 @@ def _life_line() -> None:
 
 
 def posix_limits(cpu_seconds: int) -> bool:
-    """The parent's memory watchdog is the main limit here; these are what the child can set on itself."""
+    """The parent's memory watchdog is the main limit here; these are what the child can set on itself.
+
+    On macOS it also gives up starting processes, for good: nothing it decodes can fork past the watchdog, which
+    watches this one pid. Linux counts threads against that limit too, and FFmpeg decodes with threads."""
     import resource
 
     try:
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
+        if sys.platform == "darwin":
+            resource.setrlimit(resource.RLIMIT_NPROC, (0, 0))
     except (OSError, ValueError):
         return False
     if not _set_max_alloc():

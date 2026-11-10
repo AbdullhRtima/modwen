@@ -441,10 +441,8 @@ def test_watchdog_reads_a_child_that_has_exited_as_exited(monkeypatch, gone):
     child.pid = 42
     monkeypatch.setattr(child, "kill", lambda: killed.append(True))
     child.watcher.start()
-    time.sleep(.2)  # about ten polls
-    child.done.set()
     child.watcher.join(2)
-    assert child.reason is None and not killed
+    assert child.reason is None and killed  # no reason; the kill only clears out anything left in its group
 
 
 def test_watchdog_still_stops_a_child_whose_memory_cannot_be_read(monkeypatch):
@@ -463,13 +461,80 @@ def test_watchdog_still_stops_a_child_whose_memory_cannot_be_read(monkeypatch):
 
 
 def test_posix_limits_fail_closed_without_allocation_guard(monkeypatch):
-    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, setrlimit=lambda *a: None)
+    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, RLIMIT_NPROC=7, setrlimit=lambda *a: None)
     monkeypatch.setitem(sys.modules, "resource", resource)
     monkeypatch.setattr(os, "nice", lambda value: 0, raising=False)
     monkeypatch.setattr(C, "_set_max_alloc", lambda: False)
     assert not C.posix_limits(3600)
     monkeypatch.setattr(C, "_set_max_alloc", lambda: True)
     assert C.posix_limits(3600)
+
+
+@pytest.mark.parametrize("platform,forbids", [("darwin", True), ("linux", False)])
+def test_posix_limits_forbid_new_processes_on_macos(monkeypatch, platform, forbids):
+    # Linux counts threads against RLIMIT_NPROC as well, and FFmpeg decodes with threads.
+    calls = []
+    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, RLIMIT_NPROC=7, setrlimit=lambda *a: calls.append(a))
+    monkeypatch.setitem(sys.modules, "resource", resource)
+    monkeypatch.setattr(C, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(C, "_set_max_alloc", lambda: True)
+    assert C.posix_limits(60)
+    assert ((7, (0, 0)) in calls) is forbids
+
+    def refused(kind, limits):
+        if kind == 7:
+            raise ValueError("not allowed")
+
+    resource.setrlimit = refused
+    assert C.posix_limits(60) is not forbids  # a limit that can't be set fails closed
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="the real macOS process limit")
+def test_a_limited_macos_child_cannot_start_a_process():
+    code = """
+import subprocess, sys, threading
+from modwen.audio import decoder_child as C
+assert C.posix_limits(60)
+done = threading.Thread(target=lambda: None); done.start(); done.join()  # FFmpeg and the life line need threads
+try:
+    subprocess.Popen([sys.executable, '-c', 'pass']).wait()
+except OSError:
+    print('refused')
+"""
+    out = subprocess.run([sys.executable, "-P", "-c", code], env=D.child_env(), capture_output=True, text=True,
+                         timeout=60)
+    assert out.stdout.strip() == "refused", out.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the Windows job holds every process the child starts")
+@pytest.mark.parametrize("pipe", ["closed", "held"])
+def test_a_child_that_exits_takes_what_it_started_along(data_dir, monkeypatch, pipe):
+    # A peer has no RLIMIT_NPROC, as a child that got past it wouldn't: its own process group is the second layer.
+    # "held": the leftover keeps the child's stdout open, so without a sweep the parent waits for the silence timer.
+    where = data_dir / "grandchild"
+    io = "" if pipe == "held" else ", stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL"
+    peer(monkeypatch, action=f"""
+import subprocess
+p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']{io})
+open({str(where)!r}, 'w').write(str(p.pid))
+os._exit(9)
+""")
+    began = time.monotonic()
+    try:
+        with pytest.raises(I.ImportRefused, match="supported"):
+            decode(data_dir, b"sealed dummy")
+        assert time.monotonic() - began < 15
+        grandchild = int(where.read_text())
+        deadline = time.monotonic() + 5
+        while psutil.pid_exists(grandchild) and time.monotonic() < deadline:
+            time.sleep(.02)
+        assert not psutil.pid_exists(grandchild)
+    finally:
+        if where.exists():
+            try:
+                psutil.Process(int(where.read_text())).kill()
+            except psutil.Error:
+                pass
 
 
 def test_only_two_decoders_run_at_once(data_dir, monkeypatch):
@@ -537,7 +602,7 @@ def test_f24_the_child_runs_at_normal_priority(monkeypatch):
 
 
 def test_f24_posix_limits_leave_the_priority_alone(monkeypatch):
-    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, setrlimit=lambda *_: None)
+    resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, RLIMIT_NPROC=7, setrlimit=lambda *_: None)
     monkeypatch.setitem(sys.modules, "resource", resource)
     monkeypatch.setattr(C, "_set_max_alloc", lambda: True)
     monkeypatch.setattr(os, "nice", lambda _: pytest.fail("a niced child starves as F24 did"), raising=False)
