@@ -9,6 +9,7 @@ __pycache__/
 .ruff_cache/
 ui/node_modules/
 ui/dist/
+ui/*.tsbuildinfo
 config.yaml
 samples/generated/
 modwen/native/macos/build/
