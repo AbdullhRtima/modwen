@@ -163,11 +163,12 @@ def child_command() -> list[str]:
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 # macOS: nothing but reading its own Python, the packages and the one sealed file. Paths come in as -D parameters, so
 # no path is ever parsed as profile text. No network (loopback and Unix sockets too), no writes but /dev/null, no exec
-# but the one sandbox-exec makes, no fork, no mach-lookup (so no Keychain), no signals to others. Metadata (stat) is
-# open: Python and dyld stat many folders, and with no way out that tells nothing to anyone.
+# but its own Python (the one sandbox-exec starts and, for a framework build, the interpreter its launcher hands off
+# to), no fork, no mach-lookup (so no Keychain), no signals to others. Metadata (stat) is open: Python and dyld stat
+# many folders, and with no way out that tells nothing to anyone.
 SANDBOX_PROFILE = """(version 1)
 (deny default)
-(allow process-exec (literal (param "PYTHON")))
+(allow process-exec (literal (param "PYTHON")) (literal (param "INTERPRETER")))
 (allow file-read-metadata)
 (allow sysctl-read)
 (allow file-read* (literal "/") (subpath "/System") (subpath "/usr/lib"))
@@ -215,9 +216,16 @@ def sandboxed(command: list[str], sealed_path) -> list[str]:
     sealed = [real(sealed_path)] if sealed_path else []
     if any(_under_any(os.path.dirname(path), trees) for path in sealed):
         raise OSError("the decoder's reads would include the data folder")
-    libraries = sorted(p for p in {real(name) for name in [command[0], *_loaded_libraries()]}
+    images = _loaded_libraries()
+    libraries = sorted(p for p in {real(name) for name in [command[0], *images]}
                        if not p.startswith(_SYSTEM_TREES) and not any(_inside(p, tree) for tree in trees))
-    params = {"PYTHON": real(command[0]), "SOURCE": os.path.dirname(package)}  # -P: the path finder lists SOURCE
+    # A python.org or Homebrew framework build's bin/python3.x is a launcher that execs Resources/Python.app/.../Python,
+    # which is what this engine is really running (dyld's first image). Allowed only inside this Python's own install.
+    python = real(command[0])
+    running = real(images[0]) if images else python
+    interpreter = running if _inside(running, real(sys.base_prefix)) else python
+    params = {"PYTHON": python, "INTERPRETER": interpreter,
+              "SOURCE": os.path.dirname(package)}  # -P: the path finder lists SOURCE
     rules = [SANDBOX_PROFILE]
     for kind, paths in (("subpath", trees), ("literal", libraries), ("literal", sealed)):
         for path in paths:

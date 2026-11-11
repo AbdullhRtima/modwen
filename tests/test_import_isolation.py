@@ -638,7 +638,8 @@ def test_a_macos_child_that_cannot_be_sandboxed_never_gets_the_file(data_dir, mo
 
 def test_the_sandbox_profile_takes_paths_only_as_parameters(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "_loaded_libraries", lambda: [])  # dyld is macOS only; the profile is built anywhere
-    upload = tmp_path / 'a "quoted" (path)' / "upload.sealed"
+    # Windows can't name a folder with '"' in it. The profile is only used on macOS, but it's built the same everywhere.
+    upload = tmp_path / ("a 'quoted' (path)" if sys.platform == "win32" else 'a "quoted" (path)') / "upload.sealed"
     upload.parent.mkdir()  # its folder is compared with the read trees by identity, so it has to exist
     command = D.sandboxed([sys.executable, "-P", "-m", "x"], upload)
     profile, defines = command[2], dict(arg.split("=", 1) for arg in command[4:-4:2])
@@ -648,6 +649,23 @@ def test_the_sandbox_profile_takes_paths_only_as_parameters(tmp_path, monkeypatc
     assert os.path.realpath(upload) in defines.values()
     assert all(f'(param "{name}")' in profile for name in defines)
     assert profile.startswith("(version 1)\n(deny default)\n")
+
+
+@pytest.mark.parametrize("running", ["framework app", "outside this Python"])
+def test_the_sandbox_lets_a_framework_python_hand_off_to_its_own_interpreter_only(monkeypatch, running):
+    # A python.org or Homebrew framework build's bin/python3.x is a launcher that execs Resources/Python.app/.../Python
+    # (the image this engine is really running). The profile must allow that second exec, and nothing outside this
+    # Python's own install.
+    base = os.path.realpath(sys.base_prefix)
+    image = os.path.join(base, "Resources", "Python.app", "Contents", "MacOS", "Python") if running == "framework app" \
+        else os.path.join(base + "-host", "bin", "host")  # a sibling that only starts with the same name
+    monkeypatch.setattr(D, "_loaded_libraries", lambda: [image])
+    command = D.sandboxed([sys.executable, "-P", "-m", "x"], None)
+    profile, defines = command[2], dict(arg.split("=", 1) for arg in command[4:-4:2])
+    execs = profile.split("(allow process-exec", 1)[1].split("\n", 1)[0]
+    allowed = {defines[name] for name in defines if f'(param "{name}")' in execs}
+    python = os.path.realpath(sys.executable)
+    assert allowed == ({python, image} if running == "framework app" else {python})
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the Windows job holds every process the child starts")
