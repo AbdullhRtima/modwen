@@ -39,7 +39,7 @@ sys.path.insert(0, str(ROOT))
 MAC = sys.platform == "darwin"
 WINDOWS = sys.platform == "win32"
 MIB = 2 ** 20
-GUARD_BYTES = 2304 * MIB  # the outer cap QA used on Windows: if it fires, the product's own limit didn't
+GUARD_BYTES = 2304 * MIB  # a backstop above the 1,024 MiB limit: if it fires, the product's own limit didn't
 TOKEN = "verify-synthetic-token"
 IMPORT_FILES = ["tests/test_import_isolation.py", "tests/test_import_media.py", "tests/test_import_preflight.py",
                 "tests/test_import_safety.py", "tests/test_import_ui_text.py"]
@@ -184,7 +184,8 @@ def cmd_pytest(args) -> int:
     new = [c for c in cases if re.search(r"(^|_)f(29|30)_", c[0].split("::")[-1])]
     good = sum(1 for c in new if c[1] == "passed")
     out.add("tests.f29-f30", "PASS" if new and good == len(new) else ("NOT RUN" if not new else "FAIL"),
-            f"{good} of {len(new)} round-13 tests passed (real decoder child; the -k 'f29 or f30' set)")
+            f"{good} of {len(new)} non-finite-sample and broken-fragment tests passed "
+            f"(real decoder child; the -k 'f29 or f30' set)")
     for node, state, message in cases:
         if state == "skipped":
             name = node.split("::")[-1].split("[")[0]
@@ -672,7 +673,7 @@ class Checks:
             ok, detail = False, f"av_max_alloc {found}; footprint() raised {type(exc).__name__}: {exc}"
         self.out.add("limits.native-hooks", "PASS" if ok else "FAIL", detail)
 
-    # -- F14 to F23 --
+    # -- 7.1 audio, hostile MP4 box shapes, unusual sample tags, opaque metadata, protected audio --
     def seven_point_one(self):
         with self.engine("f14") as e:
             for codec, fmt in (("aac", "mp4"), ("pcm_s16le", "mov"), ("flac", "mp4")):
@@ -683,7 +684,7 @@ class Checks:
                 self.out.add(f"f14.7.1-{codec}", "PASS" if ok else "FAIL",
                              f"{show(r)}, stored tone {hz:.0f} Hz, {e.clean_state()}")
 
-    # QA 28's Windows outcomes for this shape (report 28, F15-F20 table), each through the real API
+    # Each hostile box shape's outcome on Windows through the real API; the Mac must match it
     ATTACK_EXPECTED = {"moof_2000": "200 2.00s", "moof_20000": "400 NOT_SUPPORTED", "moof_100000": "400 NOT_SUPPORTED",
                        "co64_first": "400 DAMAGED", "co64_last": "400 DAMAGED", "stz2": "400 DAMAGED",
                        "sync_traf": "400 NO_AUDIO", "sync_moof": "400 NO_AUDIO", "iinf": "400 NOT_SUPPORTED",
@@ -711,7 +712,7 @@ class Checks:
                              f"{e.peak / MIB:.0f} MiB, outer guard fired {e.guard_fired}, next import {show(after)}, "
                              f"{e.clean_state()}")
             reasons = e.stop_reasons()
-            self.out.note(f"decoder stop reasons logged for the F15-F20 files: {reasons or 'none'}")
+            self.out.note(f"decoder stop reasons logged for the hostile box-shape files: {reasons or 'none'}")
 
     def f21_to_f23(self):
         from tests.test_import_preflight import FULL, pcm_file
@@ -778,7 +779,7 @@ class Checks:
 
     # -- timers --
     def busy_cores(self):
-        """F24 on this Mac: every core busy at normal priority, the real 180 s silence timer, an intact file."""
+        """An intact file imports with every core busy at normal priority, under the real 180 s silence timer."""
         import psutil
 
         python = getattr(sys, "_base_executable", sys.executable)

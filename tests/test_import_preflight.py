@@ -1,4 +1,4 @@
-"""Generated QA preflight regressions, now contained by the real production child.
+"""Generated hostile-file preflight regressions, now contained by the real production child.
 
 Only the retained DRM/completeness rules use an in-process native-open tripwire. Allocation estimates and position
 rules are replaced by OS limits; valid edits and ignored metadata may import under those limits.
@@ -350,7 +350,7 @@ def refused(where, monkeypatch, data):
 
 @pytest.mark.parametrize("attack", REFUSED)
 def test_qa_probes_are_contained_in_the_real_child(data_dir, attack):
-    # These used to assert a Python estimate could predict native allocations. F15-F20 disproved that contract.
+    # These used to assert a Python estimate could predict native allocations. Real hostile files disproved that.
     # The production child now contains native work; permissive but harmless metadata may import.
     harmless = {"tables_in_clip", "tables_in_tapt", "tables_in_udta", "meta_junk_cmov", "ipco_cmov",
                 "sidx_into_a_box", "anevia_free", "toplevel_trak", "edit_list_in_tref", "overrun_sample_entry",
@@ -371,7 +371,7 @@ def test_message_says_limit_or_damage_truthfully(data_dir, monkeypatch, attack, 
     assert refused(data_dir, monkeypatch, REFUSED[attack](make_media(data_dir, seconds=2))) == message
 
 
-# Every track has one (task 30): without it FFmpeg guesses the timescale.
+# Every real track has one: without it FFmpeg guesses the timescale.
 MDHD = box(b"mdhd", FULL + bytes(8) + struct.pack(">II", 48000, 0) + bytes(4))
 
 
