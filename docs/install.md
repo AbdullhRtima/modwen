@@ -42,8 +42,9 @@ You can change any of this later in **Settings**.
 
 ## 5. Import a recording
 
-Press **Import recording** on Home and choose a file. Modwen transcribes it and writes the notes, the same as a
-meeting you recorded.
+Press **Import a recording** on Home and choose a file. Modwen transcribes it and writes the notes, the same as a
+meeting you recorded. The button reminds you to import only files from sources you trust (see
+**Security of video files** below).
 
 - **Audio files:** WAV, FLAC, MP3, OGG and AIFF.
 - **Video and audio files:** MP4, MOV and M4A. Modwen takes the audio and ignores the video; no video is kept.

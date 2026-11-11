@@ -35,6 +35,7 @@ const STRINGS = {
   importRec: ["Import a recording", "استورد تسجيلاً"],
   importing: ["Importing…", "جارٍ الاستيراد…"],
   importHint: ["WAV, FLAC, MP3, OGG, AIFF, MP4, MOV or M4A", "WAV أو FLAC أو MP3 أو OGG أو AIFF أو MP4 أو MOV أو M4A"],
+  importTrust: ["Import only files from sources you trust.", "لا تستورد إلا ملفات من مصادر تثق بها."],
   imported: ["Recording imported; processing on this computer", "تم الاستيراد، وتجري المعالجة على هذا الجهاز"],
   importFailed: ["The import didn't finish, so the file wasn't imported. Check that this computer has free space and that Modwen is running, then try again.",
     "لم يكتمل استيراد الملف. تأكد من وجود مساحة كافية على الجهاز ومن أن مُدوَّن يعمل، ثم حاول مرة أخرى."],

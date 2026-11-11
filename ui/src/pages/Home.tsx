@@ -66,7 +66,7 @@ export default function Home({ ctx }: { ctx: Ctx }) {
           <b><I.record size={18} />{ctx.recorder.recording ? t("recordingNow") : t("record")}</b><span>{t("onlineHint")} · {t("inPerson")}</span>
         </button>
         <button className="start-card" disabled={ctx.importing} onClick={() => ctx.pickImport()}>
-          <b>{ctx.importing ? <I.spin size={18} className="spin-anim" /> : <I.importFile size={18} />}{ctx.importing ? t("importing") : t("importRec")}</b><span>{t("importHint")}</span>
+          <b>{ctx.importing ? <I.spin size={18} className="spin-anim" /> : <I.importFile size={18} />}{ctx.importing ? t("importing") : t("importRec")}</b>{" "}<span>{t("importHint")}</span>{" "}<span className="trust">{t("importTrust")}</span>
         </button>
       </div>
 

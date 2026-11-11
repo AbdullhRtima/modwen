@@ -173,6 +173,7 @@ button.badge.warn { border: 1px dashed var(--warn); }
 .start-card:hover { border-color: var(--text-3); }
 .start-card b { font-family: var(--display); font-size: 15px; display: flex; gap: 8px; align-items: center; }
 .start-card span { color: var(--text-2); font-size: 13px; }
+.start-card .trust { font-size: 12.5px; }
 .start-card.rec b { color: var(--rec); }
 .mrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; background: var(--surface); cursor: pointer; text-decoration: none; color: inherit; }
 .mrow:hover { border-color: var(--border-strong); }
