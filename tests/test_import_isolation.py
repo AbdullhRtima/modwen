@@ -578,39 +578,68 @@ def test_a_normal_macos_import_still_decodes_under_the_sandbox(data_dir, monkeyp
     real_popen, real_confirm = subprocess.Popen, D.confirm_sandboxed
 
     def popen(command, **kwargs):
-        started.append(command)
-        return real_popen(command, **kwargs)
+        process = real_popen(command, **kwargs)
+        started.append((command, process.pid))
+        return process
 
     monkeypatch.setattr(D.subprocess, "Popen", popen)
     monkeypatch.setattr(D, "confirm_sandboxed", lambda pid: (real_confirm(pid), confirmed.append(pid)))
     samples, writer = decode(data_dir, make_media(data_dir, seconds=2))
     assert samples == pytest.approx(32000, abs=500) and writer.closed
-    assert started[0][0] == D.SANDBOX_EXEC and started[0][-3:] == D.child_command()[-3:]
-    assert len(confirmed) == 1
+    (command, launched), = started
+    assert command[0] == D.SANDBOX_EXEC and command[-3:] == D.child_command()[-3:]
+    assert confirmed == [launched]  # the kernel is asked about the process we started, not a pid the child named
 
 
 @mac_sandbox
-@pytest.mark.parametrize("how", ["no sandbox-exec", "profile rejected", "not sandboxed", "data folder in reach"])
+@pytest.mark.parametrize("how", ["no sandbox-exec", "profile rejected", "not sandboxed", "data folder in reach",
+                                 "data folder in reach, other case", "not the process launched", "no sandbox_check"])
 def test_a_macos_child_that_cannot_be_sandboxed_never_gets_the_file(data_dir, monkeypatch, how):
     """The child can't be started or limited: the general failure, and the key never crosses."""
+    folder = data_dir
     if how == "no sandbox-exec":
         monkeypatch.setattr(D, "SANDBOX_EXEC", str(data_dir / "sandbox-exec"))
     elif how == "profile rejected":
         monkeypatch.setattr(D, "SANDBOX_PROFILE", "(version 1)(deny default)(allow no-such-operation)")
     elif how == "not sandboxed":
         monkeypatch.setattr(D, "sandboxed", lambda command, sealed_path: command)
-    else:
+    elif how == "data folder in reach":
         monkeypatch.setattr(D.sys, "prefix", str(data_dir.parent))  # a read tree that holds the data folder
-    with I.SealedTempFile(data_dir) as sealed:
+    elif how == "data folder in reach, other case":  # the sandbox matches paths without regard to case; so must we
+        folder = Path(str(data_dir).swapcase())
+        if not folder.is_dir():
+            pytest.skip("this volume is case-sensitive")
+        # Added to the trees rather than in place of the venv's, so that without the check the child starts and
+        # reads the upload, as it would with a venv at ~ and MODWEN_DATA_DIR typed in another case.
+        import site
+        trees = site.getsitepackages()
+        monkeypatch.setattr(site, "getsitepackages", lambda: [*trees, str(data_dir.parent)])
+    elif how == "not the process launched":
+        # A launcher that starts the child instead of becoming it: the child is a descendant, so check_identity
+        # passes, and the kernel check is waved through here. Only the pid comparison is left to refuse it.
+        real_sandboxed = D.sandboxed
+        launcher = "import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))"
+        monkeypatch.setattr(D, "sandboxed", lambda command, sealed_path: [
+            sys.executable, "-c", launcher, *real_sandboxed(command, sealed_path)])
+        monkeypatch.setattr(D, "confirm_sandboxed", lambda pid: None)
+    elif how == "no sandbox_check":  # a future macOS without the symbol: still "could not be limited"
+        def missing(pid):
+            raise AttributeError("dlsym(RTLD_DEFAULT, sandbox_check): symbol not found")
+        monkeypatch.setattr(D, "confirm_sandboxed", missing)
+    with I.SealedTempFile(folder) as sealed:
         sealed.append(make_media(data_dir, seconds=1))
         monkeypatch.setattr(sealed, "handoff", lambda: pytest.fail("key sent to an unsandboxed child"))
-        with pytest.raises(RuntimeError):
+        with pytest.raises(RuntimeError, match="could not be limited|did not start") as refused:
             D.decode_isolated(sealed, Writer())
+    why = {"data folder in reach, other case": "would include the data folder",
+           "not the process launched": "not the process we sandboxed", "no sandbox_check": "symbol not found"}
+    assert why.get(how, "") in str(refused.value.__cause__)
 
 
 def test_the_sandbox_profile_takes_paths_only_as_parameters(tmp_path, monkeypatch):
     monkeypatch.setattr(D, "_loaded_libraries", lambda: [])  # dyld is macOS only; the profile is built anywhere
     upload = tmp_path / 'a "quoted" (path)' / "upload.sealed"
+    upload.parent.mkdir()  # its folder is compared with the read trees by identity, so it has to exist
     command = D.sandboxed([sys.executable, "-P", "-m", "x"], upload)
     profile, defines = command[2], dict(arg.split("=", 1) for arg in command[4:-4:2])
     assert command[0] == D.SANDBOX_EXEC and command[3:-4:2] == ["-D"] * len(defines)

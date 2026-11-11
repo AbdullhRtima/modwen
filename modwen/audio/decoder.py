@@ -192,6 +192,18 @@ def _inside(path: str, tree: str) -> bool:
     return os.path.commonpath([tree, path]) == tree
 
 
+def _under_any(path: str, trees) -> bool:
+    """Whether ``path`` is one of ``trees`` or below one, by file identity: the sandbox matches paths without regard
+    to case, so ``/users/...`` must count as inside ``/Users``. A folder that can't be looked at raises OSError."""
+    while True:
+        if any(os.path.samefile(path, tree) for tree in trees):
+            return True
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+
+
 def sandboxed(command: list[str], sealed_path) -> list[str]:
     """``command`` under sandbox-exec, reading only what this Python needs and ``sealed_path``. Raises OSError if the
     reads can't be drawn without taking in the folder the sealed file is in, which is the data folder."""
@@ -201,7 +213,7 @@ def sandboxed(command: list[str], sealed_path) -> list[str]:
     package = real(Path(modwen.__file__).parent)
     trees = sorted({real(p) for p in (sys.prefix, sys.base_prefix, package, *site.getsitepackages()) if os.path.isdir(p)})
     sealed = [real(sealed_path)] if sealed_path else []
-    if any(_inside(os.path.dirname(path), tree) for path in sealed for tree in trees):
+    if any(_under_any(os.path.dirname(path), trees) for path in sealed):
         raise OSError("the decoder's reads would include the data folder")
     libraries = sorted(p for p in {real(name) for name in [command[0], *_loaded_libraries()]}
                        if not p.startswith(_SYSTEM_TREES) and not any(_inside(p, tree) for tree in trees))
@@ -269,14 +281,16 @@ class Child:
                 raise RuntimeError("the decoder did not start")
             self.pid = struct.unpack("<I", frame[1])[0]
             self.check_identity()
-            if mac:
-                confirm_sandboxed(self.pid)
+            if mac:  # sandbox-exec execs in place and fork is denied: the child is the process we launched
+                if self.pid != self.process.pid:
+                    raise BadChild("decoder is not the process we sandboxed")
+                confirm_sandboxed(self.process.pid)
             if self.job:
                 self.job.adopt(self.pid)
             self.process.stdin.write(json.dumps({"memory": MEMORY_LIMIT, "cpu": CPU_SECONDS}).encode() + b"\n")
             if self.read() != (b"P", b""):
                 raise RuntimeError("the decoder could not confirm its limits")
-        except (OSError, BadChild, ValueError) as exc:
+        except (OSError, BadChild, ValueError, AttributeError) as exc:  # AttributeError: a symbol a macOS dropped
             raise RuntimeError("the decoder could not be limited") from exc
 
     def check_identity(self) -> None:
