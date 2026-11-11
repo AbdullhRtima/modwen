@@ -119,15 +119,31 @@ This dialog appears on every Start. It takes a few seconds; Enter accepts the de
 ┌ Sprint review · ● 00:23:41 · Local only ─────────── [❚❚] [■ Stop] ┐
 │                                                                   │
 │ 00:21:10  You       So the release is Thursday, right?            │
-│ 00:21:14  Others    ‏أيوه، بس محتاجين الـ QA يخلص قبلها‏               │
-│ 00:21:20  Others    I'll take the regression tests.               │
+│ 00:21:14  Call      ‏أيوه، بس محتاجين الـ QA يخلص قبلها‏               │
+│ 00:21:20  Call      I'll take the regression tests.               │
 │ ...  (auto-scroll; live text is lighter grey = draft)             │
 │                                                                   │
 │ [ + Mark moment ]   ← adds a bookmark the LLM treats as important │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-- Live labels are only "You / Others". Real names appear after processing.
+- Live labels are "You" (your mic), "Call" (the other side of an online meeting) and "Room" (the in-person mic).
+  Real names appear after processing.
+- **Live speaker names (optional).** If you saved someone's voice in People, a caption from them can show
+  their name instead of "Call" or "Room". An uncertain match shows a question mark ("Sara?"). The name is a
+  guess: it has a dotted underline and a tooltip ("Live guess. Final names are set after the meeting."), and the
+  banner above the list says so. A name can arrive a moment after its caption and swaps in place (screen
+  readers are not re-announced). The pop-out pill shows no captions, so it shows no names.
+  - Live line states: You, Call or Room (no match, names off, naming paused or failed), name, name with "?".
+  - Banner: while names are on the draft banner says names are guesses from saved voices. If naming pauses for
+    more than 5 s it shows "Live names paused because this computer is busy. Captions and the recording
+    continue normally." (hidden again after 5 s of resuming; the captions-paused banner wins if both apply).
+  - Arabic: names are isolated so they never reorder, and the mark is "؟" in the Arabic UI and "?" in the English UI.
+  - Settings, Transcription tab, under "Live captions": "Show speaker names in live captions" and "Also in
+    in-person meetings" (disabled when the first is off or live captions are off). Turning off while recording
+    shows "Off. The next caption will not be matched."; turning on shows "On from the next meeting."
+  - Settings, Privacy tab: a "Live speaker names" section describes how voices are handled (in memory, compared
+    and discarded, enrolled people only). The wording is a draft pending approval.
 - It's deliberately simple: one scrolling list, auto-scroll that pauses when you scroll up (with a "Jump to latest" button), and no editing during the meeting.
 - For 2+ hour meetings, only the last ~500 lines are kept on screen. The full live text is still available by scrolling up, loaded on demand.
 - If the machine can't keep up, a banner says "Live transcript paused, recording continues", and the live view skips ahead.

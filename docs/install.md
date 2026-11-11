@@ -35,7 +35,7 @@ You can change any of this later in **Settings**.
 
 1. Join your meeting (Google Meet in the browser, the Teams desktop app, or an in-person meeting).
 2. Click **● Start meeting** in Modwen or the tray, tick that participants were informed, and press **Start**.
-3. Watch the live captions, or just keep the small recording pill open.
+3. Watch the live captions, or just keep the small recording pill open. If you saved someone's voice in People, their captions can show their name as a guess. You can turn this off in Settings, Transcription.
 4. Press **Stop**. You'll get a **"Notes ready"** notification with the summary, decisions, action items and open questions.
 
 **Tip:** use headphones in online meetings, so other people's voices don't leak into your microphone.

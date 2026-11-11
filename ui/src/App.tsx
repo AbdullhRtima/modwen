@@ -18,6 +18,7 @@ export type Ctx = {
   recorder: RecorderStatus;
   tier: string;
   llmActive: string;
+  setupComplete: boolean;
   events: BBEvent[];
   lastEvent: BBEvent | null;
   /** Every server event, in order (lastEvent can skip one when two arrive together). Returns unsubscribe. */
@@ -46,6 +47,7 @@ export default function App() {
   const [recorder, setRecorder] = useState<RecorderStatus>({ recording: false });
   const [tier, setTier] = useState("?");
   const [llmActive, setLlmActive] = useState("");
+  const [setupComplete, setSetupComplete] = useState(false);
   const [authError, setAuthError] = useState(false);
   const [lastEvent, setLastEvent] = useState<BBEvent | null>(null);
   const [events, setEvents] = useState<BBEvent[]>([]);
@@ -77,6 +79,7 @@ export default function App() {
         setRecorder(s.recorder);
         setTier(s.tier);
         setLlmActive(s.llm_active);
+        setSetupComplete(s.setup_complete);
         setAuthError(false);
         setOffline(false);
         if (!s.setup_complete && !firstRunChecked.current && !location.hash.startsWith("#/pill")) {
@@ -113,7 +116,7 @@ export default function App() {
     };
   }, [refreshStatus]);
 
-  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, subscribe, toast, fail, go, refreshStatus };
+  const ctx: Ctx = { recorder, tier, llmActive, setupComplete, events, lastEvent, subscribe, toast, fail, go, refreshStatus };
   const path = hash.replace(/^#/, "") || "/";
   let page = <Home ctx={ctx} />;
   let narrow = false;

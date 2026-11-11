@@ -75,19 +75,31 @@ class Session:
 
 class Recorder:
     def __init__(self, cfg, store, keystore, publish: Callable[[dict], None], *,
-                 on_stopped: Callable[[str], None], live_engine_factory=None, source_factory=None):
+                 on_stopped: Callable[[str], None], live_engine_factory=None, source_factory=None,
+                 identifier_factory: Callable[[str, str], object | None] | None = None):
         self.cfg = cfg
         self.store = store
         self.keystore = keystore
         self.publish = publish
         self.on_stopped = on_stopped
         self.live_engine_factory = live_engine_factory
+        self.identifier_factory = identifier_factory  # (mode, meeting id) -> LiveIdentifier | None
         self.source_factory = source_factory or self._default_sources
         self.session: Session | None = None
         self._lock = threading.Lock()
         self._watchdog: threading.Thread | None = None
 
     # ------------------------------------------------------------------
+    def _identifier(self, mode: str, mid: str):
+        """Live speaker names for this meeting, or None. Never allowed to get in the way of recording."""
+        if self.identifier_factory is None:
+            return None
+        try:
+            return self.identifier_factory(mode, mid)
+        except Exception as exc:
+            log.warning("Live names unavailable (%s)", type(exc).__name__)
+            return None
+
     def _default_sources(self, mode: str, sources: list[str]) -> list[CaptureSource]:
         out: list[CaptureSource] = []
         if "mic" in sources:
@@ -129,6 +141,7 @@ class Recorder:
             live = None
             if self.live_engine_factory is not None and self.cfg.stt.live.provider != "none":
                 live = LiveTranscriber(self.live_engine_factory, self.publish, mid,
+                                       identifier=self._identifier(mode, mid),
                                        mode=meeting_language or self.cfg.stt.meeting_language,
                                        allowed=self.cfg.stt.allowed_languages,
                                        arabic_threshold=self.cfg.stt.arabic_threshold, prompt=self.cfg.stt_prompt())
@@ -149,6 +162,8 @@ class Recorder:
                     writers.pop(c.channel, None)
             if not started:
                 self.session = None
+                if live:
+                    live.stop()
                 session.queue.put(None)
                 session.writer.join(timeout=5)
                 self.store.update_meeting(mid, status="failed", error="; ".join(errors))
@@ -354,6 +369,7 @@ class Recorder:
                 "enabled": bool(s.live and s.live.enabled),
                 "paused": bool(s.live and s.live.paused),
                 "error": s.live.error if s.live else None,
+                "names": s.live.names_status() if s.live else "off",
             },
         }
 

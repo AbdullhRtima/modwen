@@ -5,24 +5,38 @@ import { I } from "../components/icons";
 import JobProgress, { useJob } from "../components/JobProgress";
 import { useServerEvents } from "../events";
 import { useI18n } from "../i18n";
+import { liveNamesCurrentlyOn, markLiveNamesNoticeSeen, WELCOME_STEP_ORDER, WelcomeStepId } from "../liveNamesOnboarding";
 import { AudioTest } from "./Settings";
 
 export default function Welcome({ ctx }: { ctx: Ctx }) {
   const { t, tr } = useI18n();
   const [step, setStep] = useState(0);
   const [st, setSt] = useState<SetupStatus | null>(null);
+  const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const reload = () => setup.status().then(setSt);
   useEffect(() => {
     reload();
+    setup.settings().then((r) => setSettings(r.settings)).catch(() => undefined);
   }, []);
   useServerEvents(ctx, (e) => {
     if (e.type === "job" || e.type === "resync") reload();
   });
 
-  const steps = [tr("Permissions", "الأذونات"), tr("This computer", "هذا الجهاز"), tr("Models", "النماذج"), tr("Notifications", "الإشعارات")];
+  const labels: Record<WelcomeStepId, string> = {
+    permissions: tr("Permissions", "الأذونات"),
+    liveNames: tr("Live speaker names", "التعرّف المباشر على المتحدثين"),
+    hardware: tr("This computer", "هذا الجهاز"),
+    models: tr("Models", "النماذج"),
+    notifications: tr("Notifications", "الإشعارات"),
+  };
+  const steps = WELCOME_STEP_ORDER.map((id) => labels[id]);
+  const lastStep = WELCOME_STEP_ORDER.length - 1;
   if (!st) return <p className="muted"><I.spin className="spin-anim" /> {tr("Checking this computer…", "جارٍ فحص هذا الجهاز…")}</p>;
   const finish = async () => {
     await setup.complete();
+    // Whoever finishes (or skips) onboarding has had the chance to see the new "live speaker
+    // names" step, so the one-time returning-user notice never needs to show for them either.
+    markLiveNamesNoticeSeen();
     ctx.toast(tr("Setup complete", "اكتمل الإعداد"));
     ctx.go("#/");
   };
@@ -31,8 +45,8 @@ export default function Welcome({ ctx }: { ctx: Ctx }) {
     <>
       <div className="page-head"><div>
         <h1>{tr("Welcome to Modwen", "مرحباً بك في مُدوَّن")}</h1>
-        <p className="lead">{tr("Four quick checks, then you're ready to record. Everything stays on this computer.",
-          "أربع خطوات سريعة ثم تبدأ التسجيل. كل شيء يبقى على هذا الجهاز.")}</p></div></div>
+        <p className="lead">{tr("A few quick checks, then you're ready to record. Everything stays on this computer.",
+          "بضع خطوات سريعة ثم تبدأ التسجيل. كل شيء يبقى على هذا الجهاز.")}</p></div></div>
       <ol className="wsteps">
         {steps.map((name, i) => (
           <li key={name}><button className={i < step ? "done" : i === step ? "on" : ""} onClick={() => setStep(i)}
@@ -41,16 +55,17 @@ export default function Welcome({ ctx }: { ctx: Ctx }) {
         ))}
       </ol>
       <div className="card wcard">
-        {step === 0 && <Permissions />}
-        {step === 1 && <Hardware st={st} />}
-        {step === 2 && <Models ctx={ctx} st={st} reload={reload} />}
-        {step === 3 && <NotifyStep />}
+        {WELCOME_STEP_ORDER[step] === "permissions" && <Permissions />}
+        {WELCOME_STEP_ORDER[step] === "liveNames" && <LiveNamesStep settings={settings} />}
+        {WELCOME_STEP_ORDER[step] === "hardware" && <Hardware st={st} />}
+        {WELCOME_STEP_ORDER[step] === "models" && <Models ctx={ctx} st={st} reload={reload} />}
+        {WELCOME_STEP_ORDER[step] === "notifications" && <NotifyStep />}
       </div>
       <div className="wnav">
         <button className="btn" disabled={step === 0} onClick={() => setStep(step - 1)}><I.back size={15} />{tr("Back", "رجوع")}</button>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn ghost" onClick={finish}>{tr("Skip setup", "تخطَّ الإعداد")}</button>
-          {step < 3 ? <button className="btn primary" onClick={() => setStep(step + 1)}>{tr("Continue", "متابعة")}</button>
+          {step < lastStep ? <button className="btn primary" onClick={() => setStep(step + 1)}>{tr("Continue", "متابعة")}</button>
             : <button className="btn primary" onClick={finish}><I.check size={15} />{tr("Finish", "إنهاء")}</button>}
         </div>
       </div>
@@ -70,6 +85,38 @@ function Permissions() {
       <div className="banner info" style={{ marginTop: 14, flexWrap: "nowrap", alignItems: "flex-start" }}><I.info style={{ marginTop: 2 }} />
         <span className="grow">{tr("macOS: allow Microphone and System Audio Recording (System Settings → Privacy & Security) for the app you started Modwen from. Windows: Settings → Privacy → Microphone → allow desktop apps.",
           "macOS: اسمح بالميكروفون وتسجيل صوت النظام (إعدادات النظام ← الخصوصية والأمان) للتطبيق الذي شغّلت منه مُدوَّن. Windows: الإعدادات ← الخصوصية ← الميكروفون ← اسمح لتطبيقات سطح المكتب.")}</span></div>
+    </>
+  );
+}
+
+/** New onboarding step (task 14), per reports/13-designer-onboarding.md §3-4. Placed right after
+ * Permissions (WELCOME_STEP_ORDER). Disclosure only — no checkbox, Continue/Back/Skip work
+ * exactly as on every other step (see that report §3's last bullet). */
+function LiveNamesStep({ settings }: { settings: Record<string, unknown> | null }) {
+  const { tr } = useI18n();
+  const on = liveNamesCurrentlyOn(settings);
+  return (
+    <>
+      <h2 className="wtitle"><I.voice size={18} />{tr("Live speaker names (on by default)", "التعرّف المباشر على المتحدثين (مفعّل تلقائياً)")}</h2>
+      <p>{tr(
+        "By default, while you record, Modwen compares each speaker's voice against the voices you've already saved in People — with their consent, from earlier meetings. If it recognizes a saved voice, that person's name appears on the live caption while the meeting is still going (sometimes with a question mark, like ⁨“Sara?”⁩, when it isn't sure). Anyone whose voice you haven't saved stays labeled Call or Room, as usual.",
+        // Arabic: the CEO (a native Arabic speaker) reviewed and explicitly approved this reconciled
+        // wording on 2026-11-07 — see eleven/decisions/0001-arabic-disclosure-wording.md. It merges the
+        // decision record's onboarding-on paragraphs 1-2 into this single English paragraph's <p>.
+        "أثناء التسجيل، يقارن مُدوَّن صوت كل متحدث ببصمات الأصوات التي سبق حفظها في صفحة الأشخاص بموافقة أصحابها. إذا تعرّف التطبيق على صوت محفوظ، يظهر اسم صاحبه على النص المباشر أثناء الاجتماع. وقد تظهر علامة استفهام بجانب الاسم، مثل «سارة؟»، إذا لم يكن التطبيق متأكداً من المطابقة. أما المتحدثون الذين لا يتطابق صوتهم مع أي بصمة محفوظة، فيستمر ظهورهم باسم «المكالمة» أو «الغرفة»، كالمعتاد.")}</p>
+      <p>{tr(
+        "Modwen never enrolls a new voice during a meeting and never groups unknown speakers into a profile on its own — only people already saved in People, by their own consent, can ever be named live. The comparison happens in memory and is discarded immediately after each caption; nothing about any voice is written down or sent anywhere.",
+        // Arabic: same 2026-11-07 CEO approval as above (decision record 0001) — merges the decision
+        // record's onboarding-on paragraphs 3-4 into this single English paragraph's <p>.
+        "لا يحفظ مُدوَّن بصمات صوت جديدة أثناء الاجتماع، ولا يجمع المتحدثين غير المعروفين في مجموعات أو ينشئ لهم ملفات صوتية تلقائياً. يقتصر التعرّف المباشر على الأشخاص الذين سبق حفظ بصمات أصواتهم بموافقتهم. تتم المقارنة باستخدام بيانات صوتية مؤقتة في الذاكرة، ويُتخلّص من هذه البيانات بعد إتمام المقارنة. ولا تُحفظ هذه البيانات المؤقتة ولا تُرسل إلى نموذج الذكاء الاصطناعي.")}</p>
+      <p>{on
+        ? tr("You can turn this off any time in Settings → Transcription, or read the full explanation in Settings → Privacy.",
+          // Arabic: CEO-approved 2026-11-07, decision record 0001 (onboarding on, closing sentence).
+          "يمكنك إيقاف هذه الميزة في أي وقت من الإعدادات ← تحويل الكلام إلى نص، أو قراءة الشرح الكامل في الإعدادات ← الخصوصية.")
+        : tr("This is currently turned off for you. You can turn it back on any time in Settings → Transcription, or read the full explanation in Settings → Privacy.",
+          // Arabic: CEO-approved 2026-11-07, decision record 0001 (onboarding off piece).
+          "هذا الخيار متوقف حالياً. يمكنك إعادة تفعيله في أي وقت من الإعدادات ← تحويل الكلام إلى نص، أو قراءة الشرح الكامل في الإعدادات ← الخصوصية.")}</p>
+      <p><a href="#/settings/privacy">{tr("How voices are handled", "كيف يتعامل مُدوَّن مع الأصوات")}</a></p>
     </>
   );
 }
