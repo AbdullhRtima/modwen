@@ -53,7 +53,9 @@ file can reach matters.
    on Python 3.12.
 2. Check [FFmpeg's security page](https://ffmpeg.org/security.html) and
    [PyAV's releases](https://github.com/PyAV-Org/PyAV/releases) for fixes after those versions, especially in the
-   mov/mp4 demuxer and the decoders Modwen accepts: AAC, ALAC, MP3, Opus, FLAC, AC-3/E-AC-3 and PCM.
+   mov/mp4 demuxer, the decoders Modwen lets FFmpeg open (AAC, ALAC, MP3, Opus, FLAC, AC-3/E-AC-3 and PCM;
+   `codec_whitelist` in `modwen/audio/importer.py` blocks the rest), and the parsers and shared code they use
+   (libavcodec parsers and bitstream filters, libavutil, libswresample).
 3. If a fix applies, run `uvx --from 'uv>=0.9' uv lock --upgrade-package av`, rerun the full test suite on both
    Python 3.11 and 3.12 (the import tests run real FFmpeg), and release. The `uv lock` in step 2 below only updates
    Modwen's own version; it does not upgrade `av`.

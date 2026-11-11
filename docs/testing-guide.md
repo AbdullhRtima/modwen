@@ -61,7 +61,7 @@ uv run modwen process samples/generated/bilingual_meeting.wav --title "File test
 
 You can also try your own recording (WAV, MP3, FLAC, OGG, AIFF):
 ```bash
-uv run modwen process ~/Downloads/my-meeting.m4a     # this command can't read .m4a: export as WAV or MP3 first (the app's Import recording can)
+uv run modwen process ~/Downloads/my-meeting.m4a     # this command can't read .m4a: export as WAV or MP3 first (the app's Import a recording can)
 uv run modwen process my-meeting.wav --language ar   # force Arabic only (or en)
 ```
 
@@ -103,6 +103,15 @@ every screen again; also try **Dark**):
 - [ ] **Import a recording** (Home) opens the meeting page with progress steps, then the notes.
   - An MP4, MOV or M4A file with sound imports the same way. A video with no sound says it has no audio; a text
     file renamed `.mp4` says it isn't supported. Nothing is added to the sidebar for either.
+- [ ] **Import didn't finish** (the failed-import entry): start a long video import, stop `modwen serve` with
+  Ctrl+C before it finishes, and start it again. Home shows the file under *Needs your attention* with
+  **Import didn't finish** and **Import again**.
+  - **Import again** with a good file opens the new meeting; the entry is gone from Home and the sidebar.
+  - **Import again** with a refused file (a text file renamed `.mp4`) shows the error; the entry stays.
+  - Open the entry: **Delete this entry** asks first; **Cancel** puts focus back on **Delete this entry**;
+    **Delete** removes it and opens Home.
+  - Repeat in Arabic (لم يكتمل الاستيراد، تحتاج انتباهك، استورد من جديد، احذف هذا العنصر، إلغاء، حذف) and in a
+    window under 560 px wide.
 - [ ] **Meeting page:**
   - Clicking a timestamp chip next to a note highlights the transcript line and plays from there.
   - Search the transcript; matches are highlighted.
