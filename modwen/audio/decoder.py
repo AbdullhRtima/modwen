@@ -190,7 +190,10 @@ def _loaded_libraries() -> list[str]:
 
 
 def _inside(path: str, tree: str) -> bool:
-    return os.path.commonpath([tree, path]) == tree
+    try:
+        return os.path.commonpath([tree, path]) == tree
+    except ValueError:  # Windows: on another drive, so not inside
+        return False
 
 
 def _under_any(path: str, trees) -> bool:
