@@ -1040,7 +1040,7 @@ most two run at once; a third import waits.
   out would also need a flaw in the macOS sandbox. `sandbox-exec` is deprecated by Apple and its profile language is
   undocumented; it still works on macOS 15, and Apple's own services use the same language, but a macOS update could
   break it. Then video imports fail closed (above) until Modwen is updated; `scripts/verify-macos-import.sh` and
-  `tests/test_import_isolation.py` check it on each Mac they run on. Decision record: eleven/decisions/0003.
+  `tests/test_import_isolation.py` check it on each Mac they run on.
 - WAV, FLAC, MP3, OGG and AIFF are still parsed inside Modwen itself, as before, with the same exposure to a flaw in
   libsndfile.
 - FFmpeg's version is fixed by `uv.lock`, so FFmpeg security fixes reach users only through a Modwen release
