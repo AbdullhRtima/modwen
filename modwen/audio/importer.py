@@ -583,7 +583,9 @@ def decode_media_into(sealed: SealedTempFile, writer: ChunkWriter, beat=lambda: 
     sealed.seek(0)
     try:
         kwargs = {"metadata_errors": "replace"} if int(av.__version__.split(".")[0]) < 19 else {}
-        container = av.open(sealed, format="mov", options={"enable_drefs": "0", "protocol_whitelist": ""}, **kwargs)
+        # Opening probes every track with its decoder; the whitelist keeps that to the audio decoders above.
+        options = {"enable_drefs": "0", "protocol_whitelist": "", "codec_whitelist": ",".join(sorted(MEDIA_CODECS))}
+        container = av.open(sealed, format="mov", options=options, **kwargs)
     except MemoryError:
         raise
     except av.error.FFmpegError as exc:

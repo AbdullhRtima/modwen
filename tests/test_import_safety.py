@@ -155,7 +155,31 @@ def test_native_open_options_are_restrictive_and_metadata_keyword_is_versioned(d
         importer.decode_media_into(sealed, ChunkWriter(data_dir / "out", "system", b"k" * 32))
     assert calls[0]["options"]["enable_drefs"] == "0"
     assert calls[0]["options"]["protocol_whitelist"] == ""
+    assert calls[0]["options"]["codec_whitelist"] == ",".join(sorted(importer.MEDIA_CODECS))
     assert calls[0].get("metadata_errors") == ("replace" if version.startswith("18.") else None)
+
+
+def test_video_decoder_is_not_opened_but_the_audio_still_imports(data_dir):
+    """FFmpeg's stream probing opens a decoder for every track; the whitelist keeps it to the audio ones."""
+    import av.logging
+
+    body = make_media(data_dir, video=True, seconds=2)
+    level = av.logging.get_level()
+    av.logging.set_level(av.logging.VERBOSE)
+    try:
+        with av.logging.Capture() as logs, importer.SealedTempFile(data_dir) as sealed:
+            sealed.append(body)
+            samples = importer.decode_media_into(sealed, ChunkWriter(data_dir / "out", "system", b"k" * 32))
+    finally:
+        av.logging.set_level(level)
+    assert samples > 0
+    assert any("(mpeg4) not on whitelist" in message for _, _, message in logs), logs
+
+
+def test_every_allowed_codec_is_a_real_decoder():
+    # A misspelt name would silently refuse every file that uses that codec.
+    for name in importer.MEDIA_CODECS:
+        assert av.Codec(name, "r").name == name
 
 
 @pytest.mark.parametrize("name,expected", [
