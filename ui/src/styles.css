@@ -82,8 +82,7 @@ h1, h2, h3, h4 { font-family: var(--display); text-wrap: balance; }
 .mlist { overflow: auto; padding: 4px 8px 12px; flex: 1; min-height: 0; }
 .group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); padding: 12px 10px 6px; font-weight: 600; }
 [dir="rtl"] .group, [dir="rtl"] .sec-title, [dir="rtl"] .section-title { letter-spacing: 0; }
-.mitem { width: 100%; text-align: start; border: 0; background: transparent; border-radius: 8px; padding: 9px 10px; display: grid; gap: 3px; color: inherit; text-decoration: none; }
-.mitem { position: relative; }
+.mitem { width: 100%; text-align: start; border: 0; background: transparent; border-radius: 8px; padding: 9px 10px; display: grid; gap: 3px; color: inherit; text-decoration: none; position: relative; }
 .mitem:hover { background: var(--surface-3); }
 .mitem.on { background: var(--amber-soft); }
 .mitem .t { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; unicode-bidi: plaintext; }

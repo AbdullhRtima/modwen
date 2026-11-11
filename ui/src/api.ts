@@ -22,10 +22,12 @@ export type Meeting = {
   action_item_count?: number;
   languages?: string[];
   speaker_count?: number;
+  /** The engine's rule for an import cut off before it finished (lists and single meetings carry it). */
+  failed_import?: boolean;
 };
 
 /** An import cut off before it finished: a named record with no audio, which can't be retried. */
-export const isFailedImport = (m: Meeting) => m.status === "failed" && Boolean(m.error?.startsWith("import:"));
+export const isFailedImport = (m: Meeting) => m.failed_import === true;
 
 /** The engine's MAX_UPLOAD_BYTES. */
 export const MAX_IMPORT_BYTES = 8 * 1024 ** 3;
