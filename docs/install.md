@@ -58,7 +58,7 @@ imports nothing. Try another copy of the file, or export it as WAV or MP3.
 
 **If Modwen stops during an import,** for example because the computer shut down, the next start removes the partial
 import and shows an **Import didn't finish** entry under *Needs your attention*. Press **Import again** and choose
-the same file, or delete the entry. Your original file is never changed.
+the same file, or open it and choose **Delete this entry**. Your original file is never changed.
 
 **Damaged files.** Modwen refuses files it can tell are damaged or cut off, but MP4 has no checksums, so some damage
 can't be detected: a damaged file can occasionally import as a shorter recording. Details:

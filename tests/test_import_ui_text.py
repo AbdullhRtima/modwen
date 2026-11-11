@@ -54,3 +54,14 @@ def test_upload_limit_matches_the_engine():
 
     assert MAX_UPLOAD_BYTES == 8 * 1024 ** 3
     assert "MAX_IMPORT_BYTES = 8 * 1024 ** 3" in (UI / "api.ts").read_text(encoding="utf-8")
+
+
+def test_the_ui_knows_the_importing_status():
+    """``GET /api/meetings/{id}`` returns an importing row (lists hide it): the type names it and the meeting page
+    shows it as working, so a direct link doesn't open an empty, finished-looking page with Retry or edits."""
+    api_ts = (UI / "api.ts").read_text(encoding="utf-8")
+    union = re.search(r'status: ("[a-z]+"(?: \| "[a-z]+")*);', api_ts)
+    assert union and '"importing"' in union.group(1)
+    review = (UI / "pages" / "Review.tsx").read_text(encoding="utf-8")
+    working = re.search(r"const processing = (.*);", review)
+    assert working and 'meeting.status === "importing"' in working.group(1)
