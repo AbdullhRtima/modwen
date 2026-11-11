@@ -103,8 +103,10 @@ every screen again; also try **Dark**):
 - [ ] **Import a recording** (Home) opens the meeting page with progress steps, then the notes.
   - An MP4, MOV or M4A file with sound imports the same way. A video with no sound says it has no audio; a text
     file renamed `.mp4` says it isn't supported. Nothing is added to the sidebar for either.
-- [ ] **Import didn't finish** (the failed-import entry): start a long video import, stop `modwen serve` with
-  Ctrl+C before it finishes, and start it again. Home shows the file under *Needs your attention* with
+- [ ] **Import didn't finish** (the failed-import entry): import a video at least 30 minutes long. While Home
+  still shows **Importing…** (about a minute), close the terminal window that runs `modwen serve`, confirming
+  if asked. Ctrl+C isn't reliable here: on Windows it can wait and let the import finish. Then run
+  `uv run modwen serve` in a new terminal. Home shows the file under *Needs your attention* with
   **Import didn't finish** and **Import again**.
   - **Import again** with a good file opens the new meeting; the entry is gone from Home and the sidebar.
   - **Import again** with a refused file (a text file renamed `.mp4`) shows the error; the entry stays.
