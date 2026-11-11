@@ -1216,6 +1216,50 @@ def test_replaces_never_removes_anything_else(app, data_dir, target):
         assert s.store.get_meeting(ids[target])
 
 
+def test_the_failed_import_text_never_changes():
+    """Existing databases hold this exact text. New wording would make their records ordinary failures."""
+    from modwen import services, storage
+
+    assert storage.IMPORT_INTERRUPTED == "import: Modwen stopped before this import finished."
+    assert services.IMPORT_INTERRUPTED is storage.IMPORT_INTERRUPTED
+
+
+@pytest.mark.parametrize("platform,error", [
+    ("meet", "import: speakers failed"),  # a processing step that happens to be called "import"
+    ("import", "speakers: no model"),  # how a 0.5.1 import fails in processing
+    ("import", "import: speakers failed"),
+    ("other", "import: Modwen stopped before this import finished."),
+])
+def test_only_an_interrupted_import_is_a_failed_import(app, data_dir, platform, error):
+    from modwen.services import is_failed_import
+
+    s, c = app
+    mid = s.store.create_meeting("Standup", status="failed", platform=platform, error=error)["id"]
+    assert not is_failed_import(s.store.get_meeting(mid))
+    assert c.get(f"/api/meetings/{mid}").json()["meeting"]["failed_import"] is False
+    assert [m["failed_import"] for m in c.get("/api/meetings").json()["meetings"]] == [False]
+    assert _post(c, make_media(data_dir), replaces=mid).status_code == 200
+    assert s.store.get_meeting(mid)  # Import again never deletes it
+    assert c.post(f"/api/meetings/{mid}/retry").status_code == 200  # an ordinary failure: Retry stays
+
+
+def test_the_api_says_which_meetings_are_failed_imports(app):
+    s, c = app
+    want = {_record(s): True,
+            s.store.create_meeting("Standup", status="failed", error="notes: no model")["id"]: False,
+            s.store.create_meeting("Planning", status="ready")["id"]: False}
+    listed = {m["id"]: m for m in c.get("/api/meetings").json()["meetings"]}
+    assert {mid: m["failed_import"] for mid, m in listed.items()} == want
+    with s.store._lock:
+        columns = {r["name"] for r in s.store._conn.execute("PRAGMA table_info(meetings)")} - {"wrapped_key"}
+    for mid, failed in want.items():
+        one = c.get(f"/api/meetings/{mid}").json()["meeting"]
+        assert one["failed_import"] is failed and s.store.get_meeting(mid)["failed_import"] is failed
+        assert columns <= set(one) and set(one) - columns == {"failed_import"}  # one new key, nothing else
+        counts = {"action_item_count", "languages", "speaker_count"}
+        assert set(listed[mid]) - columns == {"failed_import"} | counts
+
+
 def test_the_commit_and_the_removal_succeed_or_fail_together(app, data_dir):
     s, c = app
     old = _record(s)

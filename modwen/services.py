@@ -13,16 +13,10 @@ from modwen.crypto import KeyStore
 from modwen.events import EventBus
 from modwen.hardware import TierPlan, choose_tier, detect
 from modwen.notify import Notifier
-from modwen.storage import Store
+from modwen.storage import IMPORT_INTERRUPTED, Store
+from modwen.storage import is_failed_import as is_failed_import  # the failed-import rule lives in storage
 
 log = logging.getLogger(__name__)
-
-# The "import:" prefix is how the UI tells a failed-import record from a meeting that failed in processing.
-IMPORT_INTERRUPTED = "import: Modwen stopped before this import finished."
-
-
-def is_failed_import(meeting: dict) -> bool:
-    return meeting["status"] == "failed" and (meeting.get("error") or "").startswith("import:")
 
 
 def free_gpu_memory() -> None:
