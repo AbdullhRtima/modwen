@@ -1035,9 +1035,14 @@ most two run at once; a third import waits.
   it does, and before it gets the upload's key, the engine asks the kernel (`sandbox_check`) whether that pid is
   sandboxed and whether network, fork, file writes and service lookups are denied. Any other answer is "the decoder
   could not be limited": the import fails with the general error, and nothing is decoded outside the sandbox.
-- **What the macOS sandbox doesn't change.** A compromised child can still send wrong audio into that one import, learn
-  which files exist (metadata), and change its own in-process FFmpeg allocation cap (the 1 GiB watchdog stays). Getting
-  out would also need a flaw in the macOS sandbox. `sandbox-exec` is deprecated by Apple and its profile language is
+- **What the macOS sandbox doesn't change.** A compromised child can still send wrong audio into that one import and
+  change its own in-process FFmpeg allocation cap (the 1 GiB watchdog stays). It can also still *learn* things it can't
+  read: the names, sizes and times of files anywhere on the disk (stat, and turning inode numbers into paths), the list
+  of running programs, and the command lines and environment variables of your other programs, including the engine's
+  session token (`MODWEN_TOKEN`) and any keys a terminal or editor holds in its environment. The profile can't close
+  these (macOS doesn't mediate those calls through the sandbox). What it can't do is read any file's contents, write
+  anything, or send anything out: its only output is the audio of that one import, so anything it learned could only
+  show up as speech in that meeting's transcript. Getting out would also need a flaw in the macOS sandbox. `sandbox-exec` is deprecated by Apple and its profile language is
   undocumented; it still works on macOS 15, and Apple's own services use the same language, but a macOS update could
   break it. Then video imports fail closed (above) until Modwen is updated; `scripts/verify-macos-import.sh` and
   `tests/test_import_isolation.py` check it on each Mac they run on.
