@@ -110,8 +110,8 @@ every screen again; also try **Dark**):
   **Import didn't finish** and **Import again**.
   - **Import again** with a good file opens the new meeting; the entry is gone from Home and the sidebar.
   - **Import again** with a refused file (a text file renamed `.mp4`) shows the error; the entry stays.
-  - Open the entry: **Delete this entry** asks first; **Cancel** puts focus back on **Delete this entry**;
-    **Delete** removes it and opens Home.
+  - Open the entry: **Delete this entry** asks first; **Cancel** puts focus back on **Delete this entry**, and
+    so does Esc; **Delete** removes it and opens Home.
   - Repeat in Arabic (لم يكتمل الاستيراد، تحتاج انتباهك، استورد من جديد، احذف هذا العنصر، إلغاء، حذف) and in a
     window under 560 px wide.
 - [ ] **Meeting page:**
