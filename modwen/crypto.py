@@ -110,6 +110,25 @@ class SecretStore:
                 log.debug("keyring unavailable (%s); using file store", exc)
         return self._read_file().get(name)
 
+    def peek(self, name: str) -> str | None:
+        """Read an existing secret, same lookup order as ``get``, but write nothing: no keychain migration from the
+        old service name, no file created. For read-only tools (None when there is no such secret)."""
+        if self.mode in ("auto", "keyring") and name in _HANDED:
+            return _HANDED[name]
+        if self.mode in ("auto", "keyring"):
+            try:
+                import keyring
+
+                val = keyring.get_password(SERVICE, name)
+                if val is None:
+                    val = keyring.get_password(LEGACY_SERVICE, name)
+                if val is not None or self.mode == "keyring":
+                    return val
+            except Exception:
+                if self.mode == "keyring":
+                    raise
+        return self._read_file().get(name)
+
     def set(self, name: str, value: str) -> None:
         if self.mode in ("auto", "keyring"):
             try:

@@ -7,7 +7,7 @@ This compares [mockups/index.html](mockups/index.html) with the app as built.
 | Tray / menu-bar menu | ✅ | Status header, Start meeting…, Start in-person meeting…, Notes ready (n) →, Open Modwen, AI model online/offline, Settings…, Quit. While recording: Stop (timer), Pause/Resume, Mark moment, Show live transcript, Local only. Icon colours for idle / recording / processing / notes ready. **Later (Tauri):** global hotkeys ⌘⇧B / ⌘⇧M and a timer next to the menu-bar icon. |
 | Start dialog + consent | ✅ | Title, online/in-person, audio sources, language (Auto/EN/AR), local-only label, copy notice EN/AR, consent tick, Bluetooth warning, floating-pill option |
 | Recording pill | ✅ | A small separate browser window with timer, You/Others meters, warnings, Mark, Pause, Stop and Expand. **Later (Tauri):** always on top. |
-| Live transcript | ✅ | You/Others labels, auto-scroll, "live paused" banner, Mark moment |
+| Live transcript | ✅ | You/Call/Room labels (a saved person's name can show as an optional guess), auto-scroll, "live paused" banner, Mark moment |
 | Processing | ✅ | Steps, transcription %, notes part N of M, ETA, Retry / Retry notes on failure |
 | "Notes ready" notification | ✅ | Native notification on macOS and Windows; failure notification too |
 | Meetings home | ✅ | Search, Import recording, "Needs attention" first, status chips, Retry |
