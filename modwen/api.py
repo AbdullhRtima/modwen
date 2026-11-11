@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import secrets
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Any, Literal
 
@@ -22,7 +23,7 @@ from modwen.audio.chunks import write_channel
 from modwen.egress import EgressBlocked, ensure_local
 from modwen.notes.render import notes_markdown
 from modwen.pipeline.recorder import RecorderBusy
-from modwen.services import Services
+from modwen.services import Services, is_failed_import
 
 log = logging.getLogger(__name__)
 
@@ -153,8 +154,16 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
     def editable_or_409(mid: str) -> dict:
         """Speakers, lines and notes are rewritten while a meeting is processed: edits then would be lost."""
         m = meeting_or_404(mid)
-        if m["status"] in ("recording", "processing"):
+        if m["status"] in ("recording", "processing", "importing"):
             raise HTTPException(409, "Modwen is still working on this meeting. Try again when it has finished.")
+        return m
+
+    def reprocessable_or_409(mid: str) -> dict:
+        """A failed import has no audio, and a running one has no complete audio yet: nothing to process."""
+        m = meeting_or_404(mid)
+        if m["status"] == "importing" or is_failed_import(m):
+            raise HTTPException(409, "This import didn't finish, so there is nothing to process. "
+                                     "Import the file again.")
         return m
 
     # ----- status -----
@@ -271,12 +280,16 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
     # ----- import a recording file -----
     @app.post("/api/meetings/import")
     async def import_recording(request: Request, title: str = "Imported recording", meeting_language: str = "auto",
-                               channel: str = "system"):
+                               channel: str = "system", filename: str | None = None, replaces: str | None = None):
         """The file is the raw request body. It is streamed into an encrypted temp file (never in the clear on
-        disk, never whole in memory), then decoded block by block into the meeting's encrypted chunks."""
-        from starlette.concurrency import run_in_threadpool
+        disk, never whole in memory), then decoded block by block into the meeting's encrypted chunks.
 
-        from modwen.audio.importer import SealedTempFile
+        ``filename`` names the failed-import record if the import is cut off. ``replaces`` is the id of the failed
+        import this one is meant to resolve: it is removed once this import is complete."""
+        from starlette.concurrency import run_in_threadpool
+        from starlette.requests import ClientDisconnect
+
+        from modwen.audio.importer import EMPTY, IMPORT_FAILED, TOO_BIG, SealedTempFile
 
         if request.headers.get("content-type", "").startswith("multipart/"):
             raise HTTPException(415, "Send the file as the request body (form uploads are spooled to disk "
@@ -285,19 +298,45 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
             raise HTTPException(400, "channel must be system, mic or room")
         if meeting_language not in ("auto", "ar", "en"):
             raise HTTPException(400, "meeting_language must be auto, ar or en")
-        sealed = SealedTempFile(s.cfg.data_dir)
+        title = title.strip() or "Imported recording"
+        # The row marks the import from its very start: a crash at any later moment leaves it to _recover_imports.
+        # Only this new filename is normalized; existing callers' meeting titles retain their behavior.
+        filename = "".join(ch for ch in (filename or "") if unicodedata.category(ch) != "Cc"
+                           and unicodedata.bidirectional(ch) not in {"LRE", "RLE", "LRO", "RLO", "PDF", "LRI",
+                                                                   "RLI", "FSI", "PDI"})[:255].strip()
+        mid = s.store.create_meeting(filename or title, status="importing",
+                                     mode="online" if channel != "room" else "in_person",
+                                     meeting_language=meeting_language, platform="import",
+                                     summary_language=s.cfg.notes.summary_language, llm_profile=s.cfg.llm.active,
+                                     hardware_tier=s.plan.tier, channels=[channel],
+                                     timezone=s.cfg.notes.timezone)["id"]
+        sealed = None
         try:
-            async for chunk in request.stream():
-                if chunk:
-                    await run_in_threadpool(sealed.append, chunk)
-                if sealed.size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(413, f"The file is larger than {MAX_UPLOAD_BYTES // 1024**3} GB")
-            if not sealed.size:
-                raise HTTPException(400, "The file is empty")
-            return await run_in_threadpool(import_sealed, s, sealed, title=title.strip() or "Imported recording",
-                                           meeting_language=meeting_language, channel=channel)
+            try:
+                sealed = SealedTempFile(s.cfg.data_dir)
+                async for chunk in request.stream():
+                    if chunk:
+                        await run_in_threadpool(sealed.append, chunk)
+                    if sealed.size > MAX_UPLOAD_BYTES:
+                        raise HTTPException(413, TOO_BIG)
+                if not sealed.size:
+                    raise HTTPException(400, EMPTY)
+            except ClientDisconnect as exc:  # the window closed: the engine is alive, so say so now
+                s.mark_import_interrupted(mid)
+                s.meetings_changed(mid, "failed")
+                raise HTTPException(400, IMPORT_FAILED) from exc
+            except HTTPException:
+                discard_import(s, mid)
+                raise
+            except Exception as exc:
+                discard_import(s, mid)
+                log.warning("Import %s failed while storing the upload: %s", mid, type(exc).__name__)
+                raise HTTPException(500, IMPORT_FAILED) from exc
+            return await run_in_threadpool(import_sealed, s, sealed, mid=mid, title=title, channel=channel,
+                                           replaces=replaces)
         finally:
-            sealed.close()
+            if sealed is not None:
+                sealed.close()
 
     # ----- meetings -----
     @app.get("/api/meetings")
@@ -320,7 +359,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
         m = meeting_or_404(mid)
         if m["status"] == "recording" and s.recorder.session and s.recorder.session.meeting_id == mid:
             raise HTTPException(409, "This meeting is being recorded. Stop it first.")
-        if s.is_queued_or_running(mid):  # also a summary-only rewrite, which keeps the meeting "ready"
+        if m["status"] == "importing" or s.is_queued_or_running(mid):  # also a summary-only rewrite ("ready")
             raise HTTPException(409, "Modwen is still working on this meeting. Delete it when it has finished.")
         import shutil
 
@@ -339,7 +378,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.post("/api/meetings/{mid}/retry")
     def retry(mid: str):
-        if s.is_queued_or_running(meeting_or_404(mid)["id"]):
+        if s.is_queued_or_running(reprocessable_or_409(mid)["id"]):
             raise HTTPException(409, "This meeting is already being processed")
         s.store.update_meeting(mid, status="processing", error=None)
         s.meetings_changed(mid, "retry")
@@ -348,7 +387,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.post("/api/meetings/{mid}/regenerate")
     def regenerate(mid: str, req: RegenerateRequest):
-        meeting_or_404(mid)
+        reprocessable_or_409(mid)
         if req.llm_profile and req.llm_profile not in s.cfg.llm.profiles:
             raise HTTPException(400, f"Unknown LLM profile {req.llm_profile}")
         if req.scope not in ("all", "summary"):
@@ -451,7 +490,7 @@ def create_app(services: Services, token: str | None = None, lan: bool | None = 
 
     @app.post("/api/meetings/{mid}/speakers/redetect")
     def redetect(mid: str, req: RedetectRequest):
-        meeting_or_404(mid)
+        reprocessable_or_409(mid)
         if req.num_speakers is not None and not 1 <= req.num_speakers <= 20:
             raise HTTPException(400, "num_speakers must be between 1 and 20")
         s.enqueue_redetect(mid, num_speakers=req.num_speakers)
@@ -603,33 +642,56 @@ def attachment_header(title: str, date: str, ext: str) -> str:
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(full)}"
 
 
-def import_sealed(s: Services, sealed, *, title: str, meeting_language: str, channel: str) -> dict:
-    """Create a meeting from an uploaded recording (see ``modwen.audio.importer``) and queue it."""
+def discard_import(s: Services, mid: str) -> None:
+    """A refused or failed import leaves nothing behind."""
     import shutil
 
-    from modwen.audio.chunks import ChunkWriter
-    from modwen.audio.importer import decode_into, probe
+    shutil.rmtree(s.cfg.audio_dir / mid, ignore_errors=True)
+    s.store.delete_meeting(mid)
+
+
+def replaced_import_removed(s: Services, mid: str) -> None:
+    """The record's row went with the commit. Any problem with the rest leaves the finished import as it is."""
+    import shutil
 
     try:
-        info = probe(sealed)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    data_key, wrapped = s.keystore.new_data_key()
-    m = s.store.create_meeting(title, wrapped_key=wrapped, status="processing",
-                               mode="online" if channel != "room" else "in_person", meeting_language=meeting_language,
-                               platform="import", summary_language=s.cfg.notes.summary_language,
-                               llm_profile=s.cfg.llm.active, hardware_tier=s.plan.tier, channels=[channel],
-                               timezone=s.cfg.notes.timezone, duration_ms=int(info.duration * 1000))
-    mdir = s.cfg.audio_dir / m["id"]
-    try:
-        decode_into(sealed, ChunkWriter(mdir, channel, data_key, s.cfg.capture.chunk_seconds))
+        shutil.rmtree(s.cfg.audio_dir / mid, ignore_errors=True)
+        s.meetings_changed(mid, "deleted")
     except Exception as exc:
-        shutil.rmtree(mdir, ignore_errors=True)
-        s.store.delete_meeting(m["id"])
-        raise HTTPException(400, f"Could not read the audio file: {exc}") from exc
-    s.enqueue_processing(m["id"])
-    s.meetings_changed(m["id"], "imported")
-    return s.store.get_meeting(m["id"])  # type: ignore[return-value]
+        log.warning("Could not finish removing the failed-import record %s: %s", mid, type(exc).__name__)
+
+
+def import_sealed(s: Services, sealed, *, mid: str, title: str, channel: str, replaces: str | None = None) -> dict:
+    """Fill the importing meeting ``mid`` from an uploaded recording (see ``modwen.audio.importer``) and queue it."""
+    from modwen.audio.chunks import ChunkWriter
+    from modwen.audio.importer import IMPORT_FAILED, ImportRefused, decode_into, is_media_container, probe
+
+    try:
+        media = is_media_container(sealed)
+        info = None if media else probe(sealed)
+        data_key, wrapped = s.keystore.new_data_key()
+        s.store.update_meeting(mid, wrapped_key=wrapped)
+        writer = ChunkWriter(s.cfg.audio_dir / mid, channel, data_key, s.cfg.capture.chunk_seconds)
+        if info is None:
+            duration_ms = int(s.media_decoder(sealed, writer) / 16)
+        else:
+            decode_into(sealed, writer)
+            duration_ms = int(info.duration * 1000)
+        committed, removed = s.store.commit_import(mid, title, duration_ms, replaces)
+        if not committed:
+            raise RuntimeError("the import was marked as interrupted while it ran")
+    except ImportRefused as exc:
+        discard_import(s, mid)
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        discard_import(s, mid)
+        log.warning("Import %s failed: %s", mid, type(exc).__name__)  # never the message: it may hold a path
+        raise HTTPException(400, IMPORT_FAILED) from exc
+    if removed:
+        replaced_import_removed(s, replaces)
+    s.enqueue_processing(mid)
+    s.meetings_changed(mid, "imported")
+    return s.store.get_meeting(mid)  # type: ignore[return-value]
 
 
 def import_audio(s: Services, audio, *, title: str, meeting_language: str = "auto", channel: str = "system") -> dict:

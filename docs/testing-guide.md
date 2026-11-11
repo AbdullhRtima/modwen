@@ -61,7 +61,7 @@ uv run modwen process samples/generated/bilingual_meeting.wav --title "File test
 
 You can also try your own recording (WAV, MP3, FLAC, OGG, AIFF):
 ```bash
-uv run modwen process ~/Downloads/my-meeting.m4a     # .m4a is not supported: export as WAV or MP3 first
+uv run modwen process ~/Downloads/my-meeting.m4a     # this command can't read .m4a: export as WAV or MP3 first (the app's Import a recording can)
 uv run modwen process my-meeting.wav --language ar   # force Arabic only (or en)
 ```
 
@@ -101,6 +101,19 @@ every screen again; also try **Dark**):
 - [ ] **Sidebar:** meetings grouped Today / Yesterday / This week / Older; search filters by title. A new meeting
   shows bold with a dot until you open it.
 - [ ] **Import a recording** (Home) opens the meeting page with progress steps, then the notes.
+  - An MP4, MOV or M4A file with sound imports the same way. A video with no sound says it has no audio; a text
+    file renamed `.mp4` says it isn't supported. Nothing is added to the sidebar for either.
+- [ ] **Import didn't finish** (the failed-import entry): import a video at least 30 minutes long. While Home
+  still shows **Importing…** (about a minute), close the terminal window that runs `modwen serve`, confirming
+  if asked. Ctrl+C isn't reliable here: on Windows it can wait and let the import finish. Then run
+  `uv run modwen serve` in a new terminal. Home shows the file under *Needs your attention* with
+  **Import didn't finish** and **Import again**.
+  - **Import again** with a good file opens the new meeting; the entry is gone from Home and the sidebar.
+  - **Import again** with a refused file (a text file renamed `.mp4`) shows the error; the entry stays.
+  - Open the entry: **Delete this entry** asks first; **Cancel** puts focus back on **Delete this entry**, and
+    so does Esc; **Delete** removes it and opens Home.
+  - Repeat in Arabic (لم يكتمل الاستيراد، تحتاج انتباهك، استورد من جديد، احذف هذا العنصر، إلغاء، حذف) and in a
+    window under 560 px wide.
 - [ ] **Meeting page:**
   - Clicking a timestamp chip next to a note highlights the transcript line and plays from there.
   - Search the transcript; matches are highlighted.
@@ -172,6 +185,37 @@ Things to watch:
   - Measured on an M1 16 GB (Tier D, large-v3, 2 h 8 min, 4 speakers): see the deep-test notes in the release.
 - **Crash during recording:** while recording, quit the terminal (Ctrl+C twice) and restart `uv run modwen serve`. The meeting is picked up from its saved 30-second chunks and processed automatically (at most the last 30 seconds are lost). Closed in the first 30 seconds, it shows "Modwen closed before any audio was saved".
 - **Disk space:** the recording stops itself, with a warning, if free space drops under 2 GB.
+
+### A9. Verify MP4, MOV and M4A import on a Mac
+MP4, MOV and M4A import has not been verified on macOS yet (see
+[system-design.md §10.1](system-design.md#101-imported-recordings-mp4-mov-m4a)). One script checks it. In Terminal,
+from a checkout of the branch under test:
+
+```bash
+bash scripts/verify-macos-import.sh
+```
+
+- **Time:** plan on an hour or more, mostly unattended, plus package downloads. Keep the Mac awake and plugged in,
+  and close other heavy apps.
+- **What it does,** for Python 3.11 and then 3.12: records the macOS version, chip, uv, Python, PyAV and FFmpeg
+  versions; sets up with `uv sync --frozen` and the same extras as `Modwen.command`; runs the import test files with
+  pytest; then runs a real engine on `127.0.0.1` with fake speech-to-text and a fake local AI, and checks generated
+  hostile files, a real memory-limit breach (its peak footprint and overshoot), the CPU limit, frozen and spinning
+  decoders, every core busy, an engine kill and restart, several imports at once, and valid fragmented and
+  edit-list files.
+- **If setup fails,** for example with the macOS 13 setup problem in [install.md](install.md#troubleshooting), that
+  failure is recorded as the result for that Python. Nothing is worked around; send the report anyway.
+- **What it never does:** download a model, use a recording, or use the network for anything but dependency setup.
+  Everything it writes stays in `.tmp/macos-verify/` in the checkout (if `uv` is missing, the desktop app's pinned
+  uv goes to `.cache/desktop-uv/`). Your own `.venv` isn't touched.
+- **What to send back:** the one file `.tmp/macos-verify/report.txt`. Read it first: it holds versions and PASS /
+  FAIL / NOT RUN lines only, with paths shortened to `<checkout>` and `~`, and no user name, host name, serial number
+  or recording. Logs and generated media stay on the Mac.
+- **Clean up afterwards:** `rm -rf .tmp/macos-verify`
+- Four tests only run on Windows and are skipped on a Mac; the report lists each as NOT RUN with the engine check that
+  replaces it. `limits.descendants` is always NOT RUN on macOS, because Modwen sets no process-count limit there.
+- An Apple Silicon run is the one that matters most, ideally on macOS 13 and on 14 or later. The report is evidence
+  for the maintainers, not an approval.
 
 ---
 
@@ -249,6 +293,7 @@ Then follow the A6 checklist.
 | 10 | "Notes ready" notification appears and opens the meeting | | | |
 | 11 | L6 2-hour meeting: notes complete, time taken | | | |
 | 12 | L6 crash recovery | | | |
+| 13 | A9 `verify-macos-import.sh` report sent (macOS only) | | n/a | |
 
 ## Troubleshooting
 

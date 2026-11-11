@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, BBEvent, connectEvents, RecorderStatus } from "./api";
+import { api, ApiError, BBEvent, connectEvents, MAX_IMPORT_BYTES, RecorderStatus } from "./api";
 import Home from "./pages/Home";
 import Start from "./pages/Start";
 import Live from "./pages/Live";
@@ -13,6 +13,7 @@ import Sidebar from "./components/Sidebar";
 import UpdateBanner from "./components/UpdateBanner";
 import { I } from "./components/icons";
 import { useI18n } from "./i18n";
+import { importMessage } from "./serverText";
 
 export type Ctx = {
   recorder: RecorderStatus;
@@ -22,10 +23,15 @@ export type Ctx = {
   lastEvent: BBEvent | null;
   /** Every server event, in order (lastEvent can skip one when two arrive together). Returns unsubscribe. */
   subscribe: (fn: (e: BBEvent) => void) => () => void;
-  toast: (msg: string, kind?: "ok" | "error") => void;
+  toast: (msg: string, kind?: "ok" | "error", ms?: number) => void;
   fail: (err: unknown) => void;
   go: (hash: string) => void;
   refreshStatus: () => void;
+  importing: boolean;
+  /** While importing: the record that a successful import replaces (Import again), if any. */
+  importingFor?: string;
+  /** Open the file picker. Import again passes its record's id, so a successful import removes that record. */
+  pickImport: (replaces?: string) => void;
 };
 
 function useHash(): string {
@@ -40,7 +46,7 @@ function useHash(): string {
 
 export default function App() {
   const hash = useHash();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [menu, setMenu] = useState(false);
   const [offline, setOffline] = useState(false);
   const [recorder, setRecorder] = useState<RecorderStatus>({ recording: false });
@@ -57,11 +63,18 @@ export default function App() {
   const [toastMsg, setToastMsg] = useState<{ msg: string; kind: "ok" | "error" } | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const firstRunChecked = useRef(false);
+  // Kept here, not on Home: an import can run for minutes while the user moves around the app.
+  const [importing, setImporting] = useState(false);
+  const [importingFor, setImportingFor] = useState<string>();
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const replaces = useRef<string | undefined>(undefined);
+  const opener = useRef<HTMLElement | null>(null);
+  const refocus = useRef(false);
 
-  const toast = useCallback((msg: string, kind: "ok" | "error" = "ok") => {
+  const toast = useCallback((msg: string, kind: "ok" | "error" = "ok", ms?: number) => {
     setToastMsg({ msg, kind });
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToastMsg(null), kind === "error" ? 6000 : 2200);
+    toastTimer.current = window.setTimeout(() => setToastMsg(null), ms ?? (kind === "error" ? 6000 : 2200));
   }, []);
   const fail = useCallback((err: unknown) => {
     toast(err instanceof Error && err.message ? err.message : t("wrong"), "error");
@@ -69,6 +82,34 @@ export default function App() {
   const go = useCallback((h: string) => {
     location.hash = h;
   }, []);
+
+  const pickImport = useCallback((record?: string) => {
+    replaces.current = record;
+    opener.current = document.activeElement as HTMLElement | null;
+    pickerRef.current?.click();
+  }, []);
+  const runImport = async (f: File) => {
+    // Import errors say what to do next in two sentences, and nothing else on screen keeps them: 12 s, not 6.
+    if (f.size > MAX_IMPORT_BYTES) return toast(t("importTooBig"), "error", 12000);
+    setImporting(true);
+    setImportingFor(replaces.current);
+    try {
+      const m = await api.importFile(f, f.name.replace(/\.[^.]+$/, ""), "auto", replaces.current);
+      toast(t("imported"));
+      go(`#/meetings/${m.id}`);
+    } catch (e) {
+      toast(importMessage(e, t, lang), "error", 12000);
+      refocus.current = true;
+    } finally {
+      setImporting(false);
+      setImportingFor(undefined);
+    }
+  };
+  useEffect(() => {  // the button that started the import was disabled until now
+    if (importing || !refocus.current) return;
+    refocus.current = false;
+    if (opener.current?.isConnected) opener.current.focus();
+  }, [importing]);
 
   const refreshStatus = useCallback(() => {
     api
@@ -113,7 +154,7 @@ export default function App() {
     };
   }, [refreshStatus]);
 
-  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, subscribe, toast, fail, go, refreshStatus };
+  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, subscribe, toast, fail, go, refreshStatus, importing, importingFor, pickImport };
   const path = hash.replace(/^#/, "") || "/";
   let page = <Home ctx={ctx} />;
   let narrow = false;
@@ -150,6 +191,9 @@ export default function App() {
         <UpdateBanner ctx={ctx} />
         <div className={`page ${narrow ? "narrow" : ""}`}>{page}</div>
       </main>
+      <input ref={pickerRef} type="file" hidden accept="audio/*,.wav,.flac,.mp3,.ogg,.aiff,.mp4,.mov,.m4a,video/mp4,video/quicktime,audio/mp4"
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) runImport(f); }} />
+      <div className="sr-only" role="status">{importing ? t("importing") : ""}</div>
       {recorder.recording && <RecordingBar ctx={ctx} onLive={path.startsWith("/live")} />}
       {toastMsg && <div className={`toast ${toastMsg.kind}`} role={toastMsg.kind === "error" ? "alert" : "status"}>
         {toastMsg.kind === "error" ? <I.warn /> : <I.check />} {toastMsg.msg}</div>}

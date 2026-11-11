@@ -28,6 +28,9 @@
   - Press Stop, and Whisper transcribes Arabic, English and mixed speech (code-switching, including Gulf, Levantine and Egyptian dialects).
   - A local LLM (Qwen) writes the summary, decisions, action items with owners and deadlines, and open questions.
   - A **"Notes ready"** notification tells you when they're done.
+  - Or import a recording: WAV, FLAC, MP3, OGG, AIFF, or the audio of an MP4, MOV or M4A file. Video files are
+    decoded in a separate, resource-limited process, which is not a sandbox: import only files you trust. See
+    [Import a recording](docs/install.md#5-import-a-recording).
 - **Next: voice to artifacts.** Say *"show me a chart of the gold price this year"* and a slide appears, live. See the [roadmap](#roadmap).
 
 **Private by design.** Audio and transcripts never leave your machine:
@@ -108,3 +111,12 @@ Contributions are welcome. Arabic dialect test recordings and prompt improvement
 ## License
 
 [Apache-2.0](LICENSE)
+
+**Third-party components.** MP4, MOV and M4A import uses [PyAV](https://github.com/PyAV-Org/PyAV)
+([BSD-3-Clause](https://github.com/PyAV-Org/PyAV/blob/main/LICENSE.txt)), installed from PyPI when Modwen sets
+itself up. PyAV's Windows and macOS wheels bundle FFmpeg's libraries, which report their licence as "LGPL version 3
+or later", together with other libraries including libx264 and libx265, which are GPL-licensed
+([FFmpeg legal](https://ffmpeg.org/legal.html), [x264](https://www.videolan.org/developers/x264.html),
+[x265](https://bitbucket.org/multicoreware/x265_git/src/master/COPYING)). Modwen uses only FFmpeg's file reading and
+audio decoding, not those encoders. This describes the licence strings observed in the locked wheels; it is not a
+legal assessment of every component.
