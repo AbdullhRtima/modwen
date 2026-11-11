@@ -21,6 +21,8 @@ from fastapi.testclient import TestClient
 from tests.conftest import speechy
 
 av = pytest.importorskip("av")
+# A job still running when its test's store closes fails in the worker thread; make that fail the test.
+pytestmark = pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 
 ROOT = Path(__file__).resolve().parent.parent
 RATE = 48000
@@ -216,10 +218,19 @@ def _services(cfg, fake_llm, **kw):
 def app(cfg, fake_llm):
     from modwen.api import create_app
 
+    # 0 = keep forever, so the retention thread never reads the store after it closes.
+    retention = cfg.privacy.retention
+    retention.audio_days = retention.transcript_days = retention.notes_days = 0
     s = _services(cfg, fake_llm)
     c = TestClient(create_app(s, token="t"), raise_server_exceptions=False)
     c.cookies.set("mw_token", "t")
-    return s, c
+    yield s, c
+    # Let the worker finish what the test queued before the store closes and the folder is deleted.
+    deadline = time.monotonic() + 60
+    while s._worker.is_alive() and s.jobs.unfinished_tasks and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert s.jobs.unfinished_tasks == 0 or not s._worker.is_alive(), "processing jobs still queued after 60 s"
+    s.store.close()
 
 
 def _post(c, body: bytes, **params):
