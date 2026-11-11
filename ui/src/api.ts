@@ -3,7 +3,7 @@
 export type Meeting = {
   id: string;
   title: string;
-  status: "recording" | "paused" | "processing" | "failed" | "ready" | "discarded";
+  status: "recording" | "paused" | "importing" | "processing" | "failed" | "ready" | "discarded";
   mode: string;
   platform: string;
   meeting_language: string;

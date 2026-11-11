@@ -48,6 +48,8 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
     // deleted in another window (or by Import again from this page, whose new meeting is about to open)
     if (e.type === "meetings_changed" && e.change === "deleted") { if (!ctx.importing) ctx.go("#/"); }
     else if (["notes_ready", "failed", "status"].includes(e.type)) load();
+    // an importing record's upload finished (now processing) or was cut off (now a failed import)
+    else if (e.type === "meetings_changed" && (e.change === "imported" || e.change === "failed")) load();
   });
 
   const colorOf = useMemo(() => {
@@ -115,7 +117,8 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
         <I.jump size={12} />{fmtTs(segments.find((s) => s.id === ids[0])?.start_ms ?? 0)}</button>
     ) : null;
 
-  const processing = meeting.status === "processing" || meeting.status === "recording";
+  // "importing" is reached only by a direct or stale link (lists hide it): shown as working, with no Retry
+  const processing = meeting.status === "processing" || meeting.status === "recording" || meeting.status === "importing";
   const failed = meeting.status === "failed";
   const data = notes?.data;
   const unnamed = speakers.filter((s) => UNNAMED_SPEAKER.test(s.display_name)).length;
