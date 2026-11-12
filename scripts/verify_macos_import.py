@@ -43,8 +43,9 @@ GUARD_BYTES = 2304 * MIB  # a backstop above the 1,024 MiB limit: if it fires, t
 TOKEN = "verify-synthetic-token"
 IMPORT_FILES = ["tests/test_import_isolation.py", "tests/test_import_media.py", "tests/test_import_preflight.py",
                 "tests/test_import_safety.py", "tests/test_import_ui_text.py"]
-# Skipped off Windows by design (skipif in tests/test_import_isolation.py). Each has an engine check below instead.
+# Skipped off Windows by design (skipif in tests/test_import_isolation.py). Each says what covers it here instead.
 WINDOWS_ONLY = {
+    "test_the_real_windows_job_has_no_name": "no job object on macOS; the fake-kernel32 job tests run here",
     "test_a_real_kernel_limit_breach_does_not_terminate_the_engine": "engine: limits.memory-breach-fast",
     "test_cpu_and_descendant_limits_hold": "engine: limits.cpu, limits.descendants",
     "test_f24_an_intact_file_survives_every_core_being_busy": "engine: timers.busy-cores",
