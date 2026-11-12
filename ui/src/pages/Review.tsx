@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionItem, api, fmtDuration, fmtTs, Meeting, Notes, NotesData, PersonT, Progress, Segment, setup, Speaker, VoiceResult } from "../api";
+import { ActionItem, api, ApiError, fmtDuration, fmtTs, isFailedImport, Meeting, Notes, NotesData, PersonT, Progress, Segment, setup, Speaker, VoiceResult } from "../api";
 import type { Ctx } from "../App";
 import { StatusChip } from "./Home";
 import { fmtDate, useI18n } from "../i18n";
@@ -45,8 +45,11 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
     if (e.type === "resync") return load();  // reconnected: we may have missed the end of processing
     if (e.meeting_id !== id) return;
     if (e.type === "progress") setMeeting((m) => (m ? { ...m, status: "processing", progress: e.progress as Progress } : m));
-    if (e.type === "meetings_changed" && e.change === "deleted") ctx.go("#/");  // deleted in another window
+    // deleted in another window (or by Import again from this page, whose new meeting is about to open)
+    if (e.type === "meetings_changed" && e.change === "deleted") { if (!(ctx.importing && ctx.importingFor === id)) ctx.go("#/"); }
     else if (["notes_ready", "failed", "status"].includes(e.type)) load();
+    // an importing record's upload finished (now processing) or was cut off (now a failed import)
+    else if (e.type === "meetings_changed" && (e.change === "imported" || e.change === "failed")) load();
   });
 
   const colorOf = useMemo(() => {
@@ -57,6 +60,7 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
 
   if (notFound) return <div className="empty"><h2>{t("notFound")}</h2><p><a href="#/">{t("back")}</a></p></div>;
   if (!meeting) return <p className="muted">{t("loading")}</p>;
+  if (isFailedImport(meeting)) return <FailedImport ctx={ctx} meeting={meeting} />;
 
   const seek = (ms: number, play = false) => {
     const a = audioRef.current;
@@ -113,7 +117,8 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
         <I.jump size={12} />{fmtTs(segments.find((s) => s.id === ids[0])?.start_ms ?? 0)}</button>
     ) : null;
 
-  const processing = meeting.status === "processing" || meeting.status === "recording";
+  // "importing" is reached only by a direct or stale link (lists hide it): shown as working, with no Retry
+  const processing = meeting.status === "processing" || meeting.status === "recording" || meeting.status === "importing";
   const failed = meeting.status === "failed";
   const data = notes?.data;
   const unnamed = speakers.filter((s) => UNNAMED_SPEAKER.test(s.display_name)).length;
@@ -298,6 +303,42 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
             <button className="btn danger sm" onClick={() => api.remove(id).then(() => ctx.go("#/"), ctx.fail)}>{t("del")}</button>
             <button className="btn sm" onClick={() => setConfirmDelete(false)}>{t("cancel")}</button></div>
         ) : <button className="btn ghost sm" onClick={() => setConfirmDelete(true)}><I.trash size={14} />{t("deleteMeeting")}</button>}
+      </div>
+    </>
+  );
+}
+
+/** A record of an import that never finished: there is nothing to show but its name and what to do about it. */
+function FailedImport({ ctx, meeting }: { ctx: Ctx; meeting: Meeting }) {
+  const { t, lang } = useI18n();
+  const [del, setDel] = useState<"idle" | "ask" | "back">("idle");  // "back": cancelled, so focus returns to the button
+  const [deleting, setDeleting] = useState(false);
+  const remove = () => {
+    setDeleting(true);
+    api.remove(meeting.id).then(() => ctx.go("#/"), (e) => {
+      setDeleting(false);
+      if (e instanceof ApiError) ctx.fail(e);
+      else ctx.toast(t("offline"), "error");
+    });
+  };
+  return (
+    <>
+      <header className="mhead">
+        <div className="mhead-row"><h1 dir="auto">{meeting.title}</h1></div>
+        <div className="mmeta"><span>{fmtDate(meeting.started_at, lang)}</span><StatusChip m={meeting} /></div>
+      </header>
+      <div className="banner err strong"><I.fail /><span className="grow">{t("importStoppedLong")}</span>
+        <button className="btn" disabled={ctx.importing} aria-label={`${t("importAgain")}: ${meeting.title}`} onClick={() => ctx.pickImport(meeting.id)}>
+          {ctx.importing && ctx.importingFor === meeting.id ? <><I.spin size={15} className="spin-anim" />{t("importing")}</> : t("importAgain")}</button></div>
+      <div className="danger-zone record">
+        {del === "ask" ? (
+          <div className="banner err strong confirm" role="group" aria-label={t("deleteEntry")} aria-describedby="del-q"
+            onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setDel("back"); } }}>
+            <span id="del-q">{t("deleteEntryConfirm")}</span>
+            <span className="confirm-acts">
+              <button className="btn danger sm" disabled={deleting} onClick={remove}>{t("del")}</button>
+              <button className="btn sm" autoFocus onClick={() => setDel("back")}>{t("cancel")}</button></span></div>
+        ) : <button className="btn ghost sm" autoFocus={del === "back"} onClick={() => setDel("ask")}><I.trash size={14} />{t("deleteEntry")}</button>}
       </div>
     </>
   );

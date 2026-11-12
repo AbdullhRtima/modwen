@@ -110,9 +110,22 @@ CREATE INDEX IF NOT EXISTS idx_notes_meeting ON notes(meeting_id, version);
 
 JSON_FIELDS = {"channels", "stt_info", "consent", "bookmarks", "progress"}
 
+# The error an import that didn't finish leaves. Existing databases hold this exact text: never reword it.
+IMPORT_INTERRUPTED = "import: Modwen stopped before this import finished."
+# The one rule for a failed-import record. It gives meetings their failed_import field (read by
+# is_failed_import and the UI) and decides what commit_import may delete for "Import again".
+# Its one parameter is IMPORT_INTERRUPTED.
+FAILED_IMPORT_SQL = "IFNULL(status = 'failed' AND platform = 'import' AND error = ?, 0)"
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def is_failed_import(meeting: dict) -> bool:
+    """A record of an import that didn't finish: no audio, so no Retry, only Import again or Delete.
+    Takes a meeting from Store.get_meeting or Store.list_meetings."""
+    return meeting["failed_import"]
 
 
 class Store:
@@ -202,10 +215,16 @@ class Store:
         sets = ", ".join(f"{k} = :{k}" for k in fields)
         self._exec(f"UPDATE meetings SET {sets} WHERE id = :_id", {**fields, "_id": mid})
 
+    def _meeting(self, row: sqlite3.Row) -> dict:
+        d = self._row(row)
+        d["failed_import"] = bool(d["failed_import"])  # type: ignore[index]
+        return d  # type: ignore[return-value]
+
     def get_meeting(self, mid: str) -> dict | None:
         with self._lock:
-            row = self._conn.execute("SELECT * FROM meetings WHERE id = ?", (mid,)).fetchone()
-        return self._row(row)
+            row = self._conn.execute(f"SELECT *, {FAILED_IMPORT_SQL} AS failed_import FROM meetings "
+                                     "WHERE id = ?", (IMPORT_INTERRUPTED, mid)).fetchone()
+        return self._meeting(row) if row else None
 
     def get_wrapped_key(self, mid: str) -> bytes | None:
         with self._lock:
@@ -213,10 +232,12 @@ class Store:
         return row["wrapped_key"] if row else None
 
     def list_meetings(self, limit: int = 200) -> list[dict]:
-        """Newest first, with counts for the list view: four queries in total, however many meetings."""
+        """Newest first, with counts for the list view: four queries in total, however many meetings.
+        An import still running isn't a meeting yet, so it isn't listed."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM meetings ORDER BY created_at DESC LIMIT ?", (limit,)
+                f"SELECT *, {FAILED_IMPORT_SQL} AS failed_import FROM meetings WHERE status != 'importing' "
+                "ORDER BY created_at DESC LIMIT ?", (IMPORT_INTERRUPTED, limit)
             ).fetchall()
             ids = [r["id"] for r in rows]
             marks = ",".join("?" * len(ids)) or "''"
@@ -236,12 +257,33 @@ class Store:
                 f"GROUP BY meeting_id) last ON last.meeting_id = n.meeting_id AND last.v = n.version", ids).fetchall())
         out = []
         for r in rows:
-            d = self._row(r)
+            d = self._meeting(r)
             d["action_item_count"] = actions.get(d["id"], 0)  # type: ignore[index]
             d["languages"] = sorted(langs.get(d["id"], ()))  # type: ignore[index]
             d["speaker_count"] = speakers.get(d["id"], 0)  # type: ignore[index]
             out.append(d)
         return out
+
+    def interrupted_imports(self) -> list[dict]:
+        """Rows still marked as importing. At startup, these are the imports a crash cut short."""
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM meetings WHERE status = 'importing'").fetchall()
+        return [self._row(r) for r in rows]  # type: ignore[misc]
+
+    def commit_import(self, mid: str, title: str, duration_ms: int, replaces: str | None = None) -> tuple[bool, bool]:
+        """The point where an import is complete, as one transaction, so no crash can leave both the new meeting
+        and the failed-import record ``replaces``. Only such a record goes, found by its id.
+        Returns (committed, removed); not committed if the row was no longer importing."""
+        with self._lock, self._conn:
+            cur = self._conn.execute("UPDATE meetings SET status = 'processing', title = ?, duration_ms = ? "
+                                     "WHERE id = ? AND status = 'importing'", (title, duration_ms, mid))
+            if cur.rowcount != 1:
+                return False, False
+            if not replaces:
+                return True, False
+            cur = self._conn.execute(f"DELETE FROM meetings WHERE id = ? AND {FAILED_IMPORT_SQL}",
+                                     (replaces, IMPORT_INTERRUPTED))
+            return True, cur.rowcount == 1
 
     def delete_meeting(self, mid: str) -> None:
         self._exec("DELETE FROM meetings WHERE id = ?", (mid,))

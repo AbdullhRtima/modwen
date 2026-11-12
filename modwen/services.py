@@ -13,7 +13,8 @@ from modwen.crypto import KeyStore
 from modwen.events import EventBus
 from modwen.hardware import TierPlan, choose_tier, detect
 from modwen.notify import Notifier
-from modwen.storage import Store
+from modwen.storage import IMPORT_INTERRUPTED, Store
+from modwen.storage import is_failed_import as is_failed_import  # the failed-import rule lives in storage
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ def free_gpu_memory() -> None:
 class Services:
     def __init__(self, cfg: Config, *, stt_engine_factory=None, live_engine_factory=None, diarizer_factory=None,
                  llm_http_client=None, notifier: Notifier | None = None, source_factory=None, start_worker=True,
-                 embedder_factory=None):
+                 embedder_factory=None, media_decoder=None):
         self.cfg = cfg
         # Models load strictly from local files; only explicit download actions (setup / `modwen models
         # download`) go online.
@@ -57,6 +58,7 @@ class Services:
         self._live_factory_override = live_engine_factory
         self._diarizer_factory_override = diarizer_factory
         self._embedder_factory_override = embedder_factory
+        self._media_decoder_override = media_decoder
         self._engine_cache: dict[str, object] = {}
         self._engine_lock = threading.Lock()
         # Post-meeting work. New meetings first, then re-detect / regenerate; FIFO within a priority.
@@ -93,6 +95,14 @@ class Services:
             self._worker.start()
             self._recover()
             threading.Thread(target=self._retention_loop, name="retention", daemon=True).start()
+
+    def media_decoder(self, sealed, writer) -> int:
+        """Decode an MP4, MOV or M4A into ``writer``. Production always goes through the limited child process."""
+        if self._media_decoder_override:
+            return self._media_decoder_override(sealed, writer)
+        from modwen.audio.decoder import decode_isolated
+
+        return decode_isolated(sealed, writer)
 
     # ----- hardware / models -----
     @cached_property
@@ -390,8 +400,22 @@ class Services:
                 log.exception("Retention clean-up failed")
             time.sleep(6 * 3600)
 
+    def mark_import_interrupted(self, mid: str) -> None:
+        """An import that didn't finish keeps its name and nothing else. Safe to repeat after a crash here."""
+        import shutil
+
+        shutil.rmtree(self.cfg.audio_dir / mid, ignore_errors=True)
+        self.store.forget_audio(mid)
+        self.store.update_meeting(mid, status="failed", error=IMPORT_INTERRUPTED)
+
+    def _recover_imports(self) -> None:
+        for m in self.store.interrupted_imports():
+            log.warning("Import %s did not finish; its audio was removed", m["id"])
+            self.mark_import_interrupted(m["id"])
+
     def _recover(self) -> None:
         """Meetings left 'recording'/'processing' by a crash are re-processed from their saved chunks."""
+        self._recover_imports()
         for m in self.store.list_meetings(limit=50):
             if m["status"] in ("recording", "processing"):
                 if m["status"] == "recording" and not any((self.cfg.audio_dir / m["id"]).glob("*.flac.enc")):
