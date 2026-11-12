@@ -30,7 +30,6 @@ import subprocess
 import sys
 import threading
 import time
-import uuid
 from pathlib import Path
 
 import numpy as np
@@ -63,7 +62,9 @@ class BadChild(Exception):
 
 
 class WindowsJob:
-    """One Job Object, holding one process. Closing the last handle kills it, so a crashed engine leaves no orphan."""
+    """One Job Object, holding one process. Closing the last handle kills it, so a crashed engine leaves no orphan.
+
+    It has no name, so nothing can open it by name: the engine puts the child in it with its own handle."""
 
     JOB_TIME, ACTIVE_PROCESS, JOB_MEMORY, DIE_ON_UNHANDLED_EXCEPTION, KILL_ON_CLOSE = 0x4, 0x8, 0x200, 0x400, 0x2000
     PROCESS_ACCESS = 0x0001 | 0x0100 | 0x1000 | 0x00100000  # terminate, set quota, query, synchronize
@@ -81,8 +82,7 @@ class WindowsJob:
         k.QueryInformationJobObject.argtypes = [handle, ctypes.c_int, handle, ctypes.c_ulong, handle]
         k.IsProcessInJob.argtypes = [handle, handle, ctypes.POINTER(ctypes.c_int)]
         self.process = None
-        self.name = "Local\\ModwenDecoder-" + uuid.uuid4().hex
-        self.job = k.CreateJobObjectW(None, self.name)
+        self.job = k.CreateJobObjectW(None, None)
         if not self.job:
             raise OSError("no job object")
         limits = JobLimits()
@@ -100,6 +100,8 @@ class WindowsJob:
         self.process = self.k.OpenProcess(self.PROCESS_ACCESS, False, pid)
         if not self.process:
             raise OSError("cannot open decoder process")
+        if not self.k.AssignProcessToJobObject(self.job, self.process):
+            raise OSError("cannot put the decoder in its job")
         self.confirm()
 
     def confirm(self) -> None:
@@ -274,10 +276,6 @@ class Child:
         try:
             self.job = WindowsJob(MEMORY_LIMIT, CPU_SECONDS) if windows else None
             env = child_env()
-            if self.job:
-                # Child joins before imports and closes its handle. If the parent has already died, opening the job
-                # fails and it exits. This also avoids leaving a suspended process across a spawn/assignment race.
-                env["MODWEN_DECODER_JOB"] = self.job.name
             command = child_command()
             if mac:  # no sandbox-exec, or a profile it rejects, means no H frame: the decoder did not start
                 command = sandboxed(command, self.sealed_path)
@@ -296,7 +294,7 @@ class Child:
                 if self.pid != self.process.pid:
                     raise BadChild("decoder is not the process we sandboxed")
                 confirm_sandboxed(self.process.pid)
-            if self.job:
+            if self.job:  # it has read nothing yet, and waits for the limits; if we die first, its stdin ends
                 self.job.adopt(self.pid)
             self.process.stdin.write(json.dumps({"memory": MEMORY_LIMIT, "cpu": CPU_SECONDS}).encode() + b"\n")
             if self.read() != (b"P", b""):

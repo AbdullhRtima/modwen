@@ -90,29 +90,6 @@ def job_holds(memory: int, cpu: int) -> bool:
             limits.basic.active_processes == 1 and limits.basic.job_time == cpu * 10_000_000)
 
 
-def join_job() -> bool:
-    """Join the parent's named job before loading native libraries, then close our handle.
-
-    The parent keeps the only job handle: its death kills us. If it died before startup, OpenJobObject fails and we
-    exit without parsing anything. No handle has to be inherited through the Windows venv launcher.
-    """
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    handle = ctypes.c_void_p
-    kernel.OpenJobObjectW.argtypes, kernel.OpenJobObjectW.restype = [ctypes.c_ulong, ctypes.c_int,
-                                                                  ctypes.c_wchar_p], handle
-    kernel.GetCurrentProcess.restype = handle
-    kernel.AssignProcessToJobObject.argtypes = [handle, handle]
-    kernel.CloseHandle.argtypes = [handle]
-    name = os.environ.pop("MODWEN_DECODER_JOB", "")
-    job = kernel.OpenJobObjectW(0x0001, False, name)  # JOB_OBJECT_ASSIGN_PROCESS
-    if not job:
-        return False
-    try:
-        return bool(kernel.AssignProcessToJobObject(job, kernel.GetCurrentProcess()))
-    finally:
-        kernel.CloseHandle(job)
-
-
 def _set_max_alloc() -> bool:
     """Reach av_max_alloc in the libavutil PyAV already loaded. The name differs by platform and wheel."""
     from pathlib import Path
@@ -169,9 +146,7 @@ def main() -> int:
     if sys.platform == "win32":
         import msvcrt
 
-        msvcrt.setmode(out, os.O_BINARY)
-        if not join_job():
-            return LIMITS_NOT_CONFIRMED
+        msvcrt.setmode(out, os.O_BINARY)  # the engine puts this process in its job after the H frame
     import av  # noqa: F401
     import soxr  # noqa: F401
 

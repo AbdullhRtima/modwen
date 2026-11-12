@@ -1,6 +1,6 @@
 """The production process boundary, generated hostile files and deliberately broken child peers.
 
-No decoder fault is injected into pytest itself. Windows kernel-limit tests run in the real named job; an outer
+No decoder fault is injected into pytest itself. Windows kernel-limit tests run in the real job; an outer
 watchdog kills the test peer if production cleanup fails. Native Mac behaviour still requires a Mac runner.
 """
 from __future__ import annotations
@@ -168,12 +168,11 @@ def test_f23_audible_protection_uses_the_unsupported_message(data_dir):
 
 PEER = '''
 import ctypes,json,os,struct,sys,time
-from modwen.audio.decoder_child import send,join_job,job_holds
+from modwen.audio.decoder_child import send,job_holds
 out=os.dup(1)
 if sys.platform == 'win32':
     import msvcrt
     msvcrt.setmode(out,os.O_BINARY)
-    if not join_job(): os._exit(3)
 {early}
 send(out,b'H',struct.pack('<I',os.getpid()))
 limits=json.loads(sys.stdin.buffer.readline())
@@ -371,6 +370,83 @@ def test_child_environment_does_not_contain_engine_secrets(monkeypatch):
     env = D.child_env()
     assert not any(k in env for k in ("MODWEN_TOKEN", "MODWEN_KEYSTORE", "UNRELATED_SECRET"))
     assert "secret-token" not in json.dumps(env)
+
+
+class FakeCall:
+    """One kernel32 function: takes argtypes/restype like a ctypes one, and logs each call."""
+
+    def __init__(self, kernel, name):
+        self.kernel, self.name = kernel, name
+
+    def __call__(self, *args):
+        return self.kernel.answer(self.name, args)
+
+
+class FakeKernel32:
+    """Stands in for kernel32 so WindowsJob's calls can be checked on any OS."""
+
+    def __init__(self, assigns=1):
+        self.calls, self.job, self.assigns = [], None, assigns
+
+    def __getattr__(self, name):
+        call = FakeCall(self, name)
+        setattr(self, name, call)
+        return call
+
+    def answer(self, name, args):
+        self.calls.append((name, args))
+        if name == "QueryInformationJobObject":  # the kernel hands back what was set
+            ctypes.memmove(ctypes.addressof(args[2]._obj), ctypes.addressof(self.job.limits),
+                           ctypes.sizeof(self.job.limits))
+        elif name == "IsProcessInJob":
+            args[2]._obj.value = 1
+        return {"CreateJobObjectW": 7, "OpenProcess": 9, "AssignProcessToJobObject": self.assigns}.get(name, 1)
+
+
+def fake_job(monkeypatch, **kw):
+    kernel = FakeKernel32(**kw)
+    monkeypatch.setattr(ctypes, "WinDLL", lambda *a, **k: kernel, raising=False)
+    kernel.job = D.WindowsJob(D.MEMORY_LIMIT, D.CPU_SECONDS)
+    return kernel
+
+
+def test_the_windows_job_is_unnamed_and_the_engine_puts_the_child_in_it(monkeypatch):
+    # No name, so no process can open the job by name: the engine's own handle is the only way to it.
+    kernel = fake_job(monkeypatch)
+    assert [args for name, args in kernel.calls if name == "CreateJobObjectW"] == [(None, None)]
+    assert not hasattr(kernel.job, "name")
+    kernel.calls.clear()
+    kernel.job.adopt(1234)
+    names = [name for name, _ in kernel.calls]
+    assert names[0] == "OpenProcess" and kernel.calls[0][1][2] == 1234
+    assert ("AssignProcessToJobObject", (7, 9)) in kernel.calls
+    assert names.index("AssignProcessToJobObject") < names.index("QueryInformationJobObject")
+
+
+def test_a_child_the_engine_cannot_put_in_the_job_is_refused(monkeypatch):
+    kernel = fake_job(monkeypatch, assigns=0)
+    with pytest.raises(OSError):
+        kernel.job.adopt(1234)
+    assert "QueryInformationJobObject" not in [name for name, _ in kernel.calls]
+
+
+def test_the_child_no_longer_looks_for_a_job_by_name():
+    assert not hasattr(C, "join_job")
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the real kernel's object name")
+def test_the_real_windows_job_has_no_name():
+    job = D.WindowsJob(D.MEMORY_LIMIT, D.CPU_SECONDS)
+    try:
+        ntdll = ctypes.WinDLL("ntdll")
+        ntdll.NtQueryObject.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_ulong,
+                                        ctypes.POINTER(ctypes.c_ulong)]
+        ntdll.NtQueryObject.restype = ctypes.c_long
+        info, size = ctypes.create_string_buffer(4096), ctypes.c_ulong()
+        assert ntdll.NtQueryObject(job.job, 1, info, len(info), ctypes.byref(size)) == 0  # ObjectNameInformation
+        assert ctypes.c_ushort.from_buffer(info).value == 0  # OBJECT_NAME_INFORMATION.Name.Length, in bytes
+    finally:
+        job.close()
 
 
 def test_platform_abi_layouts():
