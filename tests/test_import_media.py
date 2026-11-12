@@ -18,6 +18,7 @@ import pytest
 import soundfile as sf
 from fastapi.testclient import TestClient
 
+from modwen.storage import is_failed_import
 from tests.conftest import speechy
 
 av = pytest.importorskip("av")
@@ -959,7 +960,7 @@ def test_startup_turns_a_cut_off_import_into_a_named_record(cfg, fake_llm, key):
 
     s2 = _services(cfg, fake_llm)
     m = s2.store.get_meeting(mid)
-    assert m["status"] == "failed" and m["error"] == IMPORT_INTERRUPTED and m["error"].startswith("import:")
+    assert m["status"] == "failed" and m["error"] == IMPORT_INTERRUPTED and is_failed_import(m)
     assert m["title"] == "Budget review.mp4"
     assert not (cfg.audio_dir / mid).exists() and s2.store.get_wrapped_key(mid) is None
     assert not list(cfg.data_dir.glob("import-*.sealed"))
@@ -967,7 +968,7 @@ def test_startup_turns_a_cut_off_import_into_a_named_record(cfg, fake_llm, key):
     assert [x["id"] for x in s2.store.list_meetings()] == [mid]
     c = TestClient(create_app(s2, token="t"))
     c.cookies.set("mw_token", "t")
-    assert c.get(f"/api/meetings/{mid}").json()["meeting"]["error"].startswith("import:")
+    assert c.get(f"/api/meetings/{mid}").json()["meeting"]["failed_import"] is True
     s3 = _services(cfg, fake_llm)  # a second start changes nothing
     assert s3.store.get_meeting(mid)["status"] == "failed"
 
@@ -993,8 +994,8 @@ def test_the_rest_of_recovery_is_unchanged(cfg, fake_llm):
     s2 = _services(cfg, fake_llm)
     assert _wait(s2, done)["status"] == "ready"
     assert s2.store.get_meeting(empty)["status"] == "failed"
-    assert not s2.store.get_meeting(empty)["error"].startswith("import:")
-    assert s2.store.get_meeting(cut)["error"].startswith("import:")
+    assert not is_failed_import(s2.store.get_meeting(empty))
+    assert is_failed_import(s2.store.get_meeting(cut))
 
 
 CRASH = """
@@ -1061,7 +1062,7 @@ def test_a_real_crash_at_each_stage(cfg, fake_llm, data_dir, where):
         assert m["title"] == "Clip" and _wait(s, m["id"])["status"] == "ready"
         assert _audio(s, m["id"]).size / 16000 > 29
     else:
-        assert m["title"] == "Clip.mp4" and m["status"] == "failed" and m["error"].startswith("import:")
+        assert m["title"] == "Clip.mp4" and m["status"] == "failed" and is_failed_import(m)
         assert not (cfg.audio_dir / m["id"]).exists() and s.store.get_wrapped_key(m["id"]) is None
     assert not list(cfg.data_dir.glob("import-*.sealed"))
 
@@ -1078,7 +1079,7 @@ def test_a_crash_never_leaves_both_the_new_import_and_the_old_record(cfg, fake_l
     new = [m for m in s.store.list_meetings() if m["id"] != old]
     assert len(new) == 1
     if old_stays:  # the import did not complete: a second record for this attempt, and the first one is kept
-        assert new[0]["title"] == "Clip.mp4" and new[0]["error"].startswith("import:")
+        assert new[0]["title"] == "Clip.mp4" and is_failed_import(new[0])
         assert not (cfg.audio_dir / new[0]["id"]).exists()
     else:
         assert new[0]["title"] == "Clip" and _wait(s, new[0]["id"])["status"] == "ready"
@@ -1108,7 +1109,7 @@ def test_tab_closed_during_upload_leaves_a_record_at_once(app):
     asyncio.run(application(scope, receive, send))
     rows = s.store.list_meetings()
     assert [(m["title"], m["status"]) for m in rows] == [("Clip.mp4", "failed")]
-    assert rows[0]["error"].startswith("import:")
+    assert is_failed_import(rows[0])
     assert any(e.get("type") == "meetings_changed" and e.get("meeting_id") == rows[0]["id"] for e in events)
     assert not list(s.cfg.data_dir.glob("import-*.sealed"))
 
@@ -1270,7 +1271,7 @@ def test_the_commit_and_the_removal_succeed_or_fail_together(app, data_dir):
     r = _post(c, make_media(data_dir), replaces=old)
     assert r.status_code == 400 and r.json()["detail"] == GENERAL
     assert [m["id"] for m in s.store.list_meetings()] == [old]
-    assert s.store.get_meeting(old)["error"].startswith("import:")
+    assert is_failed_import(s.store.get_meeting(old))
     assert not list(s.cfg.audio_dir.glob("*")) and not s.store.interrupted_imports()
 
 
