@@ -15,7 +15,7 @@
 #      Silicon), plus the dev group for pytest. If that fails, the failure is the result for that Python: it is
 #      recorded with uv's own last lines and nothing is worked around.
 #   3. Runs the import, isolation, safety and preflight tests (pytest), listing any test skipped here.
-#   4. Runs a real engine on 127.0.0.1 (fake speech-to-text, fake local LLM): F14-F23-style files generated here,
+#   4. Runs a real engine on 127.0.0.1 (fake speech-to-text, fake local LLM): hostile MP4/MOV files made here,
 #      a real memory-limit breach with its peak footprint and overshoot, the CPU limit, a frozen child, a
 #      CPU-spinning child, every core busy, an engine kill with restart and cleanup, imports at once, 7.1 audio,
 #      and valid fragmented and edit-list media.

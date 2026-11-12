@@ -727,12 +727,12 @@ def test_only_two_decoders_run_at_once(data_dir, monkeypatch):
 
 
 def hogs():
-    """As many normal-priority spinners as the PC has cores: the load that starved the child in F24."""
+    """As many normal-priority spinners as the PC has cores: the load that starved a below-normal child."""
     python = getattr(sys, "_base_executable", sys.executable)  # a venv's launcher would leave its spinner behind
     return [subprocess.Popen([python, "-P", "-c", "while True: pass"]) for _ in range(psutil.cpu_count())]
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="F24 was the below-normal class; macOS needs its own run")
+@pytest.mark.skipif(sys.platform != "win32", reason="a below-normal child starves; macOS needs its own run")
 def test_f24_an_intact_file_survives_every_core_being_busy(data_dir, monkeypatch):
     """Under a timer far below the real 180 s, so a child that doesn't get the CPU can't pass slowly."""
     monkeypatch.setattr(D, "SILENCE_SECONDS", 30)
@@ -770,7 +770,7 @@ def test_f24_posix_limits_leave_the_priority_alone(monkeypatch):
     resource = SimpleNamespace(RLIMIT_CORE=4, RLIMIT_CPU=0, RLIMIT_NPROC=7, setrlimit=lambda *_: None)
     monkeypatch.setitem(sys.modules, "resource", resource)
     monkeypatch.setattr(C, "_set_max_alloc", lambda: True)
-    monkeypatch.setattr(os, "nice", lambda _: pytest.fail("a niced child starves as F24 did"), raising=False)
+    monkeypatch.setattr(os, "nice", lambda _: pytest.fail("a niced child starves under load"), raising=False)
     assert C.posix_limits(60)
 
 
@@ -860,7 +860,7 @@ def edit_list(data, edits):
 
 
 def lose_mdhd(data, count=None):
-    """QA 28's shape: one changed byte in the mdhd's type, so FFmpeg skips the box, and optionally the elst's count."""
+    """One changed byte in the mdhd's type, so FFmpeg skips the box, and optionally the elst's count."""
     out = bytearray(data)
     out[data.index(b"mdhd") + 2] = 0xef
     if count is not None:
@@ -893,7 +893,7 @@ def test_f28_a_zero_timescale_is_damage(data_dir):
 
 
 def test_f28_metadata_named_like_a_track_stays_opaque(data_dir):
-    """A udta holding something called mdia, with no mdhd in it, is F22's shape: it isn't a track, so nothing is lost."""
+    """A udta holding something called mdia, with no mdhd in it, is opaque metadata, not a track, so nothing is lost."""
     tree = parse(make_media(data_dir, seconds=2))  # moov last, so no offset moves
     find(tree, b"moov")[1].append([b"udta", ser([[b"mdia", ser([[b"free", b""]])]])])
     assert decode(data_dir, ser(tree))[0] == pytest.approx(32000, abs=500)
@@ -905,7 +905,7 @@ def test_f28_metadata_named_like_a_track_stays_opaque(data_dir):
     ([(.2, i) for i in range(40)], 4),  # the last edits start past the 20 s of media
 ], ids=["whole", "trim-end", "skip-start", "delay", "drop-middle", "past-end", "three", "tiny-trim", "five", "forty"])
 def test_f28_intact_edit_lists_import_as_before(data_dir, edits, seconds):
-    """Same cases as QA 28's matrix: the tkhd isn't updated in these, so a rule comparing it to the edits refuses them."""
+    """Valid trims, gaps and delays: the tkhd isn't updated in these, so a rule comparing it to the edits refuses them."""
     data = make_media(data_dir, seconds=20)
     mvhd = data.index(b"mvhd")
     scale = int.from_bytes(data[mvhd + 16:mvhd + 20], "big")
@@ -946,8 +946,8 @@ def test_f29_only_a_few_finite_samples_still_import(data_dir):
     assert decode(data_dir, float_pcm("pcm_f32le", change=change))[0] == pytest.approx(32000, abs=64)
 
 
-# QA 31's F30 files: QA 28's mutations of this same 6-second fragmented file, as {offset from the first tfhd: byte}.
-# Each loses the first of three fragments with every byte present, and imported 4.03 s before task 33.
+# Broken first-fragment headers in this same 6-second fragmented file, as {offset from the first tfhd: byte}.
+# Each loses the first of three fragments with every byte present, and used to import as 4.03 s of audio.
 QA_F30 = {
     "0025-tfhd-past-traf": {0: 0x7f, 1: 0xff, 2: 0xff, 3: 0xff},
     "0214-tfhd-past-traf-2^32": {0: 0xff, 1: 0xff, 2: 0xff, 3: 0xff},  # 0472 is the same
@@ -961,7 +961,7 @@ QA_F30 = {
 
 def first_tfhd(data):
     at = data.index(b"tfhd", [at for at, _, kind in top_boxes(data) if kind == b"moof"][0]) - 4
-    assert data[at:at + 16] == bytes.fromhex("0000001c746668640002003800000001")  # QA's base, on both av versions
+    assert data[at:at + 16] == bytes.fromhex("0000001c746668640002003800000001")  # same bytes on both av versions
     return at
 
 
@@ -984,7 +984,7 @@ def test_f30_a_broken_fragment_header_is_damage_not_a_shorter_recording(data_dir
                          ids=["version-only-loses-nothing", "track-1996488705-alone", "track-2-alone"])
 def test_f30_what_ffmpeg_reads_decides(data_dir, offset, value, seconds):
     """FFmpeg skips a tfhd's version, so changing only that loses nothing and still imports. A tfhd naming no track
-    followed by an intact trun is an error in FFmpeg itself, so it was refused before task 33 and still is."""
+    followed by an intact trun is an error in FFmpeg itself, so it was refused before these rules and still is."""
     data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
     out = bytearray(data)
     out[first_tfhd(data) + offset] = value
@@ -1059,7 +1059,7 @@ def append_to_traf(data, blob):
 
 
 def frag_0015(data):
-    """QA 28's frag-0015 on 3.11: a zero run from the second moof's mfhd over the next mdat's header."""
+    """Seen on Python 3.11: a zero run from the second moof's mfhd over the next mdat's header."""
     return zero(data, fragment(data, 1)[0] + 8, 2002)
 
 
@@ -1115,7 +1115,7 @@ def test_f30_rules_b_e_a_leave_readable_shapes_alone(data_dir, name):
 
 
 def test_l10_the_fragment_check_reuses_the_moov_it_is_given(data_dir, monkeypatch):
-    """L10: the moov is found once for the fragment checks, not walked for again over the whole file."""
+    """The moov is found once for the fragment checks, not walked for again over the whole file."""
     data = make_media(data_dir, seconds=6, movflags=FRAGMENTED)
     walks, find = [], I._find_moov
     monkeypatch.setattr(I, "_find_moov", lambda sealed: walks.append(1) or find(sealed))

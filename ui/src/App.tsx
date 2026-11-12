@@ -23,11 +23,13 @@ export type Ctx = {
   lastEvent: BBEvent | null;
   /** Every server event, in order (lastEvent can skip one when two arrive together). Returns unsubscribe. */
   subscribe: (fn: (e: BBEvent) => void) => () => void;
-  toast: (msg: string, kind?: "ok" | "error") => void;
+  toast: (msg: string, kind?: "ok" | "error", ms?: number) => void;
   fail: (err: unknown) => void;
   go: (hash: string) => void;
   refreshStatus: () => void;
   importing: boolean;
+  /** While importing: the record that a successful import replaces (Import again), if any. */
+  importingFor?: string;
   /** Open the file picker. Import again passes its record's id, so a successful import removes that record. */
   pickImport: (replaces?: string) => void;
 };
@@ -63,15 +65,16 @@ export default function App() {
   const firstRunChecked = useRef(false);
   // Kept here, not on Home: an import can run for minutes while the user moves around the app.
   const [importing, setImporting] = useState(false);
+  const [importingFor, setImportingFor] = useState<string>();
   const pickerRef = useRef<HTMLInputElement>(null);
   const replaces = useRef<string | undefined>(undefined);
   const opener = useRef<HTMLElement | null>(null);
   const refocus = useRef(false);
 
-  const toast = useCallback((msg: string, kind: "ok" | "error" = "ok") => {
+  const toast = useCallback((msg: string, kind: "ok" | "error" = "ok", ms?: number) => {
     setToastMsg({ msg, kind });
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToastMsg(null), kind === "error" ? 6000 : 2200);
+    toastTimer.current = window.setTimeout(() => setToastMsg(null), ms ?? (kind === "error" ? 6000 : 2200));
   }, []);
   const fail = useCallback((err: unknown) => {
     toast(err instanceof Error && err.message ? err.message : t("wrong"), "error");
@@ -86,17 +89,20 @@ export default function App() {
     pickerRef.current?.click();
   }, []);
   const runImport = async (f: File) => {
-    if (f.size > MAX_IMPORT_BYTES) return toast(t("importTooBig"), "error");
+    // Import errors say what to do next in two sentences, and nothing else on screen keeps them: 12 s, not 6.
+    if (f.size > MAX_IMPORT_BYTES) return toast(t("importTooBig"), "error", 12000);
     setImporting(true);
+    setImportingFor(replaces.current);
     try {
       const m = await api.importFile(f, f.name.replace(/\.[^.]+$/, ""), "auto", replaces.current);
       toast(t("imported"));
       go(`#/meetings/${m.id}`);
     } catch (e) {
-      toast(importMessage(e, t, lang), "error");
+      toast(importMessage(e, t, lang), "error", 12000);
       refocus.current = true;
     } finally {
       setImporting(false);
+      setImportingFor(undefined);
     }
   };
   useEffect(() => {  // the button that started the import was disabled until now
@@ -148,7 +154,7 @@ export default function App() {
     };
   }, [refreshStatus]);
 
-  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, subscribe, toast, fail, go, refreshStatus, importing, pickImport };
+  const ctx: Ctx = { recorder, tier, llmActive, events, lastEvent, subscribe, toast, fail, go, refreshStatus, importing, importingFor, pickImport };
   const path = hash.replace(/^#/, "") || "/";
   let page = <Home ctx={ctx} />;
   let narrow = false;

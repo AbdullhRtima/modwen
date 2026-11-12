@@ -46,7 +46,7 @@ export default function Review({ ctx, id }: { ctx: Ctx; id: string }) {
     if (e.meeting_id !== id) return;
     if (e.type === "progress") setMeeting((m) => (m ? { ...m, status: "processing", progress: e.progress as Progress } : m));
     // deleted in another window (or by Import again from this page, whose new meeting is about to open)
-    if (e.type === "meetings_changed" && e.change === "deleted") { if (!ctx.importing) ctx.go("#/"); }
+    if (e.type === "meetings_changed" && e.change === "deleted") { if (!(ctx.importing && ctx.importingFor === id)) ctx.go("#/"); }
     else if (["notes_ready", "failed", "status"].includes(e.type)) load();
     // an importing record's upload finished (now processing) or was cut off (now a failed import)
     else if (e.type === "meetings_changed" && (e.change === "imported" || e.change === "failed")) load();
@@ -329,10 +329,11 @@ function FailedImport({ ctx, meeting }: { ctx: Ctx; meeting: Meeting }) {
       </header>
       <div className="banner err strong"><I.fail /><span className="grow">{t("importStoppedLong")}</span>
         <button className="btn" disabled={ctx.importing} aria-label={`${t("importAgain")}: ${meeting.title}`} onClick={() => ctx.pickImport(meeting.id)}>
-          {ctx.importing ? <><I.spin size={15} className="spin-anim" />{t("importing")}</> : t("importAgain")}</button></div>
+          {ctx.importing && ctx.importingFor === meeting.id ? <><I.spin size={15} className="spin-anim" />{t("importing")}</> : t("importAgain")}</button></div>
       <div className="danger-zone record">
         {del === "ask" ? (
-          <div className="banner err strong confirm" role="group" aria-label={t("deleteEntry")} aria-describedby="del-q">
+          <div className="banner err strong confirm" role="group" aria-label={t("deleteEntry")} aria-describedby="del-q"
+            onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setDel("back"); } }}>
             <span id="del-q">{t("deleteEntryConfirm")}</span>
             <span className="confirm-acts">
               <button className="btn danger sm" disabled={deleting} onClick={remove}>{t("del")}</button>

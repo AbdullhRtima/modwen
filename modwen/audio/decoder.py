@@ -464,6 +464,10 @@ def decode_isolated(sealed, writer) -> int:
     """Decode the sealed upload into ``writer`` in a limited child. Returns samples written.
 
     Raises ImportRefused with a message for the user, or RuntimeError if the child couldn't be started or limited."""
+    # A third import at once waits here with no timeout until a slot frees. That is intended
+    # (system-design threat table: "A third import waits with no message"). Giving up would mean
+    # IMPORT_FAILED, which wrongly blames disk space. If Modwen stops while it waits, the row is still
+    # "importing", so the next start leaves the usual failed-import record.
     with _slots:
         child = Child(sealed.path)
         try:

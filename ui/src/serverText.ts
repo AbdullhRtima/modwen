@@ -55,7 +55,7 @@ const REFUSALS: [RegExp, (m: RegExpMatchArray, t: (k: Key) => string) => string]
   [/^This recording is (over )?([\d.]+) hours long\. Imports are limited to ([\d.]+) hours\. Trim or split it, then import it again\.$/,
     (m) => {
       const h = Number(m[2]);
-      const unit = Number.isInteger(h) && h >= 7 && h <= 10 ? "ساعات" : "ساعة";
+      const unit = Number.isInteger(h) && h % 100 >= 3 && h % 100 <= 10 ? "ساعات" : "ساعة";
       const length = m[1] ? `أكثر من ${m[2]} ساعات` : `${m[2]} ${unit}`;
       return `مدة هذا التسجيل ${length}، والحد الأقصى للاستيراد ${m[3]} ساعات. اختصره أو قسّمه، ثم استورده من جديد.`;
     }],
